@@ -4,8 +4,9 @@ pgpsigurlmangle=s/$/.asc/,\
 uversionmangle=s/-(rc|beta)/$1/,pasv \
 ftp://ftp.osuosl.org/pub/mariadb/mariadb-10.4.([\d\.]*(?:-beta|-rc)?)/source/mariadb-([\d\.]*(?:-beta|-rc)?).tar.gz \
 
-# Added string "-10.3." in path as MariaDB has release series 10.0 and 10.1 in
-# parallel, and we want uscan to check for updates only in the 10.1-series.
+# String "-10.4." needs to be in path as MariaDB releases several series in
+# parallel (e.g 10.5, 10.4, 10.3 etc) and uscan should check for updates only
+# in the 10.4-series.
 
 # Automated signature checking with pgpsigurlmangle has been available
 # only since devscripts version 2.13.3
