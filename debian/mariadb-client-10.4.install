@@ -4,6 +4,18 @@ debian/additions/mariadb.conf.d/50-client.cnf etc/mysql/mariadb.conf.d
 debian/additions/mariadb.conf.d/50-mysql-clients.cnf etc/mysql/mariadb.conf.d
 debian/additions/mysqlreport usr/bin/
 debian/additions/mysqlreport.1 usr/share/man/man1/
+usr/bin/mariadb-access
+usr/bin/mariadb-admin
+usr/bin/mariadb-binlog
+usr/bin/mariadb-dump
+usr/bin/mariadb-dumpslow
+usr/bin/mariadb-find-rows
+usr/bin/mariadb-fix-extensions
+usr/bin/mariadb-import
+usr/bin/mariadb-plugin
+usr/bin/mariadb-slap
+usr/bin/mariadb-tzinfo-to-sql
+usr/bin/mariadb-waitpid
 usr/bin/mysql_find_rows
 usr/bin/mysql_fix_extensions
 usr/bin/mysql_waitpid
@@ -15,6 +27,17 @@ usr/bin/mysqlimport
 usr/bin/mysqlshow
 usr/bin/mysqlslap
 usr/bin/mytop
+usr/share/man/man1/mariadb-access.1
+usr/share/man/man1/mariadb-admin.1
+usr/share/man/man1/mariadb-binlog.1
+usr/share/man/man1/mariadb-dump.1
+usr/share/man/man1/mariadb-dumpslow.1
+usr/share/man/man1/mariadb-find-rows.1
+usr/share/man/man1/mariadb-fix-extensions.1
+usr/share/man/man1/mariadb-import.1
+usr/share/man/man1/mariadb-plugin.1
+usr/share/man/man1/mariadb-slap.1
+usr/share/man/man1/mariadb-waitpid.1
 usr/share/man/man1/mysql_find_rows.1
 usr/share/man/man1/mysql_fix_extensions.1
 usr/share/man/man1/mysql_waitpid.1

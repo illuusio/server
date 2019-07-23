@@ -60,7 +60,7 @@ function upgrade_system_tables_if_necessary() {
   # errors as the script is designed to be idempotent.
   LC_ALL=C $MYUPGRADE \
     2>&1 \
-    | egrep -v '^(1|@had|ERROR (1054|1060|1061))' \
+    | egrep -v '^(1|@had|ERROR (1051|1054|1060|1061|1146|1347|1348))' \
     | logger -p daemon.warn -i -t$0
 }
 
@@ -72,7 +72,7 @@ function check_root_accounts() {
   
   logger -p daemon.info -i -t$0 "Checking for insecure root accounts."
 
-  ret=$( echo "SELECT count(*) FROM mysql.user WHERE user='root' and password='' and plugin='';" | $MYSQL --skip-column-names )
+  ret=$( echo "SELECT count(*) FROM mysql.user WHERE user='root' and password='' and plugin in ('', 'mysql_native_password', 'mysql_old_password');" | $MYSQL --skip-column-names )
   if [ "$ret" -ne "0" ]; then
     logger -p daemon.warn -i -t$0 "WARNING: mysql.user contains $ret root accounts without password or plugin!"
   fi

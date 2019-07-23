@@ -1,6 +1,13 @@
+usr/bin/mariadb
+usr/bin/mariadb-check
+usr/bin/mariadb-embedded
+usr/bin/mariadb-upgrade
 usr/bin/mysql
 usr/bin/mysql_embedded
 usr/bin/mysqlcheck
+usr/share/man/man1/mariadb-check.1
+usr/share/man/man1/mariadb-embedded.1
+usr/share/man/man1/mariadb.1
 usr/share/man/man1/mysql.1
 usr/share/man/man1/mysql_embedded.1
 usr/share/man/man1/mysqlcheck.1

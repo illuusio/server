@@ -126,6 +126,11 @@ the DB server over the network:
 
 Scripts should run as a user who have the required grants and be identified via unix_socket.
 
+It is wise to run scripts as the "mysql" system user. Like root,
+mysql@localhost is created by default to have all privileges in MariaDB
+and to use unix_socket authentication. But scripts running under "mysql"
+won't have system-wide root so they won't be able to corrupt your system.
+
 If you are too tired to type the password in every time and unix_socket auth
 doesn't suit your needs, you can store it in the file $HOME/.my.cnf. It should
 be chmod 0600 (-rw------- username usergroup .my.cnf) to ensure that nobody else
