@@ -2,3 +2,5 @@
 # False positive: unfortified calls have already been fully validated at compile-time
 # See full research at https://jira.mariadb.org/browse/MDEV-8377
 hardening-no-fortify-functions usr/lib/*/mariadb19/plugin/auth_pam.so
+# The .so strings inside the file are part of the text body, not man page includes.
+bad-so-link-within-manual-page usr/share/man/man1/mariadb-show.1.gz
