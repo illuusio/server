@@ -9,7 +9,6 @@ kFreeBSD-gettid.patch
 mytop-merge_src:mytop_improvements.patch
 0024-Revert-to-using-system-pcre-library.patch
 0025-Change-the-default-optimization-from-O3-to-O2-in-mys.patch
-hurd.patch
 mips-compilation-failure-__bss_start-symbol-miss.patch
 tokudb-libjemalloc.patch
 MDEV-18768-automate-auth_socket-to_unix_socket-upgrade.patch
