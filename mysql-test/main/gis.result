@@ -968,29 +968,29 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 SELECT COUNT(*) FROM t2 WHERE p=POINTFROMTEXT('POINT(1 2)');
 COUNT(*)
 1
-INSERT INTO t1 VALUES (POINTFROMTEXT('POINT(1 2)'));
-INSERT INTO t2 VALUES (POINTFROMTEXT('POINT(1 2)'));
+INSERT INTO t1 VALUES (POINTFROMTEXT('POINT(3 4)'));
+INSERT INTO t2 VALUES (POINTFROMTEXT('POINT(3 4)'));
 EXPLAIN 
 SELECT COUNT(*) FROM t1 WHERE p=POINTFROMTEXT('POINT(1 2)');
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
 SELECT COUNT(*) FROM t1 WHERE p=POINTFROMTEXT('POINT(1 2)');
 COUNT(*)
-2
+1
 EXPLAIN 
 SELECT COUNT(*) FROM t2 WHERE p=POINTFROMTEXT('POINT(1 2)');
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t2	ref	p	p	28	const	#	Using where
 SELECT COUNT(*) FROM t2 WHERE p=POINTFROMTEXT('POINT(1 2)');
 COUNT(*)
-2
+1
 EXPLAIN 
 SELECT COUNT(*) FROM t2 IGNORE INDEX(p) WHERE p=POINTFROMTEXT('POINT(1 2)');
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t2	ALL	NULL	NULL	NULL	NULL	2	Using where
 SELECT COUNT(*) FROM t2 IGNORE INDEX(p) WHERE p=POINTFROMTEXT('POINT(1 2)');
 COUNT(*)
-2
+1
 DROP TABLE t1, t2;
 End of 5.0 tests
 #
@@ -4971,4 +4971,73 @@ SELECT IS_USED_LOCK(POINT(1,1));
 ERROR HY000: Illegal parameter data type geometry for operation 'is_used_lock'
 #
 # End of 10.3 tests
+#
+#
+# Start of 10.4 tests
+#
+#
+# MDEV-16351 JSON_OBJECT() treats hybrid functions with boolean arguments as numbers
+#
+SELECT ST_SRID(TRUE);
+ERROR HY000: Illegal parameter data type boolean for operation 'srid'
+SELECT ST_SRID(COALESCE(TRUE,TRUE));
+ERROR HY000: Illegal parameter data type boolean for operation 'srid'
+CREATE TABLE t1 (a INT);
+INSERT INTO t1 VALUES (1),(2),(3);
+SELECT ST_SRID((SELECT MAX(a)>3 FROM t1));
+ERROR HY000: Illegal parameter data type boolean for operation 'srid'
+SELECT ST_SRID(MAX(a>3)) FROM t1;
+ERROR HY000: Illegal parameter data type boolean for operation 'srid'
+SELECT ST_SRID((SELECT MAX(a>3) FROM t1));
+ERROR HY000: Illegal parameter data type boolean for operation 'srid'
+DROP TABLE t1;
+#
+# Mixing GEOMETRY with HEX hybrid
+#
+SELECT 0x60=POINT(1,1), POINT(1,1)=0x60;
+0x60=POINT(1,1)	POINT(1,1)=0x60
+0	0
+CREATE TABLE t1 AS SELECT
+COALESCE(0x60,POINT(1,1)),
+COALESCE(POINT(1,1),0x60),
+LEAST(0x60,POINT(1,1)),
+LEAST(POINT(1,1),0x60);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `COALESCE(0x60,POINT(1,1))` longblob DEFAULT NULL,
+  `COALESCE(POINT(1,1),0x60)` longblob DEFAULT NULL,
+  `LEAST(0x60,POINT(1,1))` longblob DEFAULT NULL,
+  `LEAST(POINT(1,1),0x60)` longblob DEFAULT NULL
+) ENGINE=MyISAM DEFAULT CHARSET=latin1
+DROP TABLE t1;
+SELECT 0x60+POINT(1,1);
+ERROR HY000: Illegal parameter data types bigint and geometry for operation '+'
+SELECT POINT(1,1)+0x60;
+ERROR HY000: Illegal parameter data types geometry and bigint for operation '+'
+#
+# MDEV-16454 Bad results for IN with ROW
+#
+SELECT (1,0) IN ((POINT(1,1),0),(0,0));
+ERROR HY000: Illegal parameter data types int and geometry for operation 'in'
+SELECT (1,(0,0)) IN ((1,(POINT(1,1),0)),(0,(0,0)));
+ERROR HY000: Illegal parameter data types int and geometry for operation 'in'
+#
+# MDEV-19819 ALTER from POINT to LINESTRING erroneously preserves POINT values
+#
+CREATE TABLE t1 (a POINT) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (Point(0,0));
+ALTER TABLE t1 MODIFY a LINESTRING;
+ERROR 22007: Incorrect LINESTRING value: 'POINT' for column `test`.`t1`.`a` at row 1
+DROP TABLE t1;
+CREATE TABLE t1 (a LINESTRING);
+CREATE TABLE t2 (a POINT);
+INSERT INTO t2 VALUES (POINT(0,0));
+INSERT INTO t1 SELECT * FROM t2;
+ERROR 22007: Incorrect LINESTRING value: 'POINT' for column `test`.`t1`.`a` at row 1
+SELECT AsText(a) FROM t1;
+AsText(a)
+DROP TABLE t1, t2;
+#
+# End of 10.4 tests
 #

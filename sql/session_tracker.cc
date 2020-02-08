@@ -380,11 +380,15 @@ bool Session_sysvars_tracker::enable(THD *thd)
 bool Session_sysvars_tracker::update(THD *thd, set_var *var)
 {
   vars_list tool_list;
-  void *copy= var->save_result.string_value.str ?
-              my_memdup(var->save_result.string_value.str,
-                        var->save_result.string_value.length + 1,
-                        MYF(MY_WME | MY_THREAD_SPECIFIC)) :
-              my_strdup("", MYF(MY_WME | MY_THREAD_SPECIFIC));
+  void *copy;
+  size_t length= 1;
+
+  if (var->save_result.string_value.str)
+    copy= my_memdup(var->save_result.string_value.str,
+                    (length= var->save_result.string_value.length + 1),
+                    MYF(MY_WME | MY_THREAD_SPECIFIC));
+    else
+      copy= my_strdup("", MYF(MY_WME | MY_THREAD_SPECIFIC));
 
   if (!copy)
     return true;
@@ -402,7 +406,7 @@ bool Session_sysvars_tracker::update(THD *thd, set_var *var)
   m_parsed= true;
   orig_list.copy(&tool_list, thd);
   orig_list.construct_var_list(thd->variables.session_track_system_variables,
-                               var->save_result.string_value.length + 1);
+                               length);
   return false;
 }
 
@@ -735,7 +739,7 @@ bool Transaction_state_tracker::store(THD *thd, String *buf)
   if ((thd->variables.session_track_transaction_info == TX_TRACK_CHISTICS) &&
       (tx_changed & TX_CHG_CHISTICS))
   {
-    bool is_xa= (thd->transaction.xid_state.xa_state != XA_NOTR);
+    bool is_xa= thd->transaction.xid_state.is_explicit_XA();
     size_t start;
 
     /* 2 length by 1 byte and code */
@@ -912,7 +916,7 @@ bool Transaction_state_tracker::store(THD *thd, String *buf)
 
       if ((tx_curr_state & TX_EXPLICIT) && is_xa)
       {
-        XID *xid= &thd->transaction.xid_state.xid;
+        XID *xid= thd->transaction.xid_state.get_xid();
         long glen, blen;
 
         buf->append(STRING_WITH_LEN("XA START"));

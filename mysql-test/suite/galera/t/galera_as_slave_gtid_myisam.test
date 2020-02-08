@@ -15,9 +15,8 @@
 
 # As node #1 is not a Galera node, we connect to node #2 in order to run include/galera_cluster.inc
 --connect node_2a, 127.0.0.1, root, , test, $NODE_MYPORT_2
---source include/galera_cluster.inc
 
---connection node_2
+--connection node_2a
 # make sure gtid_slave_pos is of innodb engine, mtr does not currently provide that
 ALTER TABLE mysql.gtid_slave_pos engine = InnoDB;
 
@@ -26,14 +25,14 @@ ALTER TABLE mysql.gtid_slave_pos engine = InnoDB;
 --enable_query_log
 START SLAVE;
 
---connection node_1
+--connection default
 CREATE TABLE t1 (f1 INTEGER PRIMARY KEY) ENGINE=MyISAM;
 INSERT INTO t1 VALUES(1);
 
 SELECT LENGTH(@@global.gtid_binlog_state) > 1;
 --let $gtid_binlog_state_node1 = `SELECT @@global.gtid_binlog_state;`
 
---connection node_2
+--connection node_2a
 --let $wait_condition = SELECT COUNT(*) = 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 't1';
 --source include/wait_condition.inc
 
@@ -52,14 +51,24 @@ SELECT COUNT(*) = 0 FROM t1;
 --enable_query_log
 
 --echo #cleanup
---connection node_1
+--connection default
 DROP TABLE t1;
 reset master;
 
---connection node_2
+--connection node_2a
+--let $wait_condition = SELECT COUNT(*) = 0 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 't1';
+--source include/wait_condition.inc
 STOP SLAVE;
 RESET SLAVE ALL;
+set global wsrep_on=OFF;
 reset master;
+set global wsrep_on=ON;
 
 --connection node_3
+--let $wait_condition = SELECT COUNT(*) = 0 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 't1';
+--source include/wait_condition.inc
+
+set global wsrep_on=OFF;
 reset master;
+set global wsrep_on=ON;
+

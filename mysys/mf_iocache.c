@@ -496,10 +496,17 @@ my_bool reinit_io_cache(IO_CACHE *info, enum cache_type type,
   {
     /*
       If we change from WRITE_CACHE to READ_CACHE, assume that everything
-      after the current positions should be ignored
+      after the current positions should be ignored. In other cases we
+      update end_of_file as it may have changed since last init.
     */
-    if (info->type == WRITE_CACHE && type == READ_CACHE)
-      info->end_of_file=my_b_tell(info);
+    if (type == READ_CACHE)
+    {
+      if (info->type == WRITE_CACHE)
+	info->end_of_file= my_b_tell(info);
+      else
+	info->end_of_file= mysql_file_seek(info->file, 0L, MY_SEEK_END,
+					   MYF(0));
+    }
     /* flush cache if we want to reuse it */
     if (!clear_cache && my_b_flush_io_cache(info,1))
       DBUG_RETURN(1);
@@ -1546,8 +1553,7 @@ int _my_b_async_read(IO_CACHE *info, uchar *Buffer, size_t Count)
     if (info->aio_result.result.aio_errno)
     {
       if (info->myflags & MY_WME)
-	my_error(EE_READ, MYF(ME_BELL+ME_WAITTANG),
-		 my_filename(info->file),
+	my_error(EE_READ, MYF(ME_BELL), my_filename(info->file),
 		 info->aio_result.result.aio_errno);
       my_errno=info->aio_result.result.aio_errno;
       info->error= -1;
@@ -1640,8 +1646,7 @@ int _my_b_async_read(IO_CACHE *info, uchar *Buffer, size_t Count)
       if (Count != use_length)
       {					/* Didn't find hole block */
 	if (info->myflags & (MY_WME | MY_FAE | MY_FNABP) && Count != org_Count)
-	  my_error(EE_EOFERR, MYF(ME_BELL+ME_WAITTANG),
-		   my_filename(info->file),my_errno);
+	  my_error(EE_EOFERR, MYF(ME_BELL), my_filename(info->file), my_errno);
 	info->error=(int) (read_length+left_length);
 	return 1;
       }

@@ -170,7 +170,7 @@ mtr_t::release_block_at_savepoint(
 
 	ut_a(slot->object == block);
 
-	buf_block_unfix(reinterpret_cast<buf_block_t*>(block));
+	reinterpret_cast<buf_block_t*>(block)->unfix();
 
 	buf_page_release_latch(block, slot->type);
 
@@ -226,22 +226,4 @@ mtr_t::set_log_mode(mtr_log_t mode)
 
 	ut_ad(0);
 	return(old_mode);
-}
-
-/**
-Reads 1 - 4 bytes from a file page buffered in the buffer pool.
-@return	value read */
-
-ulint
-mtr_t::read_ulint(const byte* ptr, mlog_id_t type) const
-{
-	ut_ad(is_active());
-
-	ut_ad(memo_contains_page_flagged(
-			ptr,
-			MTR_MEMO_PAGE_S_FIX
-			| MTR_MEMO_PAGE_X_FIX
-			| MTR_MEMO_PAGE_SX_FIX));
-
-	return(mach_read_ulint(ptr, type));
 }

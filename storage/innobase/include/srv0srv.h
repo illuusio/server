@@ -47,7 +47,6 @@ Created 10/10/1995 Heikki Tuuri
 #include "que0types.h"
 #include "trx0types.h"
 #include "srv0conc.h"
-#include "buf0checksum.h"
 #include "fil0fil.h"
 
 #include "mysql/psi/mysql_stage.h"
@@ -144,7 +143,8 @@ struct srv_stats_t
 	ulint_ctr_1_t		n_lock_wait_count;
 
 	/** Number of threads currently waiting on database locks */
-	simple_atomic_counter<>	n_lock_wait_current_count;
+	MY_ALIGNED(CACHE_LINE_SIZE) Atomic_counter<ulint>
+				n_lock_wait_current_count;
 
 	/** Number of rows read. */
 	ulint_ctr_64_t		n_rows_read;
@@ -175,9 +175,6 @@ struct srv_stats_t
 
 	/** Number of times prefix optimization avoided triggering cluster lookup */
 	ulint_ctr_64_t		n_sec_rec_cluster_reads_avoided;
-
-	/** Number of times page 0 is read from tablespace */
-	ulint_ctr_64_t		page0_read;
 
 	/** Number of encryption_get_latest_key_version calls */
 	ulint_ctr_64_t		n_key_requests;
@@ -457,7 +454,7 @@ extern uint	srv_fast_shutdown;	/*!< If this is 1, do not do a
 
 /** Signal to shut down InnoDB (NULL if shutdown was signaled, or if
 running in innodb_read_only mode, srv_read_only_mode) */
-extern st_my_thread_var *srv_running;
+extern std::atomic<st_my_thread_var *> srv_running;
 
 extern ibool	srv_innodb_status;
 
@@ -548,7 +545,6 @@ extern uint	srv_sys_space_size_debug;
 extern bool	srv_log_files_created;
 #endif /* UNIV_DEBUG */
 
-#define SRV_SEMAPHORE_WAIT_EXTENSION	7200
 extern ulint	srv_dml_needed_delay;
 
 #define SRV_MAX_N_IO_THREADS	130
@@ -912,23 +908,6 @@ srv_purge_wakeup();
 /** Shut down the purge threads. */
 void srv_purge_shutdown();
 
-/** Check if tablespace is being truncated.
-(Ignore system-tablespace as we don't re-create the tablespace
-and so some of the action that are suppressed by this function
-for independent tablespace are not applicable to system-tablespace).
-@param	space_id	space_id to check for truncate action
-@return true		if being truncated, false if not being
-			truncated or tablespace is system-tablespace. */
-bool
-srv_is_tablespace_truncated(ulint space_id);
-
-/** Check if tablespace was truncated.
-@param[in]	space	space object to check for truncate action
-@return true if tablespace was truncated and we still have an active
-MLOG_TRUNCATE REDO log record. */
-bool
-srv_was_tablespace_truncated(const fil_space_t* space);
-
 #ifdef UNIV_DEBUG
 /** Disables master thread. It's used by:
 	SET GLOBAL innodb_master_thread_disabled_debug = 1 (0).
@@ -983,7 +962,6 @@ struct export_var_t{
 	ulint innodb_page_size;			/*!< srv_page_size */
 	ulint innodb_pages_created;		/*!< buf_pool->stat.n_pages_created */
 	ulint innodb_pages_read;		/*!< buf_pool->stat.n_pages_read*/
-	ulint innodb_page0_read;		/*!< srv_stats.page0_read */
 	ulint innodb_pages_written;		/*!< buf_pool->stat.n_pages_written */
 	ulint innodb_row_lock_waits;		/*!< srv_n_lock_wait_count */
 	ulint innodb_row_lock_current_waits;	/*!< srv_n_lock_wait_current_count */

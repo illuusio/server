@@ -24,7 +24,9 @@
 #include "my_decimal.h"                         /* my_decimal */
 #include "mysql_com.h"                     /* SERVER_VERSION_LENGTH */
 #include "my_atomic.h"
+#include "my_counter.h"
 #include "mysql/psi/mysql_file.h"          /* MYSQL_FILE */
+#include "mysql/psi/mysql_socket.h"        /* MYSQL_SOCKET */
 #include "sql_list.h"                      /* I_List */
 #include "sql_cmd.h"
 #include <my_rnd.h>
@@ -40,15 +42,7 @@ struct scheduler_functions;
 
 typedef struct st_mysql_show_var SHOW_VAR;
 
-#if MAX_INDEXES <= 64
-typedef Bitmap<64>  key_map;          /* Used for finding keys */
-#elif MAX_INDEXES > 128
-#error "MAX_INDEXES values greater than 128 is not supported."
-#else
-typedef Bitmap<((MAX_INDEXES+7)/8*8)> key_map; /* Used for finding keys */
-#endif
-
-	/* Bits from testflag */
+/* Bits from testflag */
 #define TEST_PRINT_CACHED_TABLES 1U
 #define TEST_NO_KEY_GROUP	 2U
 #define TEST_MIT_THREAD		4U
@@ -81,11 +75,10 @@ enum enum_slave_parallel_mode {
 };
 
 /* Function prototypes */
-void kill_mysql(THD *thd= 0);
+void kill_mysql(THD *thd);
 void close_connection(THD *thd, uint sql_errno= 0);
 void handle_connection_in_main_thread(CONNECT *thd);
 void create_thread_to_handle_connection(CONNECT *connect);
-void signal_thd_deleted();
 void unlink_thd(THD *thd);
 bool one_thread_per_connection_end(THD *thd, bool put_in_cache);
 void flush_thread_cache();
@@ -93,6 +86,11 @@ void refresh_status(THD *thd);
 bool is_secure_file_path(char *path);
 void dec_connection_count(scheduler_functions *scheduler);
 extern void init_net_server_extension(THD *thd);
+extern void handle_accepted_socket(MYSQL_SOCKET new_sock, MYSQL_SOCKET sock);
+extern void create_new_thread(CONNECT *connect);
+
+extern void ssl_acceptor_stats_update(int sslaccept_ret);
+extern int reinit_ssl();
 
 extern "C" MYSQL_PLUGIN_IMPORT CHARSET_INFO *system_charset_info;
 extern MYSQL_PLUGIN_IMPORT CHARSET_INFO *files_charset_info ;
@@ -122,7 +120,6 @@ extern bool opt_ignore_builtin_innodb;
 extern my_bool opt_character_set_client_handshake;
 extern my_bool debug_assert_on_not_freed_memory;
 extern bool volatile abort_loop;
-extern bool volatile in_bootstrap;
 extern uint connection_count;
 extern my_bool opt_safe_user_create;
 extern my_bool opt_safe_show_db, opt_local_infile, opt_myisam_use_mmap;
@@ -153,6 +150,7 @@ extern ulong opt_replicate_events_marked_for_skip;
 extern char *default_tz_name;
 extern Time_zone *default_tz;
 extern char *my_bind_addr_str;
+extern int server_socket_ai_family;
 extern char *default_storage_engine, *default_tmp_storage_engine;
 extern char *enforced_storage_engine;
 extern char *gtid_pos_auto_engines;
@@ -219,7 +217,7 @@ extern ulonglong thd_startup_options;
 extern my_thread_id global_thread_id;
 extern ulong binlog_cache_use, binlog_cache_disk_use;
 extern ulong binlog_stmt_cache_use, binlog_stmt_cache_disk_use;
-extern ulong aborted_threads,aborted_connects;
+extern ulong aborted_threads, aborted_connects, aborted_connects_preauth;
 extern ulong delayed_insert_timeout;
 extern ulong delayed_insert_limit, delayed_queue_size;
 extern ulong delayed_insert_threads, delayed_insert_writes;
@@ -232,6 +230,7 @@ extern ulong slow_launch_threads, slow_launch_time;
 extern MYSQL_PLUGIN_IMPORT ulong max_connections;
 extern uint max_digest_length;
 extern ulong max_connect_errors, connect_timeout;
+extern uint max_password_errors;
 extern my_bool slave_allow_batching;
 extern my_bool allow_slave_start;
 extern LEX_CSTRING reason_slave_blocked;
@@ -248,7 +247,7 @@ extern ulonglong max_binlog_cache_size, max_binlog_stmt_cache_size;
 extern ulong max_binlog_size;
 extern ulong slave_max_allowed_packet;
 extern ulong opt_binlog_rows_event_max_size;
-extern ulong rpl_recovery_rank, thread_cache_size;
+extern ulong thread_cache_size;
 extern ulong stored_program_cache_size;
 extern ulong opt_slave_parallel_threads;
 extern ulong opt_slave_domain_parallel_threads;
@@ -257,6 +256,7 @@ extern ulong opt_slave_parallel_mode;
 extern ulong opt_binlog_commit_wait_count;
 extern ulong opt_binlog_commit_wait_usec;
 extern my_bool opt_gtid_ignore_duplicates;
+extern uint opt_gtid_cleanup_batch_size;
 extern ulong back_log;
 extern ulong executed_events;
 extern char language[FN_REFLEN];
@@ -286,11 +286,8 @@ extern int mysqld_server_started, mysqld_server_initialized;
 extern "C" MYSQL_PLUGIN_IMPORT int orig_argc;
 extern "C" MYSQL_PLUGIN_IMPORT char **orig_argv;
 extern pthread_attr_t connection_attrib;
-extern MYSQL_FILE *bootstrap_file;
 extern my_bool old_mode;
 extern LEX_STRING opt_init_connect, opt_init_slave;
-extern int bootstrap_error;
-extern I_List<THD> threads;
 extern char err_shared_dir[];
 extern ulong connection_errors_select;
 extern ulong connection_errors_accept;
@@ -304,6 +301,8 @@ extern my_bool encrypt_tmp_disk_tables, encrypt_tmp_files;
 extern ulong encryption_algorithm;
 extern const char *encryption_algorithm_names[];
 extern long opt_secure_timestamp;
+extern uint default_password_lifetime;
+extern my_bool disconnect_on_expired_password;
 
 enum secure_timestamp { SECTIME_NO, SECTIME_SUPER, SECTIME_REPL, SECTIME_YES };
 
@@ -327,7 +326,7 @@ extern PSI_mutex_key key_BINLOG_LOCK_index, key_BINLOG_LOCK_xid_list,
   key_LOCK_logger, key_LOCK_manager,
   key_LOCK_prepared_stmt_count,
   key_LOCK_rpl_status, key_LOCK_server_started,
-  key_LOCK_status, key_LOCK_show_status,
+  key_LOCK_status,
   key_LOCK_thd_data, key_LOCK_thd_kill,
   key_LOCK_user_conn, key_LOG_LOCK_log,
   key_master_info_data_lock, key_master_info_run_lock,
@@ -337,7 +336,8 @@ extern PSI_mutex_key key_BINLOG_LOCK_index, key_BINLOG_LOCK_xid_list,
   key_rpl_group_info_sleep_lock,
   key_structure_guard_mutex, key_TABLE_SHARE_LOCK_ha_data,
   key_LOCK_start_thread,
-  key_LOCK_error_messages, key_LOCK_thread_count, key_PARTITION_LOCK_auto_inc;
+  key_LOCK_error_messages,
+  key_PARTITION_LOCK_auto_inc;
 extern PSI_mutex_key key_RELAYLOG_LOCK_index;
 extern PSI_mutex_key key_LOCK_relaylog_end_pos;
 extern PSI_mutex_key key_LOCK_slave_state, key_LOCK_binlog_state,
@@ -353,7 +353,8 @@ extern PSI_rwlock_key key_rwlock_LOCK_grant, key_rwlock_LOCK_logger,
   key_rwlock_LOCK_sys_init_connect, key_rwlock_LOCK_sys_init_slave,
   key_rwlock_LOCK_system_variables_hash, key_rwlock_query_cache_query_lock,
   key_LOCK_SEQUENCE,
-  key_rwlock_LOCK_vers_stats, key_rwlock_LOCK_stat_serial;
+  key_rwlock_LOCK_vers_stats, key_rwlock_LOCK_stat_serial,
+  key_rwlock_THD_list;
 
 #ifdef HAVE_MMAP
 extern PSI_cond_key key_PAGE_cond, key_COND_active, key_COND_pool;
@@ -373,7 +374,7 @@ extern PSI_cond_key key_BINLOG_COND_xid_list, key_BINLOG_update_cond,
   key_rpl_group_info_sleep_cond,
   key_TABLE_SHARE_cond, key_user_level_lock_cond,
   key_COND_start_thread,
-  key_COND_thread_count, key_COND_thread_cache, key_COND_flush_thread_cache;
+  key_COND_thread_cache, key_COND_flush_thread_cache;
 extern PSI_cond_key key_RELAYLOG_COND_relay_log_updated,
   key_RELAYLOG_COND_bin_log_updated, key_COND_wakeup_ready,
   key_COND_wait_commit;
@@ -385,7 +386,7 @@ extern PSI_cond_key key_COND_rpl_thread, key_COND_rpl_thread_queue,
 extern PSI_cond_key key_COND_wait_gtid, key_COND_gtid_ignore_duplicates;
 extern PSI_cond_key key_TABLE_SHARE_COND_rotation;
 
-extern PSI_thread_key key_thread_bootstrap, key_thread_delayed_insert,
+extern PSI_thread_key key_thread_delayed_insert,
   key_thread_handle_manager, key_thread_kill_server, key_thread_main,
   key_thread_one_connection, key_thread_signal_hand,
   key_thread_slave_background, key_rpl_parallel_thread;
@@ -611,14 +612,14 @@ extern MYSQL_PLUGIN_IMPORT key_map key_map_full;          /* Should be threaded 
   Server mutex locks and condition variables.
  */
 extern mysql_mutex_t
-       LOCK_item_func_sleep, LOCK_status, LOCK_show_status,
+       LOCK_item_func_sleep, LOCK_status,
        LOCK_error_log, LOCK_delayed_insert, LOCK_short_uuid_generator,
        LOCK_delayed_status, LOCK_delayed_create, LOCK_crypt, LOCK_timezone,
-       LOCK_slave_list, LOCK_active_mi, LOCK_manager, LOCK_user_conn,
+       LOCK_active_mi, LOCK_manager, LOCK_user_conn,
        LOCK_prepared_stmt_count, LOCK_error_messages, LOCK_connection_count,
        LOCK_slave_background;
-extern MYSQL_PLUGIN_IMPORT mysql_mutex_t LOCK_thread_count,
-  LOCK_global_system_variables;
+extern MYSQL_PLUGIN_IMPORT mysql_mutex_t LOCK_global_system_variables;
+extern mysql_rwlock_t LOCK_all_status_vars;
 extern mysql_mutex_t LOCK_start_thread;
 #ifdef HAVE_OPENSSL
 extern char* des_key_file;
@@ -627,14 +628,16 @@ extern mysql_mutex_t LOCK_des_key_file;
 extern mysql_mutex_t LOCK_server_started;
 extern mysql_cond_t COND_server_started;
 extern mysql_rwlock_t LOCK_grant, LOCK_sys_init_connect, LOCK_sys_init_slave;
+extern mysql_rwlock_t LOCK_ssl_refresh;
 extern mysql_prlock_t LOCK_system_variables_hash;
-extern mysql_cond_t COND_thread_count, COND_start_thread;
+extern mysql_cond_t COND_start_thread;
 extern mysql_cond_t COND_manager;
 extern mysql_cond_t COND_slave_background;
-extern int32 thread_count, service_thread_count;
+extern Atomic_counter<uint32_t> thread_count;
 
 extern char *opt_ssl_ca, *opt_ssl_capath, *opt_ssl_cert, *opt_ssl_cipher,
   *opt_ssl_key, *opt_ssl_crl, *opt_ssl_crlpath;
+extern ulonglong tls_version;
 
 extern MYSQL_PLUGIN_IMPORT pthread_key(THD*, THR_THD);
 
@@ -697,6 +700,7 @@ enum options_mysqld
   OPT_WSREP_SYNC_WAIT,
 #endif /* WITH_WSREP */
   OPT_MYSQL_COMPATIBILITY,
+  OPT_TLS_VERSION,
   OPT_MYSQL_TO_BE_IMPLEMENTED,
   OPT_which_is_always_the_last
 };
@@ -734,6 +738,8 @@ enum enum_query_type
   /// SHOW CREATE {VIEW|PROCEDURE|FUNCTION} and other cases where the
   /// original representation is required, should set this flag.
   QT_ITEM_ORIGINAL_FUNC_NULLIF= (1 << 7),
+  /// good for parsing
+  QT_PARSABLE= (1 << 8),
 
   /// This value means focus on readability, not on ability to parse back, etc.
   QT_EXPLAIN=           QT_TO_SYSTEM_CHARSET |
@@ -758,8 +764,6 @@ enum enum_query_type
 
 /* query_id */
 extern query_id_t global_query_id;
-
-ATTRIBUTE_NORETURN void unireg_end(void);
 
 /* increment query_id and return it.  */
 inline __attribute__((warn_unused_result)) query_id_t next_query_id()

@@ -43,6 +43,7 @@ Created 9/17/2000 Heikki Tuuri
 extern ibool row_rollback_on_timeout;
 
 struct row_prebuilt_t;
+class ha_innobase;
 
 /*******************************************************************//**
 Frees the blob heap in prebuilt when no longer needed. */
@@ -417,7 +418,7 @@ will remain locked.
 @param[in]	create_failed	true=create table failed
 				because e.g. foreign key column
 @param[in]	nonatomic	Whether it is permitted to release
-				and reacquire dict_operation_lock
+				and reacquire dict_sys.latch
 @return error code */
 dberr_t
 row_drop_table_for_mysql(
@@ -777,10 +778,14 @@ struct row_prebuilt_t {
 					store it here so that we can return
 					it to MySQL */
 	/*----------------------*/
-	void*		idx_cond;	/*!< In ICP, pointer to a ha_innobase,
-					passed to innobase_index_cond().
-					NULL if index condition pushdown is
-					not used. */
+
+	/** Argument of handler_rowid_filter_check(),
+	or NULL if no PRIMARY KEY filter is pushed */
+	ha_innobase*	pk_filter;
+
+	/** Argument to handler_index_cond_check(),
+	or NULL if no index condition pushdown (ICP) is used. */
+	ha_innobase*	idx_cond;
 	ulint		idx_cond_n_cols;/*!< Number of fields in idx_cond_cols.
 					0 if and only if idx_cond == NULL. */
 	/*----------------------*/

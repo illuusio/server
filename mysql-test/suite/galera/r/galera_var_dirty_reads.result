@@ -1,3 +1,5 @@
+connection node_2;
+connection node_1;
 call mtr.add_suppression("WSREP has not yet prepared node for application use");
 connection node_1;
 connection node_2;
@@ -15,7 +17,7 @@ Variable_name	Value
 wsrep_ready	OFF
 SHOW STATUS LIKE 'wsrep_cluster_status';
 Variable_name	Value
-wsrep_cluster_status	non-Primary
+wsrep_cluster_status	Disconnected
 SELECT * FROM t1;
 Got one of the listed errors
 SELECT 1 FROM t1;
@@ -51,4 +53,3 @@ i
 DROP TABLE t1;
 disconnect node_2;
 disconnect node_1;
-# End of test

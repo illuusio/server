@@ -1,3 +1,5 @@
+connection node_2;
+connection node_1;
 connection node_1;
 call mtr.add_suppression("WSREP: RSU failed due to pending transactions, schema: test, query ALTER.*");
 call mtr.add_suppression("WSREP: ALTER TABLE isolation failure");
@@ -395,14 +397,14 @@ SELECT COUNT(*) FROM t1;
 COUNT(*)
 350
 connection node_2;
-call mtr.add_suppression("WSREP: Sending JOIN failed:.*");
-call p1(100);;
+call mtr.add_suppression("WSREP: Sending JOIN failed:");
+call p1(10);
 connection node_3;
-call mtr.add_suppression("WSREP: Sending JOIN failed:.*");
-call p1(100);;
+call mtr.add_suppression("WSREP: Sending JOIN failed:");
+call p1(10);
 connection node_4;
-call mtr.add_suppression("WSREP: Sending JOIN failed:.*");
-call p1(100);;
+call mtr.add_suppression("WSREP: Sending JOIN failed:");
+call p1(10);
 connection node_1;
 SET SESSION wsrep_OSU_method='RSU';
 SELECT @@wsrep_OSU_method;

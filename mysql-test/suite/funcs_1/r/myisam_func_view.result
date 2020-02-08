@@ -2474,12 +2474,12 @@ my_time, id FROM t1_values
 WHERE select_id = 93 OR select_id IS NULL order by id;
 CAST(my_time AS UNSIGNED INTEGER)	my_time	id
 NULL	NULL	1
-18446744073701165657	-838:59:59	2
+0	-838:59:59	2
 8385959	838:59:59	3
 130000	13:00:00	4
 100000	10:00:00	5
 Warnings:
-Note	1105	Cast to unsigned converted negative integer to it's positive complement
+Note	1916	Got overflow when converting '-838:59:59' to UNSIGNED BIGINT. Value truncated
 SHOW CREATE VIEW v1;
 View	Create View	character_set_client	collation_connection
 v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select cast(`t1_values`.`my_time` as unsigned) AS `CAST(my_time AS UNSIGNED INTEGER)`,`t1_values`.`my_time` AS `my_time`,`t1_values`.`id` AS `id` from `t1_values`	latin1	latin1_swedish_ci
@@ -2488,12 +2488,12 @@ WHERE v1.id IN (SELECT id FROM t1_values
 WHERE select_id = 93 OR select_id IS NULL) order by id;
 CAST(my_time AS UNSIGNED INTEGER)	my_time	id
 NULL	NULL	1
-18446744073701165657	-838:59:59	2
+0	-838:59:59	2
 8385959	838:59:59	3
 130000	13:00:00	4
 100000	10:00:00	5
 Warnings:
-Note	1105	Cast to unsigned converted negative integer to it's positive complement
+Note	1916	Got overflow when converting '-838:59:59' to UNSIGNED BIGINT. Value truncated
 DROP VIEW v1;
 
 
@@ -2582,15 +2582,14 @@ my_double, id FROM t1_values
 WHERE select_id = 89 OR select_id IS NULL order by id;
 CAST(my_double AS UNSIGNED INTEGER)	my_double	id
 NULL	NULL	1
-9223372036854775808	-1.7976931348623e308	2
-9223372036854775807	1.7976931348623e308	3
+0	-1.7976931348623e308	2
+18446744073709551615	1.7976931348623e308	3
 0	0	4
-18446744073709551615	-1	5
+0	-1	5
 Warnings:
-Warning	1916	Got overflow when converting '-1.7976931348623e308' to INT. Value truncated
-Note	1105	Cast to unsigned converted negative integer to it's positive complement
-Warning	1916	Got overflow when converting '1.7976931348623e308' to INT. Value truncated
-Note	1105	Cast to unsigned converted negative integer to it's positive complement
+Note	1916	Got overflow when converting '-1.7976931348623e308' to UNSIGNED BIGINT. Value truncated
+Note	1916	Got overflow when converting '1.7976931348623e308' to UNSIGNED BIGINT. Value truncated
+Note	1916	Got overflow when converting '-1' to UNSIGNED BIGINT. Value truncated
 SHOW CREATE VIEW v1;
 View	Create View	character_set_client	collation_connection
 v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select cast(`t1_values`.`my_double` as unsigned) AS `CAST(my_double AS UNSIGNED INTEGER)`,`t1_values`.`my_double` AS `my_double`,`t1_values`.`id` AS `id` from `t1_values`	latin1	latin1_swedish_ci
@@ -2599,15 +2598,14 @@ WHERE v1.id IN (SELECT id FROM t1_values
 WHERE select_id = 89 OR select_id IS NULL) order by id;
 CAST(my_double AS UNSIGNED INTEGER)	my_double	id
 NULL	NULL	1
-9223372036854775808	-1.7976931348623e308	2
-9223372036854775807	1.7976931348623e308	3
+0	-1.7976931348623e308	2
+18446744073709551615	1.7976931348623e308	3
 0	0	4
-18446744073709551615	-1	5
+0	-1	5
 Warnings:
-Warning	1916	Got overflow when converting '-1.7976931348623e308' to INT. Value truncated
-Note	1105	Cast to unsigned converted negative integer to it's positive complement
-Warning	1916	Got overflow when converting '1.7976931348623e308' to INT. Value truncated
-Note	1105	Cast to unsigned converted negative integer to it's positive complement
+Note	1916	Got overflow when converting '-1.7976931348623e308' to UNSIGNED BIGINT. Value truncated
+Note	1916	Got overflow when converting '1.7976931348623e308' to UNSIGNED BIGINT. Value truncated
+Note	1916	Got overflow when converting '-1' to UNSIGNED BIGINT. Value truncated
 DROP VIEW v1;
 
 
@@ -2965,8 +2963,8 @@ NULL	NULL	1
 0	0	4
 -1	-1	5
 Warnings:
-Warning	1916	Got overflow when converting '-1.7976931348623e308' to INT. Value truncated
-Warning	1916	Got overflow when converting '1.7976931348623e308' to INT. Value truncated
+Note	1916	Got overflow when converting '-1.7976931348623e308' to SIGNED BIGINT. Value truncated
+Note	1916	Got overflow when converting '1.7976931348623e308' to SIGNED BIGINT. Value truncated
 SHOW CREATE VIEW v1;
 View	Create View	character_set_client	collation_connection
 v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select cast(`t1_values`.`my_double` as signed) AS `CAST(my_double AS SIGNED INTEGER)`,`t1_values`.`my_double` AS `my_double`,`t1_values`.`id` AS `id` from `t1_values`	latin1	latin1_swedish_ci
@@ -2980,8 +2978,8 @@ NULL	NULL	1
 0	0	4
 -1	-1	5
 Warnings:
-Warning	1916	Got overflow when converting '-1.7976931348623e308' to INT. Value truncated
-Warning	1916	Got overflow when converting '1.7976931348623e308' to INT. Value truncated
+Note	1916	Got overflow when converting '-1.7976931348623e308' to SIGNED BIGINT. Value truncated
+Note	1916	Got overflow when converting '1.7976931348623e308' to SIGNED BIGINT. Value truncated
 DROP VIEW v1;
 
 
@@ -3779,14 +3777,14 @@ WHERE select_id = 51 OR select_id IS NULL order by id;
 CAST(my_varbinary_1000 AS TIME)	my_varbinary_1000	id
 NULL	NULL	1
 NULL		2
-00:00:00	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
--00:00:00	 ---äÖüß@µ*$-- 	4
+NULL	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
+NULL	 ---äÖüß@µ*$-- 	4
 -00:00:01	-1	5
 41:58:00	1 17:58	23
 Warnings:
-Warning	1292	Truncated incorrect time value: ''
-Warning	1292	Truncated incorrect time value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
+Warning	1292	Incorrect time value: ''
+Warning	1292	Incorrect time value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
+Warning	1292	Incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
 SHOW CREATE VIEW v1;
 View	Create View	character_set_client	collation_connection
 v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select cast(`t1_values`.`my_varbinary_1000` as time) AS `CAST(my_varbinary_1000 AS TIME)`,`t1_values`.`my_varbinary_1000` AS `my_varbinary_1000`,`t1_values`.`id` AS `id` from `t1_values`	latin1	latin1_swedish_ci
@@ -3796,14 +3794,14 @@ WHERE select_id = 51 OR select_id IS NULL) order by id;
 CAST(my_varbinary_1000 AS TIME)	my_varbinary_1000	id
 NULL	NULL	1
 NULL		2
-00:00:00	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
--00:00:00	 ---äÖüß@µ*$-- 	4
+NULL	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
+NULL	 ---äÖüß@µ*$-- 	4
 -00:00:01	-1	5
 41:58:00	1 17:58	23
 Warnings:
-Warning	1292	Truncated incorrect time value: ''
-Warning	1292	Truncated incorrect time value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
+Warning	1292	Incorrect time value: ''
+Warning	1292	Incorrect time value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
+Warning	1292	Incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
 DROP VIEW v1;
 
 
@@ -3814,15 +3812,15 @@ my_binary_30, id FROM t1_values
 WHERE select_id = 50 OR select_id IS NULL order by id;
 CAST(my_binary_30 AS TIME)	my_binary_30	id
 NULL	NULL	1
-00:00:00		2
-00:00:00	<--------30 characters------->	3
--00:00:00	 ---äÖüß@µ*$-- 	4
+NULL		2
+NULL	<--------30 characters------->	3
+NULL	 ---äÖüß@µ*$-- 	4
 -00:00:01	-1	5
 41:58:00	1 17:58	22
 Warnings:
-Warning	1292	Truncated incorrect time value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect time value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+Warning	1292	Incorrect time value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+Warning	1292	Incorrect time value: '<--------30 characters------->'
+Warning	1292	Incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 Warning	1292	Truncated incorrect time value: '-1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 Warning	1292	Truncated incorrect time value: '1 17:58\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 SHOW CREATE VIEW v1;
@@ -3833,15 +3831,15 @@ WHERE v1.id IN (SELECT id FROM t1_values
 WHERE select_id = 50 OR select_id IS NULL) order by id;
 CAST(my_binary_30 AS TIME)	my_binary_30	id
 NULL	NULL	1
-00:00:00	                              	2
-00:00:00	<--------30 characters------->	3
--00:00:00	 ---äÖüß@µ*$--           	4
+NULL	                              	2
+NULL	<--------30 characters------->	3
+NULL	 ---äÖüß@µ*$--           	4
 -00:00:01	-1                            	5
 41:58:00	1 17:58                       	22
 Warnings:
-Warning	1292	Truncated incorrect time value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-Warning	1292	Truncated incorrect time value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+Warning	1292	Incorrect time value: '\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+Warning	1292	Incorrect time value: '<--------30 characters------->'
+Warning	1292	Incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 Warning	1292	Truncated incorrect time value: '-1\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 Warning	1292	Truncated incorrect time value: '1 17:58\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
 DROP VIEW v1;
@@ -3855,14 +3853,14 @@ WHERE select_id = 49 OR select_id IS NULL order by id;
 CAST(my_varchar_1000 AS TIME)	my_varchar_1000	id
 NULL	NULL	1
 NULL		2
-00:00:00	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
--00:00:00	 ---äÖüß@µ*$-- 	4
+NULL	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
+NULL	 ---äÖüß@µ*$-- 	4
 -00:00:01	-1	5
 41:58:00	1 17:58	21
 Warnings:
-Warning	1292	Truncated incorrect time value: ''
-Warning	1292	Truncated incorrect time value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
+Warning	1292	Incorrect time value: ''
+Warning	1292	Incorrect time value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
+Warning	1292	Incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
 SHOW CREATE VIEW v1;
 View	Create View	character_set_client	collation_connection
 v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select cast(`t1_values`.`my_varchar_1000` as time) AS `CAST(my_varchar_1000 AS TIME)`,`t1_values`.`my_varchar_1000` AS `my_varchar_1000`,`t1_values`.`id` AS `id` from `t1_values`	latin1	latin1_swedish_ci
@@ -3872,14 +3870,14 @@ WHERE select_id = 49 OR select_id IS NULL) order by id;
 CAST(my_varchar_1000 AS TIME)	my_varchar_1000	id
 NULL	NULL	1
 NULL		2
-00:00:00	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
--00:00:00	 ---äÖüß@µ*$-- 	4
+NULL	<---------1000 characters-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------->	3
+NULL	 ---äÖüß@µ*$-- 	4
 -00:00:01	-1	5
 41:58:00	1 17:58	21
 Warnings:
-Warning	1292	Truncated incorrect time value: ''
-Warning	1292	Truncated incorrect time value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
-Warning	1292	Truncated incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
+Warning	1292	Incorrect time value: ''
+Warning	1292	Incorrect time value: '<---------1000 characters-------------------------------------------------------------------------------------------------------'
+Warning	1292	Incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$-- '
 DROP VIEW v1;
 
 
@@ -3891,14 +3889,14 @@ WHERE select_id = 48 OR select_id IS NULL order by id;
 CAST(my_char_30 AS TIME)	my_char_30	id
 NULL	NULL	1
 NULL		2
-00:00:00	<--------30 characters------->	3
--00:00:00	 ---äÖüß@µ*$--	4
+NULL	<--------30 characters------->	3
+NULL	 ---äÖüß@µ*$--	4
 -00:00:01	-1	5
 41:58:00	1 17:58	20
 Warnings:
-Warning	1292	Truncated incorrect time value: ''
-Warning	1292	Truncated incorrect time value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$--'
+Warning	1292	Incorrect time value: ''
+Warning	1292	Incorrect time value: '<--------30 characters------->'
+Warning	1292	Incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$--'
 SHOW CREATE VIEW v1;
 View	Create View	character_set_client	collation_connection
 v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select cast(`t1_values`.`my_char_30` as time) AS `CAST(my_char_30 AS TIME)`,`t1_values`.`my_char_30` AS `my_char_30`,`t1_values`.`id` AS `id` from `t1_values`	latin1	latin1_swedish_ci
@@ -3908,14 +3906,14 @@ WHERE select_id = 48 OR select_id IS NULL) order by id;
 CAST(my_char_30 AS TIME)	my_char_30	id
 NULL	NULL	1
 NULL		2
-00:00:00	<--------30 characters------->	3
--00:00:00	 ---äÖüß@µ*$--	4
+NULL	<--------30 characters------->	3
+NULL	 ---äÖüß@µ*$--	4
 -00:00:01	-1	5
 41:58:00	1 17:58	20
 Warnings:
-Warning	1292	Truncated incorrect time value: ''
-Warning	1292	Truncated incorrect time value: '<--------30 characters------->'
-Warning	1292	Truncated incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$--'
+Warning	1292	Incorrect time value: ''
+Warning	1292	Incorrect time value: '<--------30 characters------->'
+Warning	1292	Incorrect time value: ' ---\xC3\xA4\xC3\x96\xC3\xBC\xC3\x9F@\xC2\xB5*$--'
 DROP VIEW v1;
 
 

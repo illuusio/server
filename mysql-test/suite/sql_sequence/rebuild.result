@@ -47,6 +47,7 @@ INNODB_SYS_VIRTUAL
 INNODB_TRX
 KEY_CACHES
 KEY_COLUMN_USAGE
+OPTIMIZER_TRACE
 PARAMETERS
 PARTITIONS
 PLUGINS
@@ -107,13 +108,13 @@ file_summary_by_event_name
 file_summary_by_instance
 func
 general_log
+global_priv
 global_suppressions
 gtid_slave_pos
 help_category
 help_keyword
 help_relation
 help_topic
-host
 host_cache
 hosts
 index_stats
@@ -156,6 +157,5 @@ time_zone_name
 time_zone_transition
 time_zone_transition_type
 transaction_registry
-user
 users
 DROP TABLE t1, t2, s1;

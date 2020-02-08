@@ -119,6 +119,19 @@ sp_rcontext *sp_rcontext::create(THD *thd,
 }
 
 
+bool Row_definition_list::append_uniq(MEM_ROOT *mem_root, Spvar_definition *var)
+{
+  DBUG_ASSERT(elements);
+  uint unused;
+  if (unlikely(find_row_field_by_name(&var->field_name, &unused)))
+  {
+    my_error(ER_DUP_FIELDNAME, MYF(0), var->field_name.str);
+    return true;
+  }
+  return push_back(var, mem_root);
+}
+
+
 bool Row_definition_list::
        adjust_formal_params_to_actual_params(THD *thd, List<Item> *args)
 {
@@ -228,9 +241,10 @@ bool Qualified_column_ident::resolve_type_ref(THD *thd, Column_definition *def)
   // Make %TYPE variables see temporary tables that shadow permanent tables
   thd->temporary_tables= open_tables_state_backup.temporary_tables;
 
-  if ((table_list= lex.select_lex.add_table_to_list(thd, this, NULL, 0,
-                                                    TL_READ_NO_INSERT,
-                                                    MDL_SHARED_READ)) &&
+  if ((table_list=
+         lex.first_select_lex()->add_table_to_list(thd, this, NULL, 0,
+                                                   TL_READ_NO_INSERT,
+                                                   MDL_SHARED_READ)) &&
       !check_table_access(thd, SELECT_ACL, table_list, TRUE, UINT_MAX, FALSE) &&
       !open_tables_only_view_structure(thd, table_list,
                                        thd->mdl_context.has_locks()))
@@ -286,9 +300,10 @@ bool Table_ident::resolve_table_rowtype_ref(THD *thd,
   // Make %ROWTYPE variables see temporary tables that shadow permanent tables
   thd->temporary_tables= open_tables_state_backup.temporary_tables;
 
-  if ((table_list= lex.select_lex.add_table_to_list(thd, this, NULL, 0,
-                                                    TL_READ_NO_INSERT,
-                                                    MDL_SHARED_READ)) &&
+  if ((table_list=
+         lex.first_select_lex()->add_table_to_list(thd, this, NULL, 0,
+                                                   TL_READ_NO_INSERT,
+                                                   MDL_SHARED_READ)) &&
       !check_table_access(thd, SELECT_ACL, table_list, TRUE, UINT_MAX, FALSE) &&
       !open_tables_only_view_structure(thd, table_list,
                                        thd->mdl_context.has_locks()))

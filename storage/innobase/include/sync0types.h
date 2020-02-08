@@ -28,7 +28,6 @@ Created 9/5/1995 Heikki Tuuri
 #define sync0types_h
 
 #include <vector>
-#include <my_atomic.h>
 
 #include "ut0new.h"
 
@@ -999,9 +998,6 @@ struct latch_t {
 	@return the string representation */
 	virtual std::string to_string() const = 0;
 
-	/** @return "filename:line" from where the latch was last locked */
-	virtual std::string locked_from() const = 0;
-
 	/** @return the latch level */
 	latch_level_t get_level() const
 		UNIV_NOTHROW
@@ -1042,7 +1038,7 @@ struct sync_checker : public sync_check_functor_t
 	/** Check the latching constraints
 	@param[in]	level		The level held by the thread
 	@return whether a latch violation was detected */
-	bool operator()(const latch_level_t level) const
+	bool operator()(const latch_level_t level) const override
 	{
 		if (some_allowed) {
 			switch (level) {
@@ -1086,7 +1082,7 @@ struct sync_allowed_latches : public sync_check_functor_t {
 
 	@param[in]	latch	The latch level to check
 	@return true if there is a latch violation */
-	bool operator()(const latch_level_t level) const
+	bool operator()(const latch_level_t level) const override
 	{
 		return(std::find(begin, end, level) == end);
 	}
@@ -1117,51 +1113,6 @@ enum rw_lock_flag_t {
 
 #endif /* UNIV_INNOCHECKSUM */
 
-static inline ulint my_atomic_addlint(ulint *A, ulint B)
-{
-#ifdef _WIN64
-  return ulint(my_atomic_add64((volatile int64*)A, B));
-#else
-  return ulint(my_atomic_addlong(A, B));
-#endif
-}
-
-static inline ulint my_atomic_loadlint(const ulint *A)
-{
-#ifdef _WIN64
-  return ulint(my_atomic_load64((volatile int64*)A));
-#else
-  return ulint(my_atomic_loadlong(A));
-#endif
-}
-
-static inline lint my_atomic_addlint(volatile lint *A, lint B)
-{
-#ifdef _WIN64
-  return my_atomic_add64((volatile int64*)A, B);
-#else
-  return my_atomic_addlong(A, B);
-#endif
-}
-
-static inline lint my_atomic_loadlint(const lint *A)
-{
-#ifdef _WIN64
-  return lint(my_atomic_load64((volatile int64*)A));
-#else
-  return my_atomic_loadlong(A);
-#endif
-}
-
-static inline void my_atomic_storelint(ulint *A, ulint B)
-{
-#ifdef _WIN64
-  my_atomic_store64((volatile int64*)A, B);
-#else
-  my_atomic_storelong(A, B);
-#endif
-}
-
 /** Simple non-atomic counter aligned to CACHE_LINE_SIZE
 @tparam	Type	the integer type of the counter */
 template <typename Type>
@@ -1184,28 +1135,4 @@ private:
 	/** The counter */
 	Type	m_counter;
 };
-
-/** Simple atomic counter aligned to CACHE_LINE_SIZE
-@tparam	Type	lint or ulint */
-template <typename Type = ulint>
-struct MY_ALIGNED(CPU_LEVEL1_DCACHE_LINESIZE) simple_atomic_counter
-{
-	/** Increment the counter */
-	Type inc() { return add(1); }
-	/** Decrement the counter */
-	Type dec() { return add(Type(~0)); }
-
-	/** Add to the counter
-	@param[in]	i	amount to be added
-	@return	the value of the counter before adding */
-	Type add(Type i) { return my_atomic_addlint(&m_counter, i); }
-
-	/** @return the value of the counter (non-atomic access)! */
-	operator Type() const { return m_counter; }
-
-private:
-	/** The counter */
-	Type	m_counter;
-};
-
 #endif /* sync0types_h */

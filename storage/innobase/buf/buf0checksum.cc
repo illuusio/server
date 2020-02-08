@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2017, MariaDB Corporation.
+Copyright (c) 2017, 2019, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -39,35 +39,6 @@ ha_innodb.cc:12251: error: cannot convert 'srv_checksum_algorithm_t*' to
   'long unsigned int*' in initialization */
 ulong	srv_checksum_algorithm = SRV_CHECKSUM_ALGORITHM_INNODB;
 
-#ifdef INNODB_BUG_ENDIAN_CRC32
-/** Calculate the CRC32 checksum of a page. The value is stored to the page
-when it is written to a file and also checked for a match when reading from
-the file. Note that we must be careful to calculate the same value on all
-architectures.
-@param[in]	page		buffer page (srv_page_size bytes)
-@param[in]	bug_endian	whether to use big endian byteorder
-when converting byte strings to integers, for bug-compatibility with
-big-endian architecture running MySQL 5.6, MariaDB 10.0 or MariaDB 10.1
-@return	CRC-32C */
-uint32_t buf_calc_page_crc32(const byte* page, bool bug_endian)
-{
-	return bug_endian
-		? ut_crc32_legacy_big_endian(
-			page + FIL_PAGE_OFFSET,
-			FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION
-			- FIL_PAGE_OFFSET)
-		^ ut_crc32_legacy_big_endian(page + FIL_PAGE_DATA,
-					     srv_page_size
-					     - (FIL_PAGE_DATA
-						+ FIL_PAGE_END_LSN_OLD_CHKSUM))
-		: ut_crc32(page + FIL_PAGE_OFFSET,
-			   FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION
-			   - FIL_PAGE_OFFSET)
-		^ ut_crc32(page + FIL_PAGE_DATA,
-			   srv_page_size
-			   - (FIL_PAGE_DATA + FIL_PAGE_END_LSN_OLD_CHKSUM));
-}
-#else
 /** Calculate the CRC32 checksum of a page. The value is stored to the page
 when it is written to a file and also checked for a match when reading from
 the file. Note that we must be careful to calculate the same value on all
@@ -88,7 +59,6 @@ uint32_t buf_calc_page_crc32(const byte* page)
 			   srv_page_size
 			   - (FIL_PAGE_DATA + FIL_PAGE_END_LSN_OLD_CHKSUM));
 }
-#endif
 
 /** Calculate a checksum which is stored to the page when it is written
 to a file. Note that we must be careful to calculate the same value on
@@ -151,6 +121,10 @@ buf_checksum_algorithm_name(srv_checksum_algorithm_t algo)
 		return("none");
 	case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
 		return("strict_none");
+	case SRV_CHECKSUM_ALGORITHM_FULL_CRC32:
+		return("full_crc32");
+	case SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32:
+		return("strict_full_crc32");
 	}
 
 	ut_error;

@@ -30,7 +30,6 @@
 #include "sql_statistics.h"
 #include "opt_range.h"
 #include "uniques.h"
-#include "my_atomic.h"
 #include "sql_show.h"
 #include "sql_partition.h"
 
@@ -103,29 +102,6 @@ inline void init_table_list_for_stat_tables(TABLE_LIST *tables, bool for_write)
       tables[i].prev_global= &tables[i-1].next_global;
   }
 }
-
-
-/**
-  @details
-  The function builds a TABLE_LIST containing only one element 'tbl' for
-  the statistical table called 'stat_tab_name'. 
-  The lock type of the element is set to TL_READ if for_write = FALSE,
-  otherwise it is set to TL_WRITE.
-*/
-
-static inline
-void init_table_list_for_single_stat_table(TABLE_LIST *tbl,
-                                           const LEX_CSTRING *stat_tab_name,
-                                           bool for_write)
-{
-  memset((char *) tbl, 0, sizeof(TABLE_LIST));
-
-  tbl->db= MYSQL_SCHEMA_NAME;
-  tbl->table_name= *stat_tab_name;
-  tbl->alias=      *stat_tab_name;
-  tbl->lock_type= for_write ? TL_WRITE : TL_READ;
-}
-
 
 static Table_check_intact_log_error stat_table_intact;
 
@@ -288,16 +264,21 @@ static int open_stat_tables(THD *thd, TABLE_LIST *tables,
 /**
   @brief
   Open a statistical table and lock it
+
+  @details
+  This is used by DDLs. When a column or index is dropped or renamed,
+  stat tables need to be adjusted accordingly.
 */
-static
-inline int open_single_stat_table(THD *thd, TABLE_LIST *table,
-                                  const LEX_CSTRING *stat_tab_name,
-                                  Open_tables_backup *backup,
-                                  bool for_write)
+static inline int open_stat_table_for_ddl(THD *thd, TABLE_LIST *table,
+                                         const LEX_CSTRING *stat_tab_name,
+                                         Open_tables_backup *backup)
 {
-  init_table_list_for_single_stat_table(table, stat_tab_name, for_write);
-  init_mdl_requests(table);
-  return open_system_tables_for_read(thd, table, backup);
+  table->init_one_table(&MYSQL_SCHEMA_NAME, stat_tab_name, NULL, TL_WRITE);
+  No_such_table_error_handler nst_handler;
+  thd->push_internal_handler(&nst_handler);
+  int res= open_system_tables_for_read(thd, table, backup);
+  thd->pop_internal_handler();
+  return res;
 }
 
 
@@ -326,8 +307,8 @@ private:
 public:
 
   inline void init(THD *thd, Field * table_field);
-  inline bool add(ha_rows rowno);
-  inline void finish(ha_rows rows); 
+  inline bool add();
+  inline void finish(ha_rows rows, double sample_fraction);
   inline void cleanup();
 };
 
@@ -1549,6 +1530,8 @@ class Histogram_builder
   uint curr_bucket;        /* number of the current bucket to be built     */
   ulonglong count;         /* number of values retrieved                   */
   ulonglong count_distinct;    /* number of distinct values retrieved      */
+  /* number of distinct values that occured only once  */
+  ulonglong count_distinct_single_occurence;
 
 public: 
   Histogram_builder(Field *col, uint col_len, ha_rows rows)
@@ -1562,14 +1545,21 @@ public:
     bucket_capacity= (double) records / (hist_width + 1);
     curr_bucket= 0;
     count= 0;
-    count_distinct= 0;    
+    count_distinct= 0;
+    count_distinct_single_occurence= 0;
   }
 
-  ulonglong get_count_distinct() { return count_distinct; }
+  ulonglong get_count_distinct() const { return count_distinct; }
+  ulonglong get_count_single_occurence() const
+  {
+    return count_distinct_single_occurence;
+  }
 
   int next(void *elem, element_count elem_cnt)
   {
     count_distinct++;
+    if (elem_cnt == 1)
+      count_distinct_single_occurence++;
     count+= elem_cnt;
     if (curr_bucket == hist_width)
       return 0;
@@ -1583,7 +1573,7 @@ public:
              count > bucket_capacity * (curr_bucket + 1))
       {
         histogram->set_prev_value(curr_bucket);
-	curr_bucket++;
+        curr_bucket++;
       }
     }
     return 0;
@@ -1599,9 +1589,18 @@ int histogram_build_walk(void *elem, element_count elem_cnt, void *arg)
   return hist_builder->next(elem, elem_cnt);
 }
 
+
+
+static int count_distinct_single_occurence_walk(void *elem,
+                                                element_count count, void *arg)
+{
+  ((ulonglong*)arg)[0]+= 1;
+  if (count == 1)
+    ((ulonglong*)arg)[1]+= 1;
+  return 0;
+}
+
 C_MODE_END
-
-
 /*
   The class Count_distinct_field is a helper class used to calculate
   the number of distinct values for a column. The class employs the
@@ -1619,6 +1618,9 @@ protected:
   Field *table_field;  
   Unique *tree;       /* The helper object to contain distinct values */
   uint tree_key_length; /* The length of the keys for the elements of 'tree */
+
+  ulonglong distincts;
+  ulonglong distincts_single_occurence;
 
 public:
   
@@ -1671,30 +1673,40 @@ public:
   {
     return tree->unique_add(table_field->ptr);
   }
-  
+
   /*
     @brief
     Calculate the number of elements accumulated in the container of 'tree'
   */
-  ulonglong get_value()
+  void walk_tree()
   {
-    ulonglong count;
-    if (tree->elements == 0)
-      return (ulonglong) tree->elements_in_tree();
-    count= 0;  
-    tree->walk(table_field->table, count_distinct_walk, (void*) &count);
-    return count;
+    ulonglong counts[2] = {0, 0};
+    tree->walk(table_field->table,
+               count_distinct_single_occurence_walk, counts);
+    distincts= counts[0];
+    distincts_single_occurence= counts[1];
   }
 
   /*
     @brief
-    Build the histogram for the elements accumulated in the container of 'tree'
+    Calculate a histogram of the tree
   */
-  ulonglong get_value_with_histogram(ha_rows rows)
+   void walk_tree_with_histogram(ha_rows rows)
   {
     Histogram_builder hist_builder(table_field, tree_key_length, rows);
     tree->walk(table_field->table,  histogram_build_walk, (void *) &hist_builder);
-    return hist_builder.get_count_distinct();
+    distincts= hist_builder.get_count_distinct();
+    distincts_single_occurence= hist_builder.get_count_single_occurence();
+  }
+
+  ulonglong get_count_distinct()
+  {
+    return distincts;
+  }
+
+  ulonglong get_count_distinct_single_occurence()
+  {
+    return distincts_single_occurence;
   }
 
   /*
@@ -2435,7 +2447,7 @@ void Column_statistics_collected::init(THD *thd, Field *table_field)
 */
 
 inline
-bool Column_statistics_collected::add(ha_rows rowno)
+bool Column_statistics_collected::add()
 {
 
   bool err= 0;
@@ -2444,9 +2456,11 @@ bool Column_statistics_collected::add(ha_rows rowno)
   else
   {
     column_total_length+= column->value_length();
-    if (min_value && column->update_min(min_value, rowno == nulls))
+    if (min_value && column->update_min(min_value,
+                                        is_null(COLUMN_STAT_MIN_VALUE)))
       set_not_null(COLUMN_STAT_MIN_VALUE);
-    if (max_value && column->update_max(max_value, rowno == nulls))
+    if (max_value && column->update_max(max_value,
+                                        is_null(COLUMN_STAT_MAX_VALUE)))
       set_not_null(COLUMN_STAT_MAX_VALUE);
     if (count_distinct)
       err= count_distinct->add();
@@ -2464,7 +2478,7 @@ bool Column_statistics_collected::add(ha_rows rowno)
 */
 
 inline
-void Column_statistics_collected::finish(ha_rows rows)
+void Column_statistics_collected::finish(ha_rows rows, double sample_fraction)
 {
   double val;
 
@@ -2482,16 +2496,44 @@ void Column_statistics_collected::finish(ha_rows rows)
   }
   if (count_distinct)
   {
-    ulonglong distincts;
     uint hist_size= count_distinct->get_hist_size();
+
+    /* Compute cardinality statistics and optionally histogram. */
     if (hist_size == 0)
-      distincts= count_distinct->get_value();
+      count_distinct->walk_tree();
     else
-      distincts= count_distinct->get_value_with_histogram(rows - nulls);
+      count_distinct->walk_tree_with_histogram(rows - nulls);
+
+    ulonglong distincts= count_distinct->get_count_distinct();
+    ulonglong distincts_single_occurence=
+      count_distinct->get_count_distinct_single_occurence();
+
     if (distincts)
     {
-      val= (double) (rows - nulls) / distincts;
-      set_avg_frequency(val); 
+      /*
+       We use the unsmoothed first-order jackknife estimator" to estimate
+       the number of distinct values.
+       With a sufficient large percentage of rows sampled (80%), we revert back
+       to computing the avg_frequency off of the raw data.
+      */
+      if (sample_fraction > 0.8)
+        val= (double) (rows - nulls) / distincts;
+      else
+      {
+        if (nulls == 1)
+          distincts_single_occurence+= 1;
+        if (nulls)
+          distincts+= 1;
+        double fraction_single_occurence=
+          static_cast<double>(distincts_single_occurence) / rows;
+        double total_number_of_rows= rows / sample_fraction;
+        double estimate_total_distincts= total_number_of_rows /
+                (distincts /
+                 (1.0 - (1.0 - sample_fraction) * fraction_single_occurence));
+        val = std::fmax(estimate_total_distincts * (rows - nulls) / rows, 1.0);
+      }
+
+      set_avg_frequency(val);
       set_not_null(COLUMN_STAT_AVG_FREQUENCY);
     }
     else
@@ -2679,11 +2721,27 @@ int collect_statistics_for_table(THD *thd, TABLE *table)
   Field *table_field;
   ha_rows rows= 0;
   handler *file=table->file;
+  double sample_fraction= thd->variables.sample_percentage / 100;
+  const ha_rows MIN_THRESHOLD_FOR_SAMPLING= 50000;
 
   DBUG_ENTER("collect_statistics_for_table");
 
   table->collected_stats->cardinality_is_null= TRUE;
   table->collected_stats->cardinality= 0;
+
+  if (thd->variables.sample_percentage == 0)
+  {
+    if (file->records() < MIN_THRESHOLD_FOR_SAMPLING)
+    {
+      sample_fraction= 1;
+    }
+    else
+    {
+      sample_fraction= std::fmin(
+                  (MIN_THRESHOLD_FOR_SAMPLING + 4096 *
+                   log(200 * file->records())) / file->records(), 1);
+    }
+  }
 
   for (field_ptr= table->field; *field_ptr; field_ptr++)
   {
@@ -2697,7 +2755,7 @@ int collect_statistics_for_table(THD *thd, TABLE *table)
 
   /* Perform a full table scan to collect statistics on 'table's columns */
   if (!(rc= file->ha_rnd_init(TRUE)))
-  {  
+  {
     DEBUG_SYNC(table->in_use, "statistics_collection_start");
 
     while ((rc= file->ha_rnd_next(table->record[0])) != HA_ERR_END_OF_FILE)
@@ -2708,17 +2766,20 @@ int collect_statistics_for_table(THD *thd, TABLE *table)
       if (rc)
         break;
 
-      for (field_ptr= table->field; *field_ptr; field_ptr++)
+      if (thd_rnd(thd) <= sample_fraction)
       {
-        table_field= *field_ptr;
-        if (!bitmap_is_set(table->read_set, table_field->field_index))
-          continue;  
-        if ((rc= table_field->collected_stats->add(rows)))
+        for (field_ptr= table->field; *field_ptr; field_ptr++)
+        {
+          table_field= *field_ptr;
+          if (!bitmap_is_set(table->read_set, table_field->field_index))
+            continue;
+          if ((rc= table_field->collected_stats->add()))
+            break;
+        }
+        if (rc)
           break;
+        rows++;
       }
-      if (rc)
-        break;
-      rows++;
     }
     file->ha_rnd_end();
   }
@@ -2732,7 +2793,8 @@ int collect_statistics_for_table(THD *thd, TABLE *table)
   if (!rc)
   {
     table->collected_stats->cardinality_is_null= FALSE;
-    table->collected_stats->cardinality= rows;
+    table->collected_stats->cardinality=
+      static_cast<ha_rows>(rows / sample_fraction);
   }
 
   bitmap_clear_all(table->write_set);
@@ -2743,7 +2805,7 @@ int collect_statistics_for_table(THD *thd, TABLE *table)
       continue;
     bitmap_set_bit(table->write_set, table_field->field_index); 
     if (!rc)
-      table_field->collected_stats->finish(rows);
+      table_field->collected_stats->finish(rows, sample_fraction);
     else
       table_field->collected_stats->cleanup();
   }
@@ -3323,7 +3385,7 @@ int read_statistics_for_tables(THD *thd, TABLE_LIST *tables)
   'db' from all statistical tables: table_stats, column_stats, index_stats.
 
   @retval
-  0         If all deletions are successful  
+  0         If all deletions are successful or we couldn't open statistics table
   @retval
   1         Otherwise
 
@@ -3331,7 +3393,8 @@ int read_statistics_for_tables(THD *thd, TABLE_LIST *tables)
   The function is called when executing the statement DROP TABLE 'tab'.
 */
 
-int delete_statistics_for_table(THD *thd, const LEX_CSTRING *db, const LEX_CSTRING *tab)
+int delete_statistics_for_table(THD *thd, const LEX_CSTRING *db,
+                                const LEX_CSTRING *tab)
 {
   int err;
   enum_binlog_format save_binlog_format;
@@ -3339,11 +3402,10 @@ int delete_statistics_for_table(THD *thd, const LEX_CSTRING *db, const LEX_CSTRI
   TABLE_LIST tables[STATISTICS_TABLES];
   Open_tables_backup open_tables_backup;
   int rc= 0;
-
   DBUG_ENTER("delete_statistics_for_table");
    
   if (open_stat_tables(thd, tables, &open_tables_backup, TRUE))
-    DBUG_RETURN(rc);
+    DBUG_RETURN(0);
 
   save_binlog_format= thd->set_current_stmt_binlog_format_stmt();
 
@@ -3396,21 +3458,16 @@ int delete_statistics_for_table(THD *thd, const LEX_CSTRING *db, const LEX_CSTRI
   @brief
   Delete statistics on a column of the specified table
 
-  @param
-  thd         The thread handle
-  @param
-  tab         The table the column belongs to
-  @param
-  col         The field of the column whose statistics is to be deleted
+  @param thd         The thread handle
+  @param tab         The table the column belongs to
+  @param col         The field of the column whose statistics is to be deleted
 
   @details
   The function delete statistics on the column 'col' belonging to the table 
   'tab' from the statistical table column_stats. 
 
-  @retval
-  0         If the deletion is successful  
-  @retval
-  1         Otherwise
+  @retval 0  If all deletions are successful or we couldn't open statistics table
+  @retval 1  Otherwise
 
   @note
   The function is called when dropping a table column  or when changing
@@ -3425,15 +3482,11 @@ int delete_statistics_for_column(THD *thd, TABLE *tab, Field *col)
   TABLE_LIST tables;
   Open_tables_backup open_tables_backup;
   int rc= 0;
-
   DBUG_ENTER("delete_statistics_for_column");
    
-  if (open_single_stat_table(thd, &tables, &stat_table_name[1],
-                             &open_tables_backup, TRUE))
-  {
-    thd->clear_error();
-    DBUG_RETURN(rc);
-  }
+  if (open_stat_table_for_ddl(thd, &tables, &stat_table_name[1],
+                             &open_tables_backup))
+    DBUG_RETURN(0);
 
   save_binlog_format= thd->set_current_stmt_binlog_format_stmt();
 
@@ -3459,24 +3512,18 @@ int delete_statistics_for_column(THD *thd, TABLE *tab, Field *col)
   @brief
   Delete statistics on an index of the specified table
 
-  @param
-  thd         The thread handle
-  @param
-  tab         The table the index belongs to
-  @param
-  key_info    The descriptor of the index whose statistics is to be deleted
-  @param
-  ext_prefixes_only  Delete statistics only on the index prefixes extended by
-                     the components of the primary key 
+  @param thd         The thread handle
+  @param tab         The table the index belongs to
+  @param key_info    The descriptor of the index whose statistics is to be deleted
+  @param ext_prefixes_only  Delete statistics only on the index prefixes
+                     extended by the components of the primary key
 
   @details
   The function delete statistics on the index  specified by 'key_info'
   defined on the table 'tab' from the statistical table index_stats.
 
-  @retval
-  0         If the deletion is successful  
-  @retval
-  1         Otherwise
+  @retval 0  If all deletions are successful or we couldn't open statistics table
+  @retval 1  Otherwise
 
   @note
   The function is called when dropping an index, or dropping/changing the
@@ -3492,15 +3539,11 @@ int delete_statistics_for_index(THD *thd, TABLE *tab, KEY *key_info,
   TABLE_LIST tables;
   Open_tables_backup open_tables_backup;
   int rc= 0;
-
   DBUG_ENTER("delete_statistics_for_index");
    
-  if (open_single_stat_table(thd, &tables, &stat_table_name[2],
-			     &open_tables_backup, TRUE))
-  {
-    thd->clear_error();
-    DBUG_RETURN(rc);
-  }
+  if (open_stat_table_for_ddl(thd, &tables, &stat_table_name[2],
+			     &open_tables_backup))
+    DBUG_RETURN(0);
 
   save_binlog_format= thd->set_current_stmt_binlog_format_stmt();
 
@@ -3561,7 +3604,7 @@ int delete_statistics_for_index(THD *thd, TABLE *tab, KEY *key_info,
   index_stats.
 
   @retval
-  0         If all updates of the table name are successful  
+  0         If all updates of the table name are successful
   @retval
   1         Otherwise
 
@@ -3569,8 +3612,10 @@ int delete_statistics_for_index(THD *thd, TABLE *tab, KEY *key_info,
   The function is called when executing any statement that renames a table
 */
 
-int rename_table_in_stat_tables(THD *thd, const LEX_CSTRING *db, const LEX_CSTRING *tab,
-                                const LEX_CSTRING *new_db, const LEX_CSTRING *new_tab)
+int rename_table_in_stat_tables(THD *thd, const LEX_CSTRING *db,
+                                const LEX_CSTRING *tab,
+                                const LEX_CSTRING *new_db,
+                                const LEX_CSTRING *new_tab)
 {
   int err;
   enum_binlog_format save_binlog_format;
@@ -3581,7 +3626,9 @@ int rename_table_in_stat_tables(THD *thd, const LEX_CSTRING *db, const LEX_CSTRI
   DBUG_ENTER("rename_table_in_stat_tables");
    
   if (open_stat_tables(thd, tables, &open_tables_backup, TRUE))
+  {
     DBUG_RETURN(0); // not an error
+  }
 
   save_binlog_format= thd->set_current_stmt_binlog_format_stmt();
 
@@ -3638,26 +3685,19 @@ int rename_table_in_stat_tables(THD *thd, const LEX_CSTRING *db, const LEX_CSTRI
 
 
 /**
-  @brief
   Rename a column in the statistical table column_stats
 
-  @param
-  thd         The thread handle
-  @param
-  tab         The table the column belongs to
-  @param
-  col         The column to be renamed
-  @param
-  new_name    The new column name
+  @param thd         The thread handle
+  @param tab         The table the column belongs to
+  @param col         The column to be renamed
+  @param new_name    The new column name
 
   @details
   The function replaces the name of the column 'col' belonging to the table 
   'tab' for 'new_name' in the statistical table column_stats.
 
-  @retval
-  0         If all updates of the table name are successful  
-  @retval
-  1         Otherwise
+  @retval 0  If all updates of the table name are successful
+  @retval 1  Otherwise
 
   @note
   The function is called when executing any statement that renames a column,
@@ -3673,18 +3713,14 @@ int rename_column_in_stat_tables(THD *thd, TABLE *tab, Field *col,
   TABLE_LIST tables;
   Open_tables_backup open_tables_backup;
   int rc= 0;
-
   DBUG_ENTER("rename_column_in_stat_tables");
   
   if (tab->s->tmp_table != NO_TMP_TABLE)
     DBUG_RETURN(0);
 
-  if (open_single_stat_table(thd, &tables, &stat_table_name[1],
-                             &open_tables_backup, TRUE))
-  {
-    thd->clear_error();
+  if (open_stat_table_for_ddl(thd, &tables, &stat_table_name[1],
+                             &open_tables_backup))
     DBUG_RETURN(rc);
-  }
 
   save_binlog_format= thd->set_current_stmt_binlog_format_stmt();
 
@@ -3726,9 +3762,8 @@ void set_statistics_for_table(THD *thd, TABLE *table)
 {
   TABLE_STATISTICS_CB *stats_cb= &table->s->stats_cb;
   Table_statistics *read_stats= stats_cb->table_stats;
-  Use_stat_tables_mode use_stat_table_mode= get_use_stat_tables_mode(thd);
   table->used_stat_records= 
-    (use_stat_table_mode <= COMPLEMENTARY ||
+    (!check_eits_preferred(thd) ||
      !table->stats_is_read || read_stats->cardinality_is_null) ?
     table->file->stats.records : read_stats->cardinality;
 
@@ -3752,7 +3787,7 @@ void set_statistics_for_table(THD *thd, TABLE *table)
        key_info < key_info_end; key_info++)
   {
     key_info->is_statistics_from_stat_tables=
-      (use_stat_table_mode > COMPLEMENTARY &&
+      (check_eits_preferred(thd) &&
        table->stats_is_read &&
        key_info->read_stats->avg_frequency_is_inited() &&
        key_info->read_stats->get_avg_frequency(0) > 0.5);

@@ -27,12 +27,16 @@ Created 10/25/1995 Heikki Tuuri
 #ifndef fil0fil_h
 #define fil0fil_h
 
+#include "fsp0types.h"
+
 #ifndef UNIV_INNOCHECKSUM
 
 #include "log0recv.h"
 #include "dict0types.h"
-#include "page0size.h"
 #include "intrusive_list.h"
+#ifdef UNIV_LINUX
+# include <set>
+#endif
 
 struct unflushed_spaces_tag_t;
 struct rotation_list_tag_t;
@@ -41,8 +45,6 @@ struct rotation_list_tag_t;
 extern my_bool srv_use_doublewrite_buf;
 extern struct buf_dblwr_t* buf_dblwr;
 class page_id_t;
-struct trx_t;
-class truncate_t;
 
 /** Structure containing encryption specification */
 struct fil_space_crypt_t;
@@ -76,10 +78,17 @@ fil_type_is_data(
 
 struct fil_node_t;
 
+#endif
+
 /** Tablespace or log data space */
+#ifndef UNIV_INNOCHECKSUM
 struct fil_space_t : intrusive::list_node<unflushed_spaces_tag_t>,
                      intrusive::list_node<rotation_list_tag_t>
+#else
+struct fil_space_t
+#endif
 {
+#ifndef UNIV_INNOCHECKSUM
 	ulint		id;	/*!< space id */
 	hash_node_t	hash;	/*!< hash chain node */
 	char*		name;	/*!< Tablespace name */
@@ -93,26 +102,21 @@ struct fil_space_t : intrusive::list_node<unflushed_spaces_tag_t>,
 	/** Log sequence number of the latest MLOG_INDEX_LOAD record
 	that was found while parsing the redo log */
 	lsn_t		enable_lsn;
+	/** set when an .ibd file is about to be deleted,
+	or an undo tablespace is about to be truncated.
+	When this is set following new ops are not allowed:
+	* read IO request
+	* ibuf merge
+	* file flush
+	Note that we can still possibly have new write operations
+	because we don't check this flag when doing flush batches. */
 	bool		stop_new_ops;
-				/*!< we set this true when we start
-				deleting a single-table tablespace.
-				When this is set following new ops
-				are not allowed:
-				* read IO request
-				* ibuf merge
-				* file flush
-				Note that we can still possibly have
-				new write operations because we don't
-				check this flag when doing flush
-				batches. */
 	/** whether undo tablespace truncation is in progress */
 	bool		is_being_truncated;
 #ifdef UNIV_DEBUG
-	ulint		redo_skipped_count;
-				/*!< reference count for operations who want
-				to skip redo log in the file space in order
-				to make modify_check() pass.
-				Uses my_atomic_loadlint() and friends. */
+	/** reference count for operations who want to skip redo log in the
+	file space in order to make modify_check() pass. */
+	Atomic_counter<ulint> redo_skipped_count;
 #endif
 	fil_type_t	purpose;/*!< purpose */
 	UT_LIST_BASE_NODE_T(fil_node_t) chain;
@@ -130,10 +134,6 @@ struct fil_space_t : intrusive::list_node<unflushed_spaces_tag_t>,
 				/*!< recovered tablespace size in pages;
 				0 if no size change was read from the redo log,
 				or if the size change was implemented */
-	ulint		flags;	/*!< FSP_SPACE_FLAGS and FSP_FLAGS_MEM_ flags;
-				see fsp0types.h,
-				fsp_flags_is_valid(),
-				page_size_t(ulint) (constructor) */
 	ulint		n_reserved_extents;
 				/*!< number of reserved free extents for
 				ongoing operations like B-tree page split */
@@ -141,20 +141,20 @@ struct fil_space_t : intrusive::list_node<unflushed_spaces_tag_t>,
 				the tablespace to disk; dropping of the
 				tablespace is forbidden if this is positive */
 	/** Number of pending buffer pool operations accessing the tablespace
-	without holding a table lock or dict_operation_lock S-latch
+	without holding a table lock or dict_sys.latch S-latch
 	that would prevent the table (and tablespace) from being
 	dropped. An example is change buffer merge.
 	The tablespace cannot be dropped while this is nonzero,
 	or while fil_node_t::n_pending is nonzero.
-	Protected by fil_system.mutex and my_atomic_loadlint() and friends. */
-	ulint		n_pending_ops;
+	Protected by fil_system.mutex and std::atomic. */
+	std::atomic<ulint>		n_pending_ops;
 	/** Number of pending block read or write operations
 	(when a write is imminent or a read has recently completed).
 	The tablespace object cannot be freed while this is nonzero,
 	but it can be detached from fil_system.
 	Note that fil_node_t::n_pending tracks actual pending I/O requests.
-	Protected by fil_system.mutex and my_atomic_loadlint() and friends. */
-	ulint		n_pending_ios;
+	Protected by fil_system.mutex and std::atomic. */
+	std::atomic<ulint>		n_pending_ios;
 	rw_lock_t	latch;	/*!< latch protecting the file space storage
 				allocation */
 	UT_LIST_NODE_T(fil_space_t) named_spaces;
@@ -248,7 +248,10 @@ struct fil_space_t : intrusive::list_node<unflushed_spaces_tag_t>,
 	/** Note that the tablespace has been imported.
 	Initially, purpose=FIL_TYPE_IMPORT so that no redo log is
 	written while the space ID is being updated in each page. */
-	void set_imported();
+	inline void set_imported();
+
+	/** @return whether the storage device is rotational (HDD, not SSD) */
+	inline bool is_rotational() const;
 
 	/** Open each file. Only invoked on fil_system.temp_space.
 	@return whether all files were opened */
@@ -257,38 +260,290 @@ struct fil_space_t : intrusive::list_node<unflushed_spaces_tag_t>,
 	void close();
 
 	/** Acquire a tablespace reference. */
-	void acquire() { my_atomic_addlint(&n_pending_ops, 1); }
+	void acquire() { n_pending_ops++; }
 	/** Release a tablespace reference. */
-	void release()
-	{
-		ut_ad(referenced());
-		my_atomic_addlint(&n_pending_ops, ulint(-1));
-	}
+	void release() { ut_ad(referenced()); n_pending_ops--; }
 	/** @return whether references are being held */
-	bool referenced() { return my_atomic_loadlint(&n_pending_ops); }
-	/** @return whether references are being held */
-	bool referenced() const
-	{
-		return const_cast<fil_space_t*>(this)->referenced();
-	}
+	bool referenced() const { return n_pending_ops; }
 
 	/** Acquire a tablespace reference for I/O. */
-	void acquire_for_io() { my_atomic_addlint(&n_pending_ios, 1); }
+	void acquire_for_io() { n_pending_ios++; }
 	/** Release a tablespace reference for I/O. */
-	void release_for_io()
-	{
-		ut_ad(pending_io());
-		my_atomic_addlint(&n_pending_ios, ulint(-1));
+	void release_for_io() { ut_ad(pending_io()); n_pending_ios--; }
+	/** @return whether I/O is pending */
+	bool pending_io() const { return n_pending_ios; }
+#endif /* !UNIV_INNOCHECKSUM */
+	/** FSP_SPACE_FLAGS and FSP_FLAGS_MEM_ flags;
+	check fsp0types.h to more info about flags. */
+	ulint		flags;
+
+	/** Determine if full_crc32 is used for a data file
+	@param[in]	flags	tablespace flags (FSP_FLAGS)
+	@return whether the full_crc32 algorithm is active */
+	static bool full_crc32(ulint flags) {
+		return flags & FSP_FLAGS_FCRC32_MASK_MARKER;
 	}
-	/** @return whether I/O is pending */
-	bool pending_io() { return my_atomic_loadlint(&n_pending_ios); }
-	/** @return whether I/O is pending */
-	bool pending_io() const
+	/** @return whether innodb_checksum_algorithm=full_crc32 is active */
+	bool full_crc32() const { return full_crc32(flags); }
+	/** Determine the logical page size.
+	@param	flags	tablespace flags (FSP_FLAGS)
+	@return the logical page size
+	@retval 0 if the flags are invalid */
+	static unsigned logical_size(ulint flags) {
+
+		ulint page_ssize = 0;
+
+		if (full_crc32(flags)) {
+			page_ssize = FSP_FLAGS_FCRC32_GET_PAGE_SSIZE(flags);
+		} else {
+			page_ssize = FSP_FLAGS_GET_PAGE_SSIZE(flags);
+		}
+
+		switch (page_ssize) {
+		case 3: return 4096;
+		case 4: return 8192;
+		case 5:
+		{ ut_ad(full_crc32(flags)); return 16384; }
+		case 0:
+		{ ut_ad(!full_crc32(flags)); return 16384; }
+		case 6: return 32768;
+		case 7: return 65536;
+		default: return 0;
+		}
+	}
+	/** Determine the ROW_FORMAT=COMPRESSED page size.
+	@param	flags	tablespace flags (FSP_FLAGS)
+	@return the ROW_FORMAT=COMPRESSED page size
+	@retval 0	if ROW_FORMAT=COMPRESSED is not used */
+	static unsigned zip_size(ulint flags) {
+
+		if (full_crc32(flags)) {
+			return 0;
+		}
+
+		ulint zip_ssize = FSP_FLAGS_GET_ZIP_SSIZE(flags);
+		return zip_ssize
+			? (UNIV_ZIP_SIZE_MIN >> 1) << zip_ssize : 0;
+	}
+	/** Determine the physical page size.
+	@param	flags	tablespace flags (FSP_FLAGS)
+	@return the physical page size */
+	static unsigned physical_size(ulint flags) {
+
+		if (full_crc32(flags)) {
+			return logical_size(flags);
+		}
+
+		ulint zip_ssize = FSP_FLAGS_GET_ZIP_SSIZE(flags);
+		return zip_ssize
+			? (UNIV_ZIP_SIZE_MIN >> 1) << zip_ssize
+			: unsigned(srv_page_size);
+	}
+	/** @return the ROW_FORMAT=COMPRESSED page size
+	@retval 0	if ROW_FORMAT=COMPRESSED is not used */
+	unsigned zip_size() const { return zip_size(flags); }
+	/** @return the physical page size */
+	unsigned physical_size() const { return physical_size(flags); }
+	/** Check whether the compression enabled in tablespace.
+	@param[in]	flags	tablespace flags */
+	static bool is_compressed(ulint flags) {
+
+		if (full_crc32(flags)) {
+			ulint algo = FSP_FLAGS_FCRC32_GET_COMPRESSED_ALGO(
+				flags);
+			DBUG_ASSERT(algo <= PAGE_ALGORITHM_LAST);
+			return algo > 0;
+		}
+
+		return FSP_FLAGS_HAS_PAGE_COMPRESSION(flags);
+	}
+	/** @return whether the compression enabled for the tablespace. */
+	bool is_compressed() const { return is_compressed(flags); }
+
+	/** Get the compression algorithm for full crc32 format.
+	@param[in]	flags	tablespace flags
+	@return algorithm type of tablespace */
+	static ulint get_compression_algo(ulint flags)
 	{
-		return const_cast<fil_space_t*>(this)->pending_io();
+		return full_crc32(flags)
+			? FSP_FLAGS_FCRC32_GET_COMPRESSED_ALGO(flags)
+			: 0;
+	}
+	/** @return the page_compressed algorithm
+	@retval 0 if not page_compressed */
+	ulint get_compression_algo() const {
+		return fil_space_t::get_compression_algo(flags);
+	}
+	/** Determine if the page_compressed page contains an extra byte
+	for exact compressed stream length
+	@param[in]	flags	tablespace flags
+	@return	whether the extra byte is needed */
+	static bool full_crc32_page_compressed_len(ulint flags)
+	{
+		DBUG_ASSERT(full_crc32(flags));
+		switch (get_compression_algo(flags)) {
+		case PAGE_LZ4_ALGORITHM:
+		case PAGE_LZO_ALGORITHM:
+		case PAGE_SNAPPY_ALGORITHM:
+			return true;
+		}
+		return false;
+	}
+
+	/** Whether the full checksum matches with non full checksum flags.
+	@param[in]	flags		flags present
+	@param[in]	expected	expected flags
+	@return true if it is equivalent */
+	static bool is_flags_full_crc32_equal(ulint flags, ulint expected)
+	{
+		ut_ad(full_crc32(flags));
+		ulint page_ssize = FSP_FLAGS_FCRC32_GET_PAGE_SSIZE(flags);
+
+		if (full_crc32(expected)) {
+			/* The data file may have been created with a
+			different innodb_compression_algorithm. But
+			we only support one innodb_page_size for all files. */
+			return page_ssize
+				== FSP_FLAGS_FCRC32_GET_PAGE_SSIZE(expected);
+		}
+
+		ulint space_page_ssize = FSP_FLAGS_GET_PAGE_SSIZE(expected);
+
+		if (page_ssize == 5) {
+			if (space_page_ssize) {
+				return false;
+			}
+		} else if (space_page_ssize != page_ssize) {
+			return false;
+		}
+
+		return true;
+	}
+	/** Whether old tablespace flags match full_crc32 flags.
+	@param[in]	flags		flags present
+	@param[in]	expected	expected flags
+	@return true if it is equivalent */
+	static bool is_flags_non_full_crc32_equal(ulint flags, ulint expected)
+	{
+		ut_ad(!full_crc32(flags));
+
+		if (!full_crc32(expected)) {
+			return false;
+		}
+
+		ulint page_ssize = FSP_FLAGS_GET_PAGE_SSIZE(flags);
+		ulint space_page_ssize = FSP_FLAGS_FCRC32_GET_PAGE_SSIZE(
+			expected);
+
+		if (page_ssize) {
+			if (space_page_ssize != 5) {
+				return false;
+			}
+		} else if (space_page_ssize != page_ssize) {
+			return false;
+		}
+
+		return true;
+	}
+	/** Whether both fsp flags are equivalent */
+	static bool is_flags_equal(ulint flags, ulint expected)
+	{
+		if (!((flags ^ expected) & ~(1U << FSP_FLAGS_POS_RESERVED))) {
+			return true;
+		}
+
+		return full_crc32(flags)
+			? is_flags_full_crc32_equal(flags, expected)
+			: is_flags_non_full_crc32_equal(flags, expected);
+	}
+	/** Validate the tablespace flags for full crc32 format.
+	@param[in]	flags	the content of FSP_SPACE_FLAGS
+	@return whether the flags are correct in full crc32 format */
+	static bool is_fcrc32_valid_flags(ulint flags)
+	{
+		ut_ad(flags & FSP_FLAGS_FCRC32_MASK_MARKER);
+		const ulint page_ssize = physical_size(flags);
+		if (page_ssize < 3 || page_ssize & 8) {
+			return false;
+		}
+
+		flags >>= FSP_FLAGS_FCRC32_POS_COMPRESSED_ALGO;
+
+		return flags <= PAGE_ALGORITHM_LAST;
+	}
+	/** Validate the tablespace flags.
+	@param[in]	flags	content of FSP_SPACE_FLAGS
+	@param[in]	is_ibd	whether this is an .ibd file
+				(not system tablespace)
+	@return whether the flags are correct. */
+	static bool is_valid_flags(ulint flags, bool is_ibd)
+	{
+		DBUG_EXECUTE_IF("fsp_flags_is_valid_failure",
+				return false;);
+
+		if (full_crc32(flags)) {
+			return is_fcrc32_valid_flags(flags);
+		}
+
+		if (flags == 0) {
+			return true;
+		}
+
+		if (flags & ~FSP_FLAGS_MASK) {
+			return false;
+		}
+
+		if ((flags & (FSP_FLAGS_MASK_POST_ANTELOPE
+			      | FSP_FLAGS_MASK_ATOMIC_BLOBS))
+		    == FSP_FLAGS_MASK_ATOMIC_BLOBS) {
+			/* If the "atomic blobs" flag (indicating
+			ROW_FORMAT=DYNAMIC or ROW_FORMAT=COMPRESSED) flag
+			is set, then the "post Antelope"
+			(ROW_FORMAT!=REDUNDANT) flag must also be set. */
+			return false;
+		}
+
+		/* Bits 10..14 should be 0b0000d where d is the DATA_DIR flag
+		of MySQL 5.6 and MariaDB 10.0, which we ignore.
+		In the buggy FSP_SPACE_FLAGS written by MariaDB 10.1.0 to 10.1.20,
+		bits 10..14 would be nonzero 0bsssaa where sss is
+		nonzero PAGE_SSIZE (3, 4, 6, or 7)
+		and aa is ATOMIC_WRITES (not 0b11). */
+		if (FSP_FLAGS_GET_RESERVED(flags) & ~1U) {
+			return false;
+		}
+
+		const ulint	ssize = FSP_FLAGS_GET_PAGE_SSIZE(flags);
+		if (ssize == 1 || ssize == 2 || ssize == 5 || ssize & 8) {
+			/* the page_size is not between 4k and 64k;
+			16k should be encoded as 0, not 5 */
+			return false;
+		}
+
+		const ulint     zssize = FSP_FLAGS_GET_ZIP_SSIZE(flags);
+		if (zssize == 0) {
+			/* not ROW_FORMAT=COMPRESSED */
+		} else if (zssize > (ssize ? ssize : 5)) {
+			/* Invalid KEY_BLOCK_SIZE */
+			return false;
+		} else if (~flags & (FSP_FLAGS_MASK_POST_ANTELOPE
+				     | FSP_FLAGS_MASK_ATOMIC_BLOBS)) {
+			/* both these flags should be set for
+			ROW_FORMAT=COMPRESSED */
+			return false;
+		}
+
+		/* The flags do look valid. But, avoid misinterpreting
+		buggy MariaDB 10.1 format flags for
+		PAGE_COMPRESSED=1 PAGE_COMPRESSION_LEVEL={0,2,3}
+		as valid-looking PAGE_SSIZE if this is known to be
+		an .ibd file and we are using the default innodb_page_size=16k. */
+		return(ssize == 0 || !is_ibd
+		       || srv_page_size != UNIV_PAGE_SIZE_ORIG);
 	}
 };
 
+#ifndef UNIV_INNOCHECKSUM
 /** Value of fil_space_t::magic_n */
 #define	FIL_SPACE_MAGIC_N	89472
 
@@ -302,6 +557,8 @@ struct fil_node_t {
 	pfs_os_file_t	handle;
 	/** whether the file actually is a raw device or disk partition */
 	bool		is_raw_disk;
+	/** whether the file is on non-rotational media (SSD) */
+	bool		on_ssd;
 	/** size of the file in database pages (0 if not known yet);
 	the possible last incomplete megabyte may be ignored
 	if space->id == 0 */
@@ -344,12 +601,38 @@ struct fil_node_t {
 	@return	whether the page was found valid */
 	bool read_page0(bool first);
 
+	/** Determine some file metadata when creating or reading the file.
+	@param	file	the file that is being created, or OS_FILE_CLOSED */
+	void find_metadata(os_file_t file = OS_FILE_CLOSED
+#ifdef UNIV_LINUX
+			   , struct stat* statbuf = NULL
+#endif
+			   );
+
 	/** Close the file handle. */
 	void close();
 };
 
 /** Value of fil_node_t::magic_n */
 #define	FIL_NODE_MAGIC_N	89389
+
+inline void fil_space_t::set_imported()
+{
+	ut_ad(purpose == FIL_TYPE_IMPORT);
+	purpose = FIL_TYPE_TABLESPACE;
+	UT_LIST_GET_FIRST(chain)->find_metadata();
+}
+
+inline bool fil_space_t::is_rotational() const
+{
+	for (const fil_node_t* node = UT_LIST_GET_FIRST(chain);
+	     node != NULL; node = UT_LIST_GET_NEXT(chain, node)) {
+		if (!node->on_ssd) {
+			return true;
+		}
+	}
+	return false;
+}
 
 /** Common InnoDB file extensions */
 enum ib_extention {
@@ -389,18 +672,11 @@ typedef	byte	fil_faddr_t;	/*!< 'type' definition in C: an address
 #define	FIL_ADDR_BYTE	4U	/* then comes 2-byte byte offset within page*/
 #define	FIL_ADDR_SIZE	6U	/* address size is 6 bytes */
 
-#ifndef UNIV_INNOCHECKSUM
-
 /** File space address */
 struct fil_addr_t {
 	ulint	page;		/*!< page number within a space */
 	ulint	boffset;	/*!< byte offset within the page */
 };
-
-/** The null file address */
-extern const fil_addr_t	fil_addr_null;
-
-#endif /* !UNIV_INNOCHECKSUM */
 
 /** The byte offsets on a file page for various variables @{ */
 #define FIL_PAGE_SPACE_OR_CHKSUM 0	/*!< in < MySQL-4.0.14 space id the
@@ -442,18 +718,18 @@ extern const fil_addr_t	fil_addr_null;
 					MySQL/InnoDB 5.1.7 or later, the
 					contents of this field is valid
 					for all uncompressed pages. */
-#define FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION 26U /*!< for the first page
-					in a system tablespace data file
-					(ibdata*, not *.ibd): the file has
-					been flushed to disk at least up
-					to this lsn
-					for other pages: a 32-bit key version
-					used to encrypt the page + 32-bit checksum
-					or 64 bits of zero if no encryption
-					*/
+
+/** For the first page in a system tablespace data file(ibdata*, not *.ibd):
+the file has been flushed to disk at least up to this lsn
+For other pages: 32-bit key version used to encrypt the page + 32-bit checksum
+or 64 bites of zero if no encryption */
+#define FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION 26U
 
 /** This overloads FIL_PAGE_FILE_FLUSH_LSN for RTREE Split Sequence Number */
 #define	FIL_RTREE_SPLIT_SEQ_NUM	FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION
+
+/** Start of the page_compressed content */
+#define FIL_PAGE_COMP_ALGO	FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION
 
 /** starting from 4.1.x this contains the space id of the page */
 #define FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID  34U
@@ -462,25 +738,45 @@ extern const fil_addr_t	fil_addr_null;
 
 #define FIL_PAGE_DATA		38U	/*!< start of the data on the page */
 
-/* Following are used when page compression is used */
-#define FIL_PAGE_COMPRESSED_SIZE 2      /*!< Number of bytes used to store
-					actual payload data size on
-					compressed pages. */
-#define FIL_PAGE_COMPRESSION_METHOD_SIZE 2
-					/*!< Number of bytes used to store
-					actual compression method. */
+/** 32-bit key version used to encrypt the page in full_crc32 format.
+For non-encrypted page, it contains 0. */
+#define FIL_PAGE_FCRC32_KEY_VERSION	0
+
+/** page_compressed without innodb_checksum_algorithm=full_crc32 @{ */
+/** Number of bytes used to store actual payload data size on
+page_compressed pages when not using full_crc32. */
+#define FIL_PAGE_COMP_SIZE		0
+
+/** Number of bytes for FIL_PAGE_COMP_SIZE */
+#define FIL_PAGE_COMP_METADATA_LEN		2
+
+/** Number of bytes used to store actual compression method
+for encrypted tables when not using full_crc32. */
+#define FIL_PAGE_ENCRYPT_COMP_ALGO		2
+
+/** Extra header size for encrypted page_compressed pages when
+not using full_crc32 */
+#define FIL_PAGE_ENCRYPT_COMP_METADATA_LEN	4
 /* @} */
+
 /** File page trailer @{ */
 #define FIL_PAGE_END_LSN_OLD_CHKSUM 8	/*!< the low 4 bytes of this are used
 					to store the page checksum, the
 					last 4 bytes should be identical
 					to the last 4 bytes of FIL_PAGE_LSN */
 #define FIL_PAGE_DATA_END	8	/*!< size of the page trailer */
+
+/** Store the last 4 bytes of FIL_PAGE_LSN */
+#define FIL_PAGE_FCRC32_END_LSN 8
+
+/** Store crc32 checksum at the end of the page */
+#define FIL_PAGE_FCRC32_CHECKSUM	4
 /* @} */
 
 /** File page types (values of FIL_PAGE_TYPE) @{ */
-#define FIL_PAGE_PAGE_COMPRESSED_ENCRYPTED 37401 /*!< Page is compressed and
-						 then encrypted */
+/** page_compressed, encrypted=YES (not used for full_crc32) */
+#define FIL_PAGE_PAGE_COMPRESSED_ENCRYPTED 37401
+/** page_compressed (not used for full_crc32) */
 #define FIL_PAGE_PAGE_COMPRESSED 34354  /*!< page compressed page */
 #define FIL_PAGE_INDEX		17855	/*!< B-tree node */
 #define FIL_PAGE_RTREE		17854	/*!< R-tree node (SPATIAL INDEX) */
@@ -513,6 +809,12 @@ extern const fil_addr_t	fil_addr_null;
 Note: FIL_PAGE_TYPE_INSTANT maps to the same as FIL_PAGE_INDEX. */
 #define FIL_PAGE_TYPE_LAST	FIL_PAGE_TYPE_UNKNOWN
 					/*!< Last page type */
+/** Set in FIL_PAGE_TYPE if for full_crc32 pages in page_compressed format.
+If the flag is set, then the following holds for the remaining bits
+of FIL_PAGE_TYPE:
+Bits 0..7 will contain the compressed page size in bytes.
+Bits 8..14 are reserved and must be 0. */
+#define FIL_PAGE_COMPRESS_FCRC32_MARKER	15
 /* @} */
 
 /** @return whether the page type is B-tree or R-tree index */
@@ -597,6 +899,22 @@ struct fil_system_t {
 
 private:
   bool m_initialised;
+#ifdef UNIV_LINUX
+  /** available block devices that reside on non-rotational storage */
+  std::vector<dev_t> ssd;
+public:
+  /** @return whether a file system device is on non-rotational storage */
+  bool is_ssd(dev_t dev) const
+  {
+    /* Linux seems to allow up to 15 partitions per block device.
+    If the detected ssd carries "partition number 0" (it is the whole device),
+    compare the candidate file system number without the partition number. */
+    for (const auto s : ssd)
+      if (dev == s || (dev & ~15U) == s)
+        return true;
+    return false;
+  }
+#endif
 public:
 	ib_mutex_t	mutex;		/*!< The mutex protecting the cache */
 	fil_space_t*	sys_space;	/*!< The innodb_system tablespace */
@@ -749,16 +1067,6 @@ fil_space_get_flags(
 /*================*/
 	ulint	id);	/*!< in: space id */
 
-/** Returns the page size of the space and whether it is compressed or not.
-The tablespace must be cached in the memory cache.
-@param[in]	id	space id
-@param[out]	found	true if tablespace was found
-@return page size */
-const page_size_t
-fil_space_get_page_size(
-	ulint	id,
-	bool*	found);
-
 /*******************************************************************//**
 Opens all log files and system tablespace data files. They stay open until the
 database server shutdown. This should be called at a server startup after the
@@ -804,10 +1112,8 @@ for concurrency control.
 @param[in]	id	tablespace ID
 @param[in]	silent	whether to silently ignore missing tablespaces
 @return	the tablespace
-@retval	NULL if missing or being deleted or truncated */
-UNIV_INTERN
-fil_space_t*
-fil_space_acquire_low(ulint id, bool silent)
+@retval	NULL if missing or being deleted */
+fil_space_t* fil_space_acquire_low(ulint id, bool silent)
 	MY_ATTRIBUTE((warn_unused_result));
 
 /** Acquire a tablespace when it could be dropped concurrently.
@@ -1090,7 +1396,7 @@ fil_space_extend(
 @param[in]	type		IO context
 @param[in]	sync		true if synchronous aio is desired
 @param[in]	page_id		page id
-@param[in]	page_size	page size
+@param[in]	zip_size	ROW_FORMAT=COMPRESSED page size, or 0
 @param[in]	byte_offset	remainder of offset in bytes; in aio this
 				must be divisible by the OS block size
 @param[in]	len		how many bytes to read or write; this must
@@ -1102,14 +1408,14 @@ fil_space_extend(
 @param[in]	message		message for aio handler if non-sync aio
 				used, else ignored
 @param[in]	ignore_missing_space true=ignore missing space during read
-@return DB_SUCCESS, DB_TABLESPACE_DELETED or DB_TABLESPACE_TRUNCATED
+@return DB_SUCCESS, or DB_TABLESPACE_DELETED
 if we are trying to do i/o on a tablespace which does not exist */
 dberr_t
 fil_io(
 	const IORequest&	type,
 	bool			sync,
 	const page_id_t		page_id,
-	const page_size_t&	page_size,
+	ulint			zip_size,
 	ulint			byte_offset,
 	ulint			len,
 	void*			buf,

@@ -183,7 +183,7 @@ void maria_recover_error_handler_hook(uint error, const char *str,
 
 static void print_preamble()
 {
-  ma_message_no_user(ME_JUST_INFO, "starting recovery");
+  ma_message_no_user(ME_NOTE, "starting recovery");
 }
 
 
@@ -523,7 +523,7 @@ end:
     }
     if (!error)
     {
-      ma_message_no_user(ME_JUST_INFO, "recovery done");
+      ma_message_no_user(ME_NOTE, "recovery done");
       maria_recovery_changed_data= 1;
     }
   }
@@ -1372,6 +1372,7 @@ static int new_table(uint16 sid, const char *name, LSN lsn_of_file_id)
       silently pass in the "info == NULL" test below.
     */
     tprint(tracef, ", record is corrupted");
+    eprint(tracef, "\n***WARNING: %s may be corrupted", name ? name : "NULL");
     info= NULL;
     recovery_warnings++;
     goto end;
@@ -1384,7 +1385,11 @@ static int new_table(uint16 sid, const char *name, LSN lsn_of_file_id)
            " or its header is so corrupted that we cannot open it;"
            " we skip it");
     if (my_errno != ENOENT)
+    {
       recovery_found_crashed_tables++;
+      eprint(tracef, "\n***WARNING: %s could not be opened: Error: %d",
+             name ? name : "NULL", (int) my_errno);
+    }
     error= 0;
     goto end;
   }
@@ -1413,6 +1418,7 @@ static int new_table(uint16 sid, const char *name, LSN lsn_of_file_id)
       not transactional table
     */
     tprint(tracef, ", is not transactional.  Ignoring open request");
+    eprint(tracef, "\n***WARNING: '%s' may be crashed", name);
     error= -1;
     recovery_warnings++;
     goto end;
@@ -1459,6 +1465,8 @@ static int new_table(uint16 sid, const char *name, LSN lsn_of_file_id)
       (kfile_len == MY_FILEPOS_ERROR))
   {
     tprint(tracef, ", length unknown\n");
+    eprint(tracef, "\n***WARNING: Can't read length of file '%s'",
+           share->open_file_name.str);
     recovery_warnings++;
     goto end;
   }
@@ -3589,7 +3597,12 @@ void _ma_tmp_disable_logging_for_table(MARIA_HA *info,
     should be now. info->trn may be NULL in maria_chk.
   */
   if (info->trn == NULL)
+  {
     info->trn= &dummy_transaction_object;
+    info->trn_next= 0;
+    info->trn_prev= 0;
+  }
+
   DBUG_ASSERT(info->trn->rec_lsn == LSN_IMPOSSIBLE);
   share->page_type= PAGECACHE_PLAIN_PAGE;
   /* Functions below will pick up now_transactional and change callbacks */

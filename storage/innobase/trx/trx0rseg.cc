@@ -53,6 +53,10 @@ trx_rseg_write_wsrep_checkpoint(
 	const XID*	xid,
 	mtr_t*		mtr)
 {
+	DBUG_ASSERT(xid->gtrid_length >= 0);
+	DBUG_ASSERT(xid->bqual_length >= 0);
+	DBUG_ASSERT(xid->gtrid_length + xid->bqual_length < XIDDATASIZE);
+
 	mlog_write_ulint(TRX_RSEG_WSREP_XID_FORMAT + rseg_header,
 			 uint32_t(xid->formatID),
 			 MLOG_4BYTES, mtr);
@@ -65,9 +69,15 @@ trx_rseg_write_wsrep_checkpoint(
 			 uint32_t(xid->bqual_length),
 			 MLOG_4BYTES, mtr);
 
+	const ulint xid_length = static_cast<ulint>(xid->gtrid_length
+						    + xid->bqual_length);
 	mlog_write_string(TRX_RSEG_WSREP_XID_DATA + rseg_header,
 			  reinterpret_cast<const byte*>(xid->data),
-			  XIDDATASIZE, mtr);
+			  xid_length, mtr);
+	if (UNIV_LIKELY(xid_length < XIDDATASIZE)) {
+		mlog_memset(TRX_RSEG_WSREP_XID_DATA + rseg_header + xid_length,
+			    XIDDATASIZE - xid_length, 0, mtr);
+	}
 }
 
 /** Update the WSREP XID information in rollback segment header.
@@ -106,8 +116,9 @@ trx_rseg_clear_wsrep_checkpoint(
 	trx_rsegf_t*	rseg_header,
 	mtr_t*		mtr)
 {
-	mlog_write_ulint(TRX_RSEG_WSREP_XID_FORMAT + rseg_header,
-			 0, MLOG_4BYTES, mtr);
+	mlog_memset(rseg_header + TRX_RSEG_WSREP_XID_INFO,
+		    TRX_RSEG_WSREP_XID_DATA + XIDDATASIZE
+		    - TRX_RSEG_WSREP_XID_INFO, 0, mtr);
 }
 
 static void
@@ -275,12 +286,10 @@ void trx_rseg_format_upgrade(trx_rsegf_t* rseg_header, mtr_t* mtr)
 	mlog_write_ulint(rseg_format, 0, MLOG_4BYTES, mtr);
 	/* Clear also possible garbage at the end of the page. Old
 	InnoDB versions did not initialize unused parts of pages. */
-	byte* b = rseg_header + TRX_RSEG_MAX_TRX_ID + 8;
-	ulint len = srv_page_size
-		- (FIL_PAGE_DATA_END
-		   + TRX_RSEG + TRX_RSEG_MAX_TRX_ID + 8);
-	memset(b, 0, len);
-	mlog_log_string(b, len, mtr);
+	mlog_memset(TRX_RSEG_MAX_TRX_ID + 8 + rseg_header,
+		    srv_page_size
+		    - (FIL_PAGE_DATA_END
+		       + TRX_RSEG + TRX_RSEG_MAX_TRX_ID + 8), 0, mtr);
 }
 
 /** Create a rollback segment header.
@@ -312,22 +321,17 @@ trx_rseg_header_create(
 
 	buf_block_dbg_add_level(block, SYNC_RSEG_HEADER_NEW);
 
-	mlog_write_ulint(TRX_RSEG + TRX_RSEG_FORMAT + block->frame, 0,
-			 MLOG_4BYTES, mtr);
+	ut_ad(0 == mach_read_from_4(TRX_RSEG_FORMAT + TRX_RSEG
+				    + block->frame));
+	ut_ad(0 == mach_read_from_4(TRX_RSEG_HISTORY_SIZE + TRX_RSEG
+				    + block->frame));
 
 	/* Initialize the history list */
-
-	mlog_write_ulint(TRX_RSEG + TRX_RSEG_HISTORY_SIZE + block->frame, 0,
-			 MLOG_4BYTES, mtr);
-	flst_init(TRX_RSEG + TRX_RSEG_HISTORY + block->frame, mtr);
-	trx_rsegf_t* rsegf = TRX_RSEG + block->frame;
+	flst_init(block, TRX_RSEG_HISTORY + TRX_RSEG, mtr);
 
 	/* Reset the undo log slots */
-	for (ulint i = 0; i < TRX_RSEG_N_SLOTS; i++) {
-		/* This is generating a lot of redo log. MariaDB 10.4
-		introduced MLOG_MEMSET to reduce the redo log volume. */
-		trx_rsegf_set_nth_undo(rsegf, i, FIL_NULL, mtr);
-	}
+	mlog_memset(block, TRX_RSEG_UNDO_SLOTS + TRX_RSEG,
+		    TRX_RSEG_N_SLOTS * 4, 0xff, mtr);
 
 	if (sys_header) {
 		/* Add the rollback segment info to the free slot in
@@ -498,8 +502,8 @@ trx_rseg_mem_restore(trx_rseg_t* rseg, trx_id_t& max_trx_id, mtr_t* mtr)
 	rseg->curr_size = mach_read_from_4(rseg_header + TRX_RSEG_HISTORY_SIZE)
 		+ 1 + trx_undo_lists_init(rseg, max_trx_id, rseg_header);
 
-	if (ulint len = flst_get_len(rseg_header + TRX_RSEG_HISTORY)) {
-		trx_sys.history_add(int32(len));
+	if (auto len = flst_get_len(rseg_header + TRX_RSEG_HISTORY)) {
+		trx_sys.rseg_history_len += len;
 
 		fil_addr_t	node_addr = trx_purge_get_log_from_hist(
 			flst_get_last(rseg_header + TRX_RSEG_HISTORY, mtr));
@@ -635,10 +639,8 @@ trx_rseg_array_init()
 
 		/* Finally, clear WSREP XID in TRX_SYS page. */
 		const buf_block_t* sys = trx_sysf_get(&mtr);
-		mlog_write_ulint(TRX_SYS + TRX_SYS_WSREP_XID_INFO +
-				 + TRX_SYS_WSREP_XID_MAGIC_N_FLD + sys->frame,
-				 0, MLOG_4BYTES, &mtr);
-
+		mlog_memset(TRX_SYS + TRX_SYS_WSREP_XID_INFO + sys->frame,
+			    TRX_SYS_WSREP_XID_LEN, 0, &mtr);
 		mtr.commit();
 	}
 #endif

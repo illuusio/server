@@ -1367,7 +1367,7 @@ bool print_admin_msg(THD* thd, uint len,
   protocol->store(msgbuf, msg_length, system_charset_info);
   if (protocol->write())
   {
-    sql_print_error("Failed on my_net_write, writing to stderr instead: %s\n",
+    sql_print_error("Failed on my_net_write, writing to stderr instead: %s",
                     msgbuf);
     goto err;
   }
@@ -2828,6 +2828,8 @@ bool ha_partition::create_handler_file(const char *name)
       }
     }
     (void) mysql_file_close(file, MYF(0));
+    if (result)
+      mysql_file_delete(key_file_partition, file_name, MYF(MY_WME));
   }
   else
     result= TRUE;
@@ -4266,7 +4268,7 @@ void ha_partition::try_semi_consistent_read(bool yes)
     determining which partition the row should be written to.
 */
 
-int ha_partition::write_row(uchar * buf)
+int ha_partition::write_row(const uchar * buf)
 {
   uint32 part_id;
   int error;
@@ -4820,6 +4822,42 @@ ha_rows ha_partition::guess_bulk_insert_rows()
 }
 
 
+void ha_partition::sum_copy_info(handler *file)
+{
+  copy_info.records+= file->copy_info.records;
+  copy_info.touched+= file->copy_info.touched;
+  copy_info.copied+=  file->copy_info.copied;
+  copy_info.deleted+= file->copy_info.deleted;
+  copy_info.updated+= file->copy_info.updated;
+}
+
+
+void ha_partition::sum_copy_infos()
+{
+  handler **file_array;
+  bzero(&copy_info, sizeof(copy_info));
+  file_array= m_file;
+  do
+  {
+    if (bitmap_is_set(&(m_opened_partitions), (uint)(file_array - m_file)))
+      sum_copy_info(*file_array);
+  } while (*(++file_array));
+}
+
+void ha_partition::reset_copy_info()
+{
+  handler **file_array;
+  bzero(&copy_info, sizeof(copy_info));
+  file_array= m_file;
+  do
+  {
+    if (bitmap_is_set(&(m_opened_partitions), (uint)(file_array - m_file)))
+      bzero(&(*file_array)->copy_info, sizeof(copy_info));
+  } while (*(++file_array));
+}
+
+
+
 /*
   Finish a large batch of insert rows
 
@@ -4851,6 +4889,7 @@ int ha_partition::end_bulk_insert()
     int tmp;
     if ((tmp= m_file[i]->ha_end_bulk_insert()))
       error= tmp;
+    sum_copy_info(m_file[i]);
   }
   bitmap_clear_all(&m_bulk_insert_started);
   DBUG_RETURN(error);
@@ -5302,7 +5341,7 @@ bool ha_partition::init_record_priority_queue()
     /* Initialize priority queue, initialized to reading forward. */
     int (*cmp_func)(void *, uchar *, uchar *);
     void *cmp_arg= (void*) this;
-    if (!m_using_extended_keys && !(table_flags() & HA_CMP_REF_IS_EXPENSIVE))
+    if (!m_using_extended_keys && !(table_flags() & HA_SLOW_CMP_REF))
       cmp_func= cmp_key_rowid_part_id;
     else
       cmp_func= cmp_key_part_id;
@@ -5787,12 +5826,6 @@ int ha_partition::index_read_idx_map(uchar *buf, uint index,
 
     get_partition_set(table, buf, index, &m_start_key, &m_part_spec);
 
-    /*
-      We have either found exactly 1 partition
-      (in which case start_part == end_part)
-      or no matching partitions (start_part > end_part)
-    */
-    DBUG_ASSERT(m_part_spec.start_part >= m_part_spec.end_part);
     /* The start part is must be marked as used. */
     DBUG_ASSERT(m_part_spec.start_part > m_part_spec.end_part ||
                 bitmap_is_set(&(m_part_info->read_partitions),
@@ -6294,11 +6327,14 @@ ha_rows ha_partition::multi_range_read_info_const(uint keyno,
   uint ret_mrr_mode= 0;
   range_seq_t seq_it;
   part_id_range save_part_spec;
+  Cost_estimate part_cost;
   DBUG_ENTER("ha_partition::multi_range_read_info_const");
   DBUG_PRINT("enter", ("partition this: %p", this));
 
   m_mrr_new_full_buffer_size= 0;
   save_part_spec= m_part_spec;
+
+  cost->reset();
 
   seq_it= seq->init(seq_init_param, n_ranges, *mrr_mode);
   if (unlikely((error= multi_range_key_create_key(seq, seq_it))))
@@ -6306,7 +6342,7 @@ ha_rows ha_partition::multi_range_read_info_const(uint keyno,
     if (likely(error == HA_ERR_END_OF_FILE))    // No keys in range
     {
       rows= 0;
-      goto calc_cost;
+      goto end;
     }
     /*
       This error means that we can't do multi_range_read for the moment
@@ -6335,18 +6371,20 @@ ha_rows ha_partition::multi_range_read_info_const(uint keyno,
       ha_rows tmp_rows;
       uint tmp_mrr_mode;
       m_mrr_buffer_size[i]= 0;
+      part_cost.reset();
       tmp_mrr_mode= *mrr_mode;
       tmp_rows= (*file)->
         multi_range_read_info_const(keyno, &m_part_seq_if,
                                     &m_partition_part_key_multi_range_hld[i],
                                     m_part_mrr_range_length[i],
                                     &m_mrr_buffer_size[i],
-                                    &tmp_mrr_mode, cost);
+                                    &tmp_mrr_mode, &part_cost);
       if (tmp_rows == HA_POS_ERROR)
       {
         m_part_spec= save_part_spec;
         DBUG_RETURN(HA_POS_ERROR);
       }
+      cost->add(&part_cost);
       rows+= tmp_rows;
       ret_mrr_mode|= tmp_mrr_mode;
       m_mrr_new_full_buffer_size+= m_mrr_buffer_size[i];
@@ -6354,15 +6392,8 @@ ha_rows ha_partition::multi_range_read_info_const(uint keyno,
   } while (*(++file));
   *mrr_mode= ret_mrr_mode;
 
-calc_cost:
+end:
   m_part_spec= save_part_spec;
-  cost->reset();
-  cost->avg_io_cost= 1;
-  if ((*mrr_mode & HA_MRR_INDEX_ONLY) && rows > 2)
-    cost->io_count= keyread_time(keyno, n_ranges, (uint) rows);
-  else
-    cost->io_count= read_time(keyno, n_ranges, rows);
-  cost->cpu_cost= (double) rows / TIME_FOR_COMPARE + 0.01;
   DBUG_RETURN(rows);
 }
 
@@ -6375,9 +6406,12 @@ ha_rows ha_partition::multi_range_read_info(uint keyno, uint n_ranges,
 {
   uint i;
   handler **file;
-  ha_rows rows;
+  ha_rows rows= 0;
+  Cost_estimate part_cost;
   DBUG_ENTER("ha_partition::multi_range_read_info");
   DBUG_PRINT("enter", ("partition this: %p", this));
+
+  cost->reset();
 
   m_mrr_new_full_buffer_size= 0;
   file= m_file;
@@ -6386,22 +6420,20 @@ ha_rows ha_partition::multi_range_read_info(uint keyno, uint n_ranges,
     i= (uint)(file - m_file);
     if (bitmap_is_set(&(m_part_info->read_partitions), (i)))
     {
+      ha_rows tmp_rows;
       m_mrr_buffer_size[i]= 0;
-      if ((rows= (*file)->multi_range_read_info(keyno, n_ranges, keys,
-                                                key_parts,
-                                                &m_mrr_buffer_size[i],
-                                                mrr_mode, cost)))
+      part_cost.reset();
+      if ((tmp_rows= (*file)->multi_range_read_info(keyno, n_ranges, keys,
+                                                    key_parts,
+                                                    &m_mrr_buffer_size[i],
+                                                    mrr_mode, &part_cost)))
         DBUG_RETURN(rows);
+      cost->add(&part_cost);
+      rows+= tmp_rows;
       m_mrr_new_full_buffer_size+= m_mrr_buffer_size[i];
     }
   } while (*(++file));
 
-  cost->reset();
-  cost->avg_io_cost= 1;
-  if (*mrr_mode & HA_MRR_INDEX_ONLY)
-    cost->io_count= keyread_time(keyno, n_ranges, (uint) rows);
-  else
-    cost->io_count= read_time(keyno, n_ranges, rows);
   DBUG_RETURN(0);
 }
 
@@ -6846,7 +6878,7 @@ FT_INFO *ha_partition::ft_init_ext(uint flags, uint inx, String *key)
                           sizeof(FT_INFO *) * m_tot_parts,
                           NullS)))
     {
-      my_error(ER_OUT_OF_RESOURCES, MYF(ME_FATALERROR));
+      my_error(ER_OUT_OF_RESOURCES, MYF(ME_FATAL));
       DBUG_RETURN(NULL);
     }
     ft_target->part_ft_info= tmp_ft_info;
@@ -8246,6 +8278,7 @@ int ha_partition::info(uint flag)
     stats.delete_length= 0;
     stats.check_time= 0;
     stats.checksum= 0;
+    stats.checksum_null= TRUE;
     for (i= bitmap_get_first_set(&m_part_info->read_partitions);
          i < m_tot_parts;
          i= bitmap_get_next_set(&m_part_info->read_partitions, i))
@@ -8259,7 +8292,11 @@ int ha_partition::info(uint flag)
       stats.delete_length+= file->stats.delete_length;
       if (file->stats.check_time > stats.check_time)
         stats.check_time= file->stats.check_time;
-      stats.checksum+= file->stats.checksum;
+      if (!file->stats.checksum_null)
+      {
+        stats.checksum+= file->stats.checksum;
+        stats.checksum_null= FALSE;
+      }
     }
     if (stats.records && stats.records < 2 &&
         !(m_file[0]->ha_table_flags() & HA_STATS_RECORDS_IS_EXACT))
@@ -8418,6 +8455,7 @@ void ha_partition::get_dynamic_partition_info(PARTITION_STATS *stat_info,
   stat_info->update_time=          file->stats.update_time;
   stat_info->check_time=           file->stats.check_time;
   stat_info->check_sum=            file->stats.checksum;
+  stat_info->check_sum_null=       file->stats.checksum_null;
 }
 
 
@@ -9384,6 +9422,43 @@ double ha_partition::scan_time()
 
 
 /**
+  @brief
+  Caculate time to scan the given index (index only scan)
+
+  @param inx      Index number to scan
+
+  @return time for scanning index inx
+*/
+
+double ha_partition::key_scan_time(uint inx)
+{
+  double scan_time= 0;
+  uint i;
+  DBUG_ENTER("ha_partition::key_scan_time");
+  for (i= bitmap_get_first_set(&m_part_info->read_partitions);
+       i < m_tot_parts;
+       i= bitmap_get_next_set(&m_part_info->read_partitions, i))
+    scan_time+= m_file[i]->key_scan_time(inx);
+  DBUG_RETURN(scan_time);
+}
+
+
+double ha_partition::keyread_time(uint inx, uint ranges, ha_rows rows)
+{
+  double read_time= 0;
+  uint i;
+  DBUG_ENTER("ha_partition::keyread_time");
+  if (!ranges)
+    DBUG_RETURN(handler::keyread_time(inx, ranges, rows));
+  for (i= bitmap_get_first_set(&m_part_info->read_partitions);
+       i < m_tot_parts;
+       i= bitmap_get_next_set(&m_part_info->read_partitions, i))
+    read_time+= m_file[i]->keyread_time(inx, ranges, rows);
+  DBUG_RETURN(read_time);
+}
+
+
+/**
   Find number of records in a range.
   @param inx      Index number
   @param min_key  Start of range
@@ -9820,7 +9895,7 @@ void ha_partition::print_error(int error, myf errflag)
       append_row_to_str(str);
 
       /* Log this error, so the DBA can notice it and fix it! */
-      sql_print_error("Table '%-192s' corrupted: row in wrong partition: %s\n"
+      sql_print_error("Table '%-192s' corrupted: row in wrong partition: %s"
                       "Please REPAIR the table!",
                       table->s->table_name.str,
                       str.c_ptr_safe());
@@ -10610,6 +10685,64 @@ void ha_partition::init_table_handle_for_HANDLER()
 }
 
 
+/**
+  Calculate the checksum of the table (all partitions)
+*/
+
+int ha_partition::pre_calculate_checksum()
+{
+  int error;
+  DBUG_ENTER("ha_partition::pre_calculate_checksum");
+  m_pre_calling= TRUE;
+  if ((table_flags() & (HA_HAS_OLD_CHECKSUM | HA_HAS_NEW_CHECKSUM)))
+  {
+    handler **file= m_file;
+    do
+    {
+      if ((error= (*file)->pre_calculate_checksum()))
+      {
+        DBUG_RETURN(error);
+      }
+    } while (*(++file));
+  }
+  DBUG_RETURN(0);
+}
+
+
+int ha_partition::calculate_checksum()
+{
+  int error;
+  stats.checksum= 0;
+  stats.checksum_null= TRUE;
+
+  DBUG_ENTER("ha_partition::calculate_checksum");
+  if (!m_pre_calling)
+  {
+    if ((error= pre_calculate_checksum()))
+    {
+      m_pre_calling= FALSE;
+      DBUG_RETURN(error);
+    }
+  }
+  m_pre_calling= FALSE;
+
+  handler **file= m_file;
+  do
+  {
+    if ((error= (*file)->calculate_checksum()))
+    {
+      DBUG_RETURN(error);
+    }
+    if (!(*file)->stats.checksum_null)
+    {
+      stats.checksum+= (*file)->stats.checksum;
+      stats.checksum_null= FALSE;
+    }
+  } while (*(++file));
+  DBUG_RETURN(0);
+}
+
+
 /****************************************************************************
                 MODULE enable/disable indexes
 ****************************************************************************/
@@ -10732,8 +10865,6 @@ int ha_partition::check_misplaced_rows(uint read_part_id, bool do_repair)
   {
     /* Only need to read the partitioning fields. */
     bitmap_union(table->read_set, &m_part_info->full_part_field_set);
-    if (table->vcol_set)
-      bitmap_union(table->vcol_set, &m_part_info->full_part_field_set);
   }
 
   if ((result= m_file[read_part_id]->ha_rnd_init(1)))
@@ -11080,6 +11211,7 @@ bool ha_partition::start_bulk_update()
 
   do
   {
+    bzero(&(*file)->copy_info, sizeof((*file)->copy_info));
     if ((*file)->start_bulk_update())
       DBUG_RETURN(TRUE);
   } while (*(++file));
@@ -11137,6 +11269,7 @@ int ha_partition::end_bulk_update()
     if ((tmp= (*file)->end_bulk_update()))
       error= tmp;
   } while (*(++file));
+  sum_copy_infos();
   DBUG_RETURN(error);
 }
 
@@ -11233,6 +11366,7 @@ int ha_partition::end_bulk_delete()
     if ((tmp= (*file)->end_bulk_delete()))
       error= tmp;
   } while (*(++file));
+  sum_copy_infos();
   DBUG_RETURN(error);
 }
 
@@ -11349,11 +11483,13 @@ int ha_partition::pre_direct_update_rows_init(List<Item> *update_fields)
     0                         Success
 */
 
-int ha_partition::direct_update_rows(ha_rows *update_rows_result)
+int ha_partition::direct_update_rows(ha_rows *update_rows_result,
+                                     ha_rows *found_rows_result)
 {
   int error;
   bool rnd_seq= FALSE;
   ha_rows update_rows= 0;
+  ha_rows found_rows= 0;
   uint32 i;
   DBUG_ENTER("ha_partition::direct_update_rows");
 
@@ -11365,6 +11501,7 @@ int ha_partition::direct_update_rows(ha_rows *update_rows_result)
   }
 
   *update_rows_result= 0;
+  *found_rows_result= 0;
   for (i= m_part_spec.start_part; i <= m_part_spec.end_part; i++)
   {
     handler *file= m_file[i];
@@ -11380,7 +11517,8 @@ int ha_partition::direct_update_rows(ha_rows *update_rows_result)
       }
       if (unlikely((error= (m_pre_calling ?
                             (file)->pre_direct_update_rows() :
-                            (file)->ha_direct_update_rows(&update_rows)))))
+                            (file)->ha_direct_update_rows(&update_rows,
+                                                          &found_rows)))))
       {
         if (rnd_seq)
         {
@@ -11392,6 +11530,7 @@ int ha_partition::direct_update_rows(ha_rows *update_rows_result)
         DBUG_RETURN(error);
       }
       *update_rows_result+= update_rows;
+      *found_rows_result+= found_rows;
     }
     if (rnd_seq)
     {
@@ -11427,7 +11566,7 @@ int ha_partition::pre_direct_update_rows()
   DBUG_ENTER("ha_partition::pre_direct_update_rows");
   save_m_pre_calling= m_pre_calling;
   m_pre_calling= TRUE;
-  error= direct_update_rows(&not_used);
+  error= direct_update_rows(&not_used, &not_used);
   m_pre_calling= save_m_pre_calling;
   DBUG_RETURN(error);
 }

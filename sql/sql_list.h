@@ -21,6 +21,7 @@
 #endif
 
 #include "sql_alloc.h"
+#include <iterator>
 
 /**
   Simple intrusive linked list.
@@ -526,6 +527,63 @@ public:
     empty();
   }
   T *elem(uint n) { return (T*) base_list::elem(n); }
+  // Create a new list with one element
+  static List<T> *make(MEM_ROOT *mem_root, T *first)
+  {
+    List<T> *res= new (mem_root) List<T>;
+    return res == NULL || res->push_back(first, mem_root) ? NULL : res;
+  }
+
+  class Iterator;
+  using value_type= T;
+  using iterator= Iterator;
+  using const_iterator= const Iterator;
+
+  Iterator begin() const { return Iterator(first); }
+  Iterator end() const { return Iterator(); }
+
+  class Iterator
+  {
+  public:
+    using iterator_category= std::forward_iterator_tag;
+    using value_type= T;
+    using difference_type= std::ptrdiff_t;
+    using pointer= T *;
+    using reference= T &;
+
+    Iterator(list_node *p= &end_of_list) : node{p} {}
+
+    Iterator &operator++()
+    {
+      DBUG_ASSERT(node != &end_of_list);
+
+      node= node->next;
+      return *this;
+    }
+
+    T operator++(int)
+    {
+      Iterator tmp(*this);
+      operator++();
+      return tmp;
+    }
+
+    T &operator*() { return *static_cast<T *>(node->info); }
+    T *operator->() { return static_cast<T *>(node->info); }
+
+    bool operator==(const typename List<T>::iterator &rhs)
+    {
+      return node == rhs.node;
+    }
+
+    bool operator!=(const typename List<T>::iterator &rhs)
+    {
+      return node != rhs.node;
+    }
+
+  private:
+    list_node *node{&end_of_list};
+  };
 };
 
 
@@ -619,7 +677,7 @@ struct ilink
   struct ilink **prev,*next;
   static void *operator new(size_t size) throw ()
   {
-    return (void*)my_malloc((uint)size, MYF(MY_WME | MY_FAE | ME_FATALERROR));
+    return (void*)my_malloc((uint)size, MYF(MY_WME | MY_FAE | ME_FATAL));
   }
   static void operator delete(void* ptr_arg, size_t)
   {

@@ -11,6 +11,11 @@ set @@optimizer_switch='semijoin_with_cache=on';
 set @@optimizer_switch='outer_join_with_cache=on';
 set @@optimizer_switch='mrr=on,mrr_sort_keys=on,index_condition_pushdown=on';
 set @local_optimizer_switch=@@optimizer_switch;
+set @innodb_stats_persistent_save= @@innodb_stats_persistent;
+set @innodb_stats_persistent_sample_pages_save=
+@@innodb_stats_persistent_sample_pages;
+set global innodb_stats_persistent= 1;
+set global innodb_stats_persistent_sample_pages=100;
 set names utf8;
 CREATE DATABASE world;
 use world;
@@ -59,21 +64,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -95,33 +100,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 set join_cache_level=2;
 show variables like 'join_cache_level';
 Variable_name	Value
@@ -137,21 +142,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -173,33 +178,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 set join_cache_level=3;
 show variables like 'join_cache_level';
 Variable_name	Value
@@ -215,21 +220,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -251,33 +256,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 set join_cache_level=4;
 show variables like 'join_cache_level';
 Variable_name	Value
@@ -293,21 +298,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -329,33 +334,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 SELECT Country.Name, Country.Population, City.Name, City.Population 
 FROM Country LEFT JOIN City
 ON City.Country=Country.Code AND City.Population > 5000000
@@ -406,7 +411,7 @@ ON City.Country=Country.Code AND City.Population > 5000000
 WHERE Country.Name LIKE 'C%' AND Country.Population > 10000000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	Country	ALL	NULL	NULL	NULL	NULL	239	Using where
-1	SIMPLE	City	hash_range	City_Population	#hash#$hj:City_Population	3:4	world.Country.Code	25	Using where; Rowid-ordered scan; Using join buffer (flat, BNLH join)
+1	SIMPLE	City	hash_range	City_Population	#hash#$hj:City_Population	3:4	world.Country.Code	24	Using where; Rowid-ordered scan; Using join buffer (flat, BNLH join)
 SELECT Country.Name, Country.Population, City.Name, City.Population 
 FROM Country LEFT JOIN City
 ON City.Country=Country.Code AND City.Population > 5000000
@@ -477,21 +482,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -513,33 +518,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 set join_cache_level=2;
 show variables like 'join_cache_level';
 Variable_name	Value
@@ -555,21 +560,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -591,33 +596,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 set join_cache_level=3;
 show variables like 'join_cache_level';
 Variable_name	Value
@@ -633,21 +638,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -669,33 +674,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 set join_cache_level=4;
 show variables like 'join_cache_level';
 Variable_name	Value
@@ -711,21 +716,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -747,33 +752,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 set join_cache_level=@save_join_cache_level;
 set join_buffer_size=@save_join_buffer_size;
 DROP DATABASE world;
@@ -822,21 +827,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -846,9 +851,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	hash_ALL	PRIMARY	#hash#PRIMARY	3	world.CountryLanguage.Country	239	Using where; Using join buffer (flat, BNLH join)
-1	SIMPLE	City	hash_ALL	Country	#hash#Country	3	world.CountryLanguage.Country	4079	Using where; Using join buffer (flat, BNLH join)
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	hash_ALL	PRIMARY	#hash#PRIMARY	3	world.City.Country	239	Using where; Using join buffer (flat, BNLH join)
+1	SIMPLE	CountryLanguage	hash_ALL|filter	PRIMARY,Percentage	#hash#PRIMARY|Percentage	3|4	world.City.Country	984 (19%)	Using where; Using join buffer (flat, BNLH join); Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -858,33 +863,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
@@ -1022,21 +1027,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -1046,9 +1051,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	hash_ALL	PRIMARY	#hash#PRIMARY	3	world.CountryLanguage.Country	239	Using where; Using join buffer (flat, BNLH join)
-1	SIMPLE	City	hash_ALL	Country	#hash#Country	3	world.CountryLanguage.Country	4079	Using where; Using join buffer (incremental, BNLH join)
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	hash_ALL	PRIMARY	#hash#PRIMARY	3	world.City.Country	239	Using where; Using join buffer (flat, BNLH join)
+1	SIMPLE	CountryLanguage	hash_ALL|filter	PRIMARY,Percentage	#hash#PRIMARY|Percentage	3|4	world.City.Country	984 (19%)	Using where; Using join buffer (incremental, BNLH join); Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -1058,33 +1063,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
@@ -1276,26 +1281,26 @@ WHERE City.Country=Country.Code AND
 Country.Name LIKE 'L%' AND City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
 SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -1305,9 +1310,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.CountryLanguage.Country	1	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
-1	SIMPLE	City	ref	Country	Country	3	world.CountryLanguage.Country	18	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.City.Country	1	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	CountryLanguage	ref|filter	PRIMARY,Percentage	PRIMARY|Percentage	3|4	world.City.Country	4 (19%)	Using index condition(BKA); Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan; Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -1317,40 +1322,40 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
@@ -1473,26 +1478,26 @@ WHERE City.Country=Country.Code AND
 Country.Name LIKE 'L%' AND City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
 SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -1502,9 +1507,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.CountryLanguage.Country	1	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
-1	SIMPLE	City	ref	Country	Country	3	world.CountryLanguage.Country	18	Using where; Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.City.Country	1	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	CountryLanguage	ref|filter	PRIMARY,Percentage	PRIMARY|Percentage	3|4	world.City.Country	4 (19%)	Using index condition(BKA); Using where; Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan; Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -1514,40 +1519,40 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
@@ -1670,26 +1675,26 @@ WHERE City.Country=Country.Code AND
 Country.Name LIKE 'L%' AND City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
 SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -1699,9 +1704,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.CountryLanguage.Country	1	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
-1	SIMPLE	City	ref	Country	Country	3	world.CountryLanguage.Country	18	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.City.Country	1	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	CountryLanguage	ref|filter	PRIMARY,Percentage	PRIMARY|Percentage	3|4	world.City.Country	4 (19%)	Using index condition(BKA); Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan; Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -1711,40 +1716,40 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
@@ -1867,26 +1872,26 @@ WHERE City.Country=Country.Code AND
 Country.Name LIKE 'L%' AND City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
 SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -1896,9 +1901,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.CountryLanguage.Country	1	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
-1	SIMPLE	City	ref	Country	Country	3	world.CountryLanguage.Country	18	Using where; Using join buffer (incremental, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.City.Country	1	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	CountryLanguage	ref|filter	PRIMARY,Percentage	PRIMARY|Percentage	3|4	world.City.Country	4 (19%)	Using index condition(BKA); Using where; Using join buffer (incremental, BKAH join); Key-ordered Rowid-ordered scan; Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -1908,40 +1913,40 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
@@ -2073,21 +2078,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -2097,9 +2102,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	hash_ALL	PRIMARY	#hash#PRIMARY	3	world.CountryLanguage.Country	239	Using where; Using join buffer (flat, BNLH join)
-1	SIMPLE	City	hash_ALL	Country	#hash#Country	3	world.CountryLanguage.Country	4079	Using where; Using join buffer (flat, BNLH join)
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	hash_ALL	PRIMARY	#hash#PRIMARY	3	world.City.Country	239	Using where; Using join buffer (flat, BNLH join)
+1	SIMPLE	CountryLanguage	hash_ALL|filter	PRIMARY,Percentage	#hash#PRIMARY|Percentage	3|4	world.City.Country	984 (19%)	Using where; Using join buffer (flat, BNLH join); Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -2109,33 +2114,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
@@ -2177,21 +2182,21 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -2201,9 +2206,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	hash_ALL	PRIMARY	#hash#PRIMARY	3	world.CountryLanguage.Country	239	Using where; Using join buffer (flat, BNLH join)
-1	SIMPLE	City	hash_ALL	Country	#hash#Country	3	world.CountryLanguage.Country	4079	Using where; Using join buffer (incremental, BNLH join)
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	hash_ALL	PRIMARY	#hash#PRIMARY	3	world.City.Country	239	Using where; Using join buffer (flat, BNLH join)
+1	SIMPLE	CountryLanguage	hash_ALL|filter	PRIMARY,Percentage	#hash#PRIMARY|Percentage	3|4	world.City.Country	984 (19%)	Using where; Using join buffer (incremental, BNLH join); Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -2213,33 +2218,33 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
@@ -2276,26 +2281,26 @@ WHERE City.Country=Country.Code AND
 Country.Name LIKE 'L%' AND City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
 SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -2305,9 +2310,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.CountryLanguage.Country	1	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
-1	SIMPLE	City	ref	Country	Country	3	world.CountryLanguage.Country	18	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.City.Country	1	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	CountryLanguage	ref|filter	PRIMARY,Percentage	PRIMARY|Percentage	3|4	world.City.Country	4 (19%)	Using index condition(BKA); Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan; Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -2317,40 +2322,40 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
@@ -2380,26 +2385,26 @@ WHERE City.Country=Country.Code AND
 Country.Name LIKE 'L%' AND City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
 SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -2409,9 +2414,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.CountryLanguage.Country	1	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
-1	SIMPLE	City	ref	Country	Country	3	world.CountryLanguage.Country	18	Using where; Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.City.Country	1	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	CountryLanguage	ref|filter	PRIMARY,Percentage	PRIMARY|Percentage	3|4	world.City.Country	4 (19%)	Using index condition(BKA); Using where; Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan; Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -2421,40 +2426,40 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
@@ -2484,26 +2489,26 @@ WHERE City.Country=Country.Code AND
 Country.Name LIKE 'L%' AND City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
 SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -2513,9 +2518,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.CountryLanguage.Country	1	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
-1	SIMPLE	City	ref	Country	Country	3	world.CountryLanguage.Country	18	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.City.Country	1	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	CountryLanguage	ref|filter	PRIMARY,Percentage	PRIMARY|Percentage	3|4	world.City.Country	4 (19%)	Using index condition(BKA); Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan; Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -2525,40 +2530,40 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
@@ -2588,26 +2593,26 @@ WHERE City.Country=Country.Code AND
 Country.Name LIKE 'L%' AND City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
 SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 EXPLAIN
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
@@ -2617,9 +2622,9 @@ City.Name LIKE 'L%' AND Country.Population > 3000000 AND
 CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	CountryLanguage	ALL	PRIMARY,Percentage	NULL	NULL	NULL	984	Using where
-1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.CountryLanguage.Country	1	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
-1	SIMPLE	City	ref	Country	Country	3	world.CountryLanguage.Country	18	Using where; Using join buffer (incremental, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	City	ALL	Country	NULL	NULL	NULL	4079	Using where
+1	SIMPLE	Country	eq_ref	PRIMARY	PRIMARY	3	world.City.Country	1	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	SIMPLE	CountryLanguage	ref|filter	PRIMARY,Percentage	PRIMARY|Percentage	3|4	world.City.Country	4 (19%)	Using index condition(BKA); Using where; Using join buffer (incremental, BKAH join); Key-ordered Rowid-ordered scan; Using rowid filter
 SELECT City.Name, Country.Name, CountryLanguage.Language
 FROM City,Country,CountryLanguage
 WHERE City.Country=Country.Code AND
@@ -2629,40 +2634,40 @@ CountryLanguage.Percentage > 50 AND
 LENGTH(Language) < LENGTH(City.Name) - 2;
 Name	Name	Language
 La Matanza	Argentina	Spanish
-Lomas de Zamora	Argentina	Spanish
-Lauro de Freitas	Brazil	Portuguese
-Los Angeles	Chile	Spanish
-Las Palmas de Gran Canaria	Spain	Spanish
-L´Hospitalet de Llobregat	Spain	Spanish
-Lleida (Lérida)	Spain	Spanish
-Liupanshui	China	Chinese
-Lianyungang	China	Chinese
-Liangcheng	China	Chinese
-Lengshuijiang	China	Chinese
-Lázaro Cárdenas	Mexico	Spanish
 Lagos de Moreno	Mexico	Spanish
-Las Margaritas	Mexico	Spanish
-Lashio (Lasho)	Myanmar	Burmese
 Lalitapur	Nepal	Nepali
-Ludwigshafen am Rhein	Germany	German
-Leverkusen	Germany	German
-Luchou	Taiwan	Min
-Lungtan	Taiwan	Min
-Lower Hutt	New Zealand	English
-Los Teques	Venezuela	Spanish
+Las Margaritas	Mexico	Spanish
+Las Palmas de Gran Canaria	Spain	Spanish
+Lashio (Lasho)	Myanmar	Burmese
+Lauro de Freitas	Brazil	Portuguese
+Lengshuijiang	China	Chinese
 Leninsk-Kuznetski	Russian Federation	Russian
-Los Angeles	United States	English
-Long Beach	United States	English
+Leverkusen	Germany	German
 Lexington-Fayette	United States	English
-Louisville	United States	English
+Liangcheng	China	Chinese
+Lianyungang	China	Chinese
 Little Rock	United States	English
+Liupanshui	China	Chinese
+Lleida (Lérida)	Spain	Spanish
+Lomas de Zamora	Argentina	Spanish
+Long Beach	United States	English
+Los Angeles	Chile	Spanish
+Los Angeles	United States	English
+Los Teques	Venezuela	Spanish
+Louisville	United States	English
+Lower Hutt	New Zealand	English
+Luchou	Taiwan	Min
+Ludwigshafen am Rhein	Germany	German
+Lungtan	Taiwan	Min
+L´Hospitalet de Llobregat	Spain	Spanish
+Lázaro Cárdenas	Mexico	Spanish
 EXPLAIN
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	Country	range	PRIMARY,Name	Name	52	NULL	10	Using index condition; Rowid-ordered scan
-1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	18	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
+1	PRIMARY	City	ref	Population,Country	Country	3	world.Country.Code	17	Using where; Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
 SELECT Name FROM City
 WHERE City.Country IN (SELECT Code FROM Country WHERE Country.Name LIKE 'L%') AND
 City.Population > 100000;
@@ -2688,52 +2693,52 @@ set join_cache_level=1;
 SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND City.Population > 3000000;
 Name	Name
-Sydney	Australia
-Dhaka	Bangladesh
-São Paulo	Brazil
-Rio de Janeiro	Brazil
-London	United Kingdom
-Santiago de Chile	Chile
-Cairo	Egypt
 Alexandria	Egypt
-Jakarta	Indonesia
-Mumbai (Bombay)	India
-Delhi	India
-Calcutta [Kolkata]	India
-Chennai (Madras)	India
+Ankara	Turkey
 Baghdad	Iraq
-Teheran	Iran
-Tokyo	Japan
-Jokohama [Yokohama]	Japan
-Shanghai	China
-Peking	China
-Chongqing	China
-Tianjin	China
-Wuhan	China
-Harbin	China
-Shenyang	China
-Kanton [Guangzhou]	China
+Bangkok	Thailand
+Berlin	Germany
+Cairo	Egypt
+Calcutta [Kolkata]	India
 Chengdu	China
-Santafé de Bogotá	Colombia
-Kinshasa	Congo, The Democratic Republic of the
-Seoul	South Korea
-Pusan	South Korea
+Chennai (Madras)	India
+Chongqing	China
 Ciudad de México	Mexico
-Rangoon (Yangon)	Myanmar
+Delhi	India
+Dhaka	Bangladesh
+Harbin	China
+Ho Chi Minh City	Vietnam
+Istanbul	Turkey
+Jakarta	Indonesia
+Jokohama [Yokohama]	Japan
+Kanton [Guangzhou]	China
 Karachi	Pakistan
+Kinshasa	Congo, The Democratic Republic of the
 Lahore	Pakistan
 Lima	Peru
-Berlin	Germany
-Riyadh	Saudi Arabia
-Singapore	Singapore
-Bangkok	Thailand
-Istanbul	Turkey
-Ankara	Turkey
-Moscow	Russian Federation
-St Petersburg	Russian Federation
-Ho Chi Minh City	Vietnam
-New York	United States
+London	United Kingdom
 Los Angeles	United States
+Moscow	Russian Federation
+Mumbai (Bombay)	India
+New York	United States
+Peking	China
+Pusan	South Korea
+Rangoon (Yangon)	Myanmar
+Rio de Janeiro	Brazil
+Riyadh	Saudi Arabia
+Santafé de Bogotá	Colombia
+Santiago de Chile	Chile
+Seoul	South Korea
+Shanghai	China
+Shenyang	China
+Singapore	Singapore
+St Petersburg	Russian Federation
+Sydney	Australia
+São Paulo	Brazil
+Teheran	Iran
+Tianjin	China
+Tokyo	Japan
+Wuhan	China
 set join_cache_level=8;
 set join_buffer_size=384;
 EXPLAIN
@@ -2798,41 +2803,41 @@ SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 ALTER TABLE Country MODIFY Name varchar(300) NOT NULL default '';
 SELECT City.Name, Country.Name FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name
-Vientiane	Laos
-Riga	Latvia
-Daugavpils	Latvia
-Maseru	Lesotho
+?iauliai	Lithuania
 Beirut	Lebanon
-Tripoli	Lebanon
-Monrovia	Liberia
-Tripoli	Libyan Arab Jamahiriya
 Bengasi	Libyan Arab Jamahiriya
-Misrata	Libyan Arab Jamahiriya
-Vilnius	Lithuania
+Daugavpils	Latvia
 Kaunas	Lithuania
 Klaipeda	Lithuania
-?iauliai	Lithuania
+Maseru	Lesotho
+Misrata	Libyan Arab Jamahiriya
+Monrovia	Liberia
 Panevezys	Lithuania
+Riga	Latvia
+Tripoli	Lebanon
+Tripoli	Libyan Arab Jamahiriya
+Vientiane	Laos
+Vilnius	Lithuania
 ALTER TABLE Country ADD COLUMN PopulationBar text;
 UPDATE Country 
 SET PopulationBar=REPEAT('x', CAST(Population/100000 AS unsigned int));
@@ -2840,41 +2845,41 @@ SELECT City.Name, Country.Name, Country.PopulationBar FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name	PopulationBar
-Vientiane	Laos	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Riga	Latvia	xxxxxxxxxxxxxxxxxxxxxxxx
-Daugavpils	Latvia	xxxxxxxxxxxxxxxxxxxxxxxx
-Maseru	Lesotho	xxxxxxxxxxxxxxxxxxxxxx
+?iauliai	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Beirut	Lebanon	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Tripoli	Lebanon	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Monrovia	Liberia	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Tripoli	Libyan Arab Jamahiriya	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Bengasi	Libyan Arab Jamahiriya	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Misrata	Libyan Arab Jamahiriya	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Vilnius	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Daugavpils	Latvia	xxxxxxxxxxxxxxxxxxxxxxxx
 Kaunas	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Klaipeda	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-?iauliai	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Maseru	Lesotho	xxxxxxxxxxxxxxxxxxxxxx
+Misrata	Libyan Arab Jamahiriya	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Monrovia	Liberia	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Panevezys	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Riga	Latvia	xxxxxxxxxxxxxxxxxxxxxxxx
+Tripoli	Lebanon	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Tripoli	Libyan Arab Jamahiriya	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Vientiane	Laos	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Vilnius	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 set join_buffer_size=256;
 SELECT City.Name, Country.Name, Country.PopulationBar FROM City,Country
 WHERE City.Country=Country.Code AND 
 Country.Name LIKE 'L%' AND City.Population > 100000;
 Name	Name	PopulationBar
-Vientiane	Laos	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Riga	Latvia	xxxxxxxxxxxxxxxxxxxxxxxx
-Daugavpils	Latvia	xxxxxxxxxxxxxxxxxxxxxxxx
-Maseru	Lesotho	xxxxxxxxxxxxxxxxxxxxxx
+?iauliai	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Beirut	Lebanon	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Tripoli	Lebanon	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Monrovia	Liberia	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Tripoli	Libyan Arab Jamahiriya	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Bengasi	Libyan Arab Jamahiriya	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Misrata	Libyan Arab Jamahiriya	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Vilnius	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Daugavpils	Latvia	xxxxxxxxxxxxxxxxxxxxxxxx
 Kaunas	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Klaipeda	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-?iauliai	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Maseru	Lesotho	xxxxxxxxxxxxxxxxxxxxxx
+Misrata	Libyan Arab Jamahiriya	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Monrovia	Liberia	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Panevezys	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Riga	Latvia	xxxxxxxxxxxxxxxxxxxxxxxx
+Tripoli	Lebanon	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Tripoli	Libyan Arab Jamahiriya	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Vientiane	Laos	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Vilnius	Lithuania	xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 set join_cache_level=@save_join_cache_level;
 set join_buffer_size=@save_join_buffer_size;
 #
@@ -2895,7 +2900,7 @@ ON City.Country=Country.Code AND City.Population > 5000000
 WHERE Country.Name LIKE 'C%' AND Country.Population > 10000000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	Country	range	Name	Name	302	NULL	15	Using index condition; Using where; Rowid-ordered scan
-1	SIMPLE	City	hash_range	Population,Country	#hash#Country:Population	3:4	world.Country.Code	25	Using where; Rowid-ordered scan; Using join buffer (flat, BNLH join)
+1	SIMPLE	City	hash_range	Population,Country	#hash#Country:Population	3:4	world.Country.Code	24	Using where; Rowid-ordered scan; Using join buffer (flat, BNLH join)
 EXPLAIN
 SELECT Country.Name, Country.Population, City.Name, City.Population
 FROM Country LEFT JOIN City
@@ -3060,13 +3065,13 @@ t6.formattypeid IN (2) AND (t3.formatid IN (31, 8, 76)) AND
 t1.metaid = t2.metaid AND t1.affiliateid = '2';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t6	system	PRIMARY	NULL	NULL	NULL	1	
-1	SIMPLE	t1	ref	t1_affiliateid,t1_metaid	t1_affiliateid	4	const	1	
-1	SIMPLE	t2	eq_ref	PRIMARY	PRIMARY	4	test.t1.metaid	1	Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
-1	SIMPLE	t7	ref	PRIMARY	PRIMARY	4	test.t1.metaid	1	Using index
-1	SIMPLE	t8	eq_ref	PRIMARY	PRIMARY	4	test.t7.artistid	1	Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	t5	ref	PRIMARY,t5_formattypeid	t5_formattypeid	4	const	1	
+1	SIMPLE	t1	ref	t1_affiliateid,t1_metaid	t1_affiliateid	4	const	2	Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	t2	eq_ref	PRIMARY	PRIMARY	4	test.t1.metaid	1	Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
 1	SIMPLE	t3	ref	t3_metaid,t3_formatid,t3_metaidformatid	t3_metaidformatid	4	test.t1.metaid	1	Using index condition; Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
 1	SIMPLE	t4	eq_ref	PRIMARY,t4_formatclassid,t4_formats_idx	PRIMARY	4	test.t3.formatid	1	Using where; Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
-1	SIMPLE	t5	eq_ref	PRIMARY,t5_formattypeid	PRIMARY	4	test.t4.formatclassid	1	Using where; Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	t7	ref	PRIMARY	PRIMARY	4	test.t1.metaid	1	Using index
+1	SIMPLE	t8	eq_ref	PRIMARY	PRIMARY	4	test.t7.artistid	1	Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
 1	SIMPLE	t9	index	PRIMARY,t9_subgenreid,t9_metaid	PRIMARY	8	NULL	2	Using where; Using index; Using join buffer (incremental, BNL join)
 1	SIMPLE	t10	eq_ref	PRIMARY,t10_genreid	PRIMARY	4	test.t9.subgenreid	1	Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
 1	SIMPLE	t11	eq_ref	PRIMARY	PRIMARY	4	test.t10.genreid	1	Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
@@ -3185,7 +3190,7 @@ Warning	1292	Truncated incorrect join_buffer_size value: '32'
 set join_cache_level=8;
 EXPLAIN SELECT * FROM t1,t2 WHERE t1.a=t2.a AND t1.b >= 30;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	ALL	idx	NULL	NULL	NULL	7	Using where
+1	SIMPLE	t1	range	idx	idx	5	NULL	3	Using index condition; Using where; Rowid-ordered scan
 1	SIMPLE	t2	ref	idx	idx	5	test.t1.a	2	Using join buffer (flat, BKAH join); Key-ordered Rowid-ordered scan
 SELECT * FROM t1,t2 WHERE t1.a=t2.a AND t1.b >= 30;
 a	b	a	b
@@ -3690,8 +3695,8 @@ where t2.b=t1.b and t3.d=t1.d and t4.c=t1.c;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	7	Using where
 1	SIMPLE	t2	ref	idx	idx	5	test.t1.b	1	
-1	SIMPLE	t3	ref	idx	idx	5	test.t1.d	1	
 1	SIMPLE	t4	ref	idx	idx	5	test.t1.c	1	
+1	SIMPLE	t3	ref	idx	idx	5	test.t1.d	1	
 select t1.a, t1.b, t1.c, t1.d, t2.e, t3.f, t4.g from t1,t2,t3,t4
 where t2.b=t1.b and t3.d=t1.d and t4.c=t1.c;
 a	b	c	d	e	f	g
@@ -3703,8 +3708,8 @@ where t2.b=t1.b and t3.d=t1.d and t4.c=t1.c;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	7	Using where
 1	SIMPLE	t2	ref	idx	idx	5	test.t1.b	1	Using join buffer (flat, BKA join); Key-ordered Rowid-ordered scan
-1	SIMPLE	t3	ref	idx	idx	5	test.t1.d	1	Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
 1	SIMPLE	t4	ref	idx	idx	5	test.t1.c	1	Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
+1	SIMPLE	t3	ref	idx	idx	5	test.t1.d	1	Using join buffer (incremental, BKA join); Key-ordered Rowid-ordered scan
 select t1.a, t1.b, t1.c, t1.d, t2.e, t3.f, t4.g from t1,t2,t3,t4
 where t2.b=t1.b and t3.d=t1.d and t4.c=t1.c;
 a	b	c	d	e	f	g
@@ -5054,8 +5059,8 @@ EXPLAIN
 SELECT * FROM t1,t2
 WHERE t1.f1 = t2.f4 AND (t1.f3 = 1 AND t2.f3 = 4 OR t1.f3 = 2 AND t2.f3 = 6);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	range	PRIMARY	PRIMARY	4	NULL	2	Using where; Rowid-ordered scan
-1	SIMPLE	t2	range	PRIMARY	PRIMARY	4	NULL	2	Using where; Rowid-ordered scan; Using join buffer (flat, BNL join)
+1	SIMPLE	t1	ALL	PRIMARY	NULL	NULL	NULL	2	Using where
+1	SIMPLE	t2	ALL	PRIMARY	NULL	NULL	NULL	2	Using where; Using join buffer (flat, BNL join)
 SELECT * FROM t1,t2
 WHERE t1.f1 = t2.f4 AND (t1.f3 = 1 AND t2.f3 = 4 OR t1.f3 = 2 AND t2.f3 = 6);
 f1	f3	f3	f2	f4
@@ -5064,8 +5069,8 @@ EXPLAIN
 SELECT * FROM t1,t2
 WHERE t1.f1 = t2.f4 AND (t1.f3 = 1 AND t2.f3 = 4 OR t1.f3 = 2 AND t2.f3 = 6);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	range	PRIMARY	PRIMARY	4	NULL	2	Using index condition; Using where; Rowid-ordered scan
-1	SIMPLE	t2	range	PRIMARY	PRIMARY	4	NULL	2	Using index condition; Using where; Rowid-ordered scan; Using join buffer (flat, BNL join)
+1	SIMPLE	t1	ALL	PRIMARY	NULL	NULL	NULL	2	Using where
+1	SIMPLE	t2	ALL	PRIMARY	NULL	NULL	NULL	2	Using where; Using join buffer (flat, BNL join)
 SELECT * FROM t1,t2
 WHERE t1.f1 = t2.f4 AND (t1.f3 = 1 AND t2.f3 = 4 OR t1.f3 = 2 AND t2.f3 = 6);
 f1	f3	f3	f2	f4
@@ -5120,7 +5125,7 @@ SET SESSION join_cache_level = 1;
 EXPLAIN 
 SELECT * FROM t1,t2 WHERE t1.a < 3 and t2.a IS NULL;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	range	PRIMARY	PRIMARY	4	NULL	3	Using where; Using index
+1	SIMPLE	t1	range	PRIMARY	PRIMARY	4	NULL	2	Using where; Using index
 1	SIMPLE	t2	ref	idx	idx	5	const	4	Using index condition
 SELECT * FROM t1,t2 WHERE t1.a < 3 and t2.a IS NULL;
 a	a	b
@@ -5136,7 +5141,7 @@ SET SESSION join_cache_level = 4;
 EXPLAIN 
 SELECT * FROM t1,t2 WHERE t1.a < 3 and t2.a IS NULL;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	range	PRIMARY	PRIMARY	4	NULL	3	Using where; Using index
+1	SIMPLE	t1	range	PRIMARY	PRIMARY	4	NULL	2	Using where; Using index
 1	SIMPLE	t2	hash_range	idx	#hash#idx:idx	5:5	const	4	Using index condition; Using where; Rowid-ordered scan; Using join buffer (flat, BNLH join)
 SELECT * FROM t1,t2 WHERE t1.a < 3 and t2.a IS NULL;
 a	a	b
@@ -5436,7 +5441,7 @@ ORDER BY t2.b;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	system	NULL	NULL	NULL	NULL	1	
 1	PRIMARY	t3	system	NULL	NULL	NULL	NULL	1	
-1	PRIMARY	t2	range	a,c	a	5	NULL	1	Using index condition; Using where; Using filesort
+1	PRIMARY	t2	range	a,c	a	5	NULL	2	Using index condition; Using where; Using filesort
 1	PRIMARY	t4	ref	c	c	5	test.t2.c	2	Using where; Start temporary; End temporary
 SELECT * FROM t1,t2
 WHERE t2.c IN (SELECT c FROM t3,t4 WHERE t4.a < 10) AND
@@ -5454,7 +5459,7 @@ ORDER BY t2.b;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	system	NULL	NULL	NULL	NULL	1	Using temporary; Using filesort
 1	PRIMARY	t3	system	NULL	NULL	NULL	NULL	1	
-1	PRIMARY	t2	range	a,c	a	5	NULL	1	Using index condition; Using where
+1	PRIMARY	t2	range	a,c	a	5	NULL	2	Using index condition; Using where
 1	PRIMARY	t4	ref	c	c	5	test.t2.c	2	Using where; Start temporary; End temporary
 SELECT * FROM t1,t2
 WHERE t2.c IN (SELECT c FROM t3,t4 WHERE t4.a < 10) AND
@@ -5473,7 +5478,7 @@ ORDER BY t2.b;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	system	NULL	NULL	NULL	NULL	1	Using temporary; Using filesort
 1	PRIMARY	t3	system	NULL	NULL	NULL	NULL	1	
-1	PRIMARY	t2	range	a,c	a	5	NULL	1	Using index condition; Using where
+1	PRIMARY	t2	range	a,c	a	5	NULL	2	Using index condition; Using where
 1	PRIMARY	t4	ref	c	c	5	test.t2.c	2	Using where; Start temporary; End temporary
 SELECT * FROM t1,t2
 WHERE t2.c IN (SELECT c FROM t3,t4 WHERE t4.a < 10) AND
@@ -5948,6 +5953,12 @@ CREATE TABLE t2 (i1 int, v1 varchar(1), KEY v1 (v1,i1)) ENGINE=InnoDB;
 INSERT INTO t2 VALUES
 (NULL,'x'),(1,'x'),(3,'x'),(5,'x'),(8,'x'),(48,'x'),
 (228,'x'),(3,'y'),(1,'z'),(9,'z');
+ANALYZE TABLE t1,t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
+test.t1	analyze	status	OK
+test.t2	analyze	status	Engine-independent statistics collected
+test.t2	analyze	status	OK
 CREATE TABLE temp
 SELECT t1.i1 AS f1, t1.v1 AS f2 FROM (t2 JOIN t1 ON (t1.v1 = t2.v1));
 SELECT * FROM temp
@@ -5966,7 +5977,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	<subquery2>	ALL	distinct_key	NULL	NULL	NULL	1	100.00	
 1	PRIMARY	temp	hash_ALL	NULL	#hash#$hj	9	test.t1.i1,test.t1.v1	7	100.00	Using where; Using join buffer (flat, BNLH join)
 2	MATERIALIZED	t1	ALL	NULL	NULL	NULL	NULL	1	100.00	Using where
-2	MATERIALIZED	t2	hash_index	v1	#hash#v1:v1	4:9	test.t1.v1	10	10.00	Using index; Using join buffer (flat, BNLH join)
+2	MATERIALIZED	t2	hash_index	v1	#hash#v1:v1	4:9	test.t1.v1	10	33.33	Using index; Using join buffer (flat, BNLH join)
 Warnings:
 Note	1003	select `test`.`temp`.`f1` AS `f1`,`test`.`temp`.`f2` AS `f2` from `test`.`temp` semi join (`test`.`t2` join `test`.`t1`) where `test`.`temp`.`f1` = `test`.`t1`.`i1` and `test`.`t2`.`v1` = `test`.`t1`.`v1` and `test`.`temp`.`f2` = `test`.`t1`.`v1`
 DROP TABLE t1,t2,temp;
@@ -6031,7 +6042,7 @@ set join_buffer_space_limit=1024*8;
 explain select count(*) from t1, t1 t2 where t1.a=t2.a;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	11	
-1	SIMPLE	t2	ALL	NULL	NULL	NULL	NULL	11	Using where
+1	SIMPLE	t2	ALL	NULL	NULL	NULL	NULL	11	Using where; Using join buffer (flat, BNL join)
 set join_buffer_space_limit=@save_join_buffer_space_limit;
 drop table t1;
 #
@@ -6040,12 +6051,12 @@ drop table t1;
 SET join_cache_level = 3;
 # The following should have 
 #  - table order PROFILING,user,  
-#  - table user accessed with hash_ALL:
+#  - table db accessed with hash_ALL:
 explain
-SELECT * FROM INFORMATION_SCHEMA.PROFILING, mysql.user WHERE password_expired = PAGE_FAULTS_MINOR;
+SELECT * FROM INFORMATION_SCHEMA.PROFILING, mysql.db WHERE Select_priv = PAGE_FAULTS_MINOR;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	PROFILING	ALL	NULL	NULL	NULL	NULL	NULL	Using where
-1	SIMPLE	user	hash_ALL	NULL	#hash#$hj	1	information_schema.PROFILING.PAGE_FAULTS_MINOR	4	Using where; Using join buffer (flat, BNLH join)
+1	SIMPLE	db	hash_ALL	NULL	#hash#$hj	1	information_schema.PROFILING.PAGE_FAULTS_MINOR	2	Using where; Using join buffer (flat, BNLH join)
 set join_cache_level=@save_join_cache_level;
 create table t1 (c1 date not null, key (c1)) engine=innodb;
 insert t1 values ('2017-12-27');
@@ -6080,6 +6091,7 @@ from
 t2 A, t2 B;
 analyze table t3;
 Table	Op	Msg_type	Msg_text
+test.t3	analyze	status	Engine-independent statistics collected
 test.t3	analyze	status	Table is already up to date
 # The following must have "B.col1 + 1 < 33333" attached to table B
 # and not to the block-nl-join node:
@@ -6116,12 +6128,12 @@ EXPLAIN
         "key_length": "10",
         "used_key_parts": ["kp1", "kp2"],
         "rows": 836,
-        "filtered": 11.962,
+        "filtered": 76.434,
         "index_condition": "b.kp2 <= 10",
         "attached_condition": "b.kp2 <= 10 and b.col1 + 1 < 33333"
       },
       "buffer_type": "flat",
-      "buffer_size": "256Kb",
+      "buffer_size": "54",
       "join_type": "BNL",
       "attached_condition": "b.kp1 = a.a"
     }
@@ -6129,3 +6141,6 @@ EXPLAIN
 }
 drop table t1,t2,t3;
 set @@optimizer_switch=@save_optimizer_switch;
+set global innodb_stats_persistent= @innodb_stats_persistent_save;
+set global innodb_stats_persistent_sample_pages=
+@innodb_stats_persistent_sample_pages_save;

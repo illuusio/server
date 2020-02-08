@@ -42,10 +42,7 @@ SET(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING
    "Choose the type of build, options are: None(CMAKE_CXX_FLAGS or CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel")
 
 # MAX_INDEXES - Set the maximum number of indexes per table, default 64
-IF (NOT MAX_INDEXES)
-  SET(MAX_INDEXES 64)
-ENDIF(NOT MAX_INDEXES)
-
+SET(MAX_INDEXES 64 CACHE STRING "Max number of indexes")
 IF (${MAX_INDEXES} GREATER 128)
   MESSAGE(FATAL_ERROR "MAX_INDEXES values greater than 128 is not supported!")
 ENDIF()
@@ -80,6 +77,14 @@ ELSE()
   MARK_AS_ADVANCED(MYSQL_PROJECT_NAME)
 ENDIF()
 PROJECT(${MYSQL_PROJECT_NAME})
+
+IF(CMAKE_VERSION VERSION_LESS "3.1")
+  IF(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11")
+  ENDIF()
+ELSE()
+  SET(CMAKE_CXX_STANDARD 11)
+ENDIF()
 
 SET(CPACK_PACKAGE_NAME "MariaDB")
 SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "MariaDB: a very fast and robust SQL database server")
@@ -139,9 +144,7 @@ INCLUDE(misc)
 INCLUDE(mysql_version)
 INCLUDE(cpack_source_ignore_files)
 INCLUDE(install_layout)
-INCLUDE(wsrep)
-INCLUDE(cpack_rpm)
-INCLUDE(cpack_deb)
+INCLUDE(submodules)
 
 # Add macros
 INCLUDE(character_sets)
@@ -157,6 +160,7 @@ INCLUDE(plugin)
 INCLUDE(install_macros)
 INCLUDE(systemd)
 INCLUDE(mysql_add_executable)
+INCLUDE(symlinks)
 INCLUDE(compile_flags)
 INCLUDE(crc32)
 
@@ -213,9 +217,6 @@ ENDIF()
 
 OPTION(WITH_TSAN "Enable thread sanitizer" OFF)
 IF (WITH_TSAN)
-  IF(SECURITY_HARDENED)
-    MESSAGE(FATAL_ERROR "WITH_TSAN and SECURITY_HARDENED are mutually exclusive")
-  ENDIF()
   MY_CHECK_AND_SET_COMPILER_FLAG("-fsanitize=thread" DEBUG RELWITHDEBINFO)
 ENDIF()
 
@@ -229,26 +230,20 @@ IF (WITH_MSAN)
   MY_CHECK_AND_SET_COMPILER_FLAG("-fsanitize=memory -fsanitize-memory-track-origins -U_FORTIFY_SOURCE" DEBUG RELWITHDEBINFO)
 ENDIF()
 
-IF(NOT WITH_TSAN)
-  # enable security hardening features, like most distributions do
-  # in our benchmarks that costs about ~1% of performance, depending on the load
-  IF(CMAKE_C_COMPILER_VERSION VERSION_LESS "4.6" OR WITH_ASAN OR WITH_UBSAN)
-    SET(security_default OFF)
-  ELSE()
-    SET(security_default ON)
-  ENDIF()
-  OPTION(SECURITY_HARDENED "Use security-enhancing compiler features (stack protector, relro, etc)" ${security_default})
-  IF(SECURITY_HARDENED)
-    IF(WITH_ASAN OR WITH_UBSAN)
-      MESSAGE(FATAL_ERROR "WITH_ASAN/WITH_UBSAN and SECURITY_HARDENED are mutually exclusive")
-    ENDIF()
-    # security-enhancing flags
-    MY_CHECK_AND_SET_COMPILER_FLAG("-pie -fPIC")
-    MY_CHECK_AND_SET_COMPILER_FLAG("-Wl,-z,relro,-z,now")
-    MY_CHECK_AND_SET_COMPILER_FLAG("-fstack-protector --param=ssp-buffer-size=4")
-    MY_CHECK_AND_SET_COMPILER_FLAG("-D_FORTIFY_SOURCE=2" RELEASE RELWITHDEBINFO)
-  ENDIF()
+# enable security hardening features, like most distributions do
+# in our benchmarks that costs about ~1% of performance, depending on the load
+OPTION(SECURITY_HARDENED "Use security-enhancing compiler features (stack protector, relro, etc)" ON)
+IF(SECURITY_HARDENED AND NOT WITH_ASAN AND NOT WITH_UBSAN AND NOT WITH_TSAN)
+  # security-enhancing flags
+  MY_CHECK_AND_SET_COMPILER_FLAG("-pie -fPIC")
+  MY_CHECK_AND_SET_COMPILER_FLAG("-Wl,-z,relro,-z,now")
+  MY_CHECK_AND_SET_COMPILER_FLAG("-fstack-protector --param=ssp-buffer-size=4")
+  MY_CHECK_AND_SET_COMPILER_FLAG("-D_FORTIFY_SOURCE=2" RELEASE RELWITHDEBINFO)
 ENDIF()
+
+INCLUDE(wsrep)
+INCLUDE(cpack_rpm)
+INCLUDE(cpack_deb)
 
 # Always enable debug sync for debug builds.
 SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DENABLED_DEBUG_SYNC")
@@ -350,7 +345,7 @@ IF(NOT HAVE_CXX_NEW)
 ENDIF()
 
 # Find header files from the bundled libraries
-# (yassl, readline, pcre, etc)
+# (wolfssl, readline, pcre, etc)
 # before the ones installed in the system
 SET(CMAKE_INCLUDE_DIRECTORIES_PROJECT_BEFORE ON)
 
@@ -363,7 +358,7 @@ INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR}/include)
 
 # Add bundled or system zlib.
 MYSQL_CHECK_ZLIB_WITH_COMPRESS()
-# Add bundled yassl/taocrypt or system openssl.
+# Add bundled wolfssl/wolfcrypt or system openssl.
 MYSQL_CHECK_SSL()
 # Add readline or libedit.
 MYSQL_CHECK_READLINE()
@@ -405,7 +400,6 @@ ENDIF()
 
 SET (MYSQLD_STATIC_PLUGIN_LIBS "" CACHE INTERNAL "")
 
-INCLUDE(submodules)
 INCLUDE(mariadb_connector_c) # this does ADD_SUBDIRECTORY(libmariadb)
 
 # Add storage engines and plugins.
@@ -432,10 +426,6 @@ IF(NOT WITHOUT_SERVER)
    ADD_SUBDIRECTORY(unittest/embedded)
   ENDIF(WITH_EMBEDDED_SERVER)
 
-  IF(WITH_WSREP)
-    ADD_SUBDIRECTORY(wsrep)
-  ENDIF()
-
   ADD_SUBDIRECTORY(mysql-test)
   ADD_SUBDIRECTORY(mysql-test/lib/My/SafeProcess)
   ADD_SUBDIRECTORY(sql-bench)
@@ -451,13 +441,10 @@ ENDIF()
 
 INCLUDE(cmake/abi_check.cmake)
 INCLUDE(cmake/tags.cmake)
-
-
-
-
 INCLUDE(for_clients)
 ADD_SUBDIRECTORY(scripts)
 ADD_SUBDIRECTORY(support-files)
+ADD_SUBDIRECTORY(extra/aws_sdk)
 
 IF(NOT CMAKE_CROSSCOMPILING)
   SET(EXPORTED comp_err comp_sql factorial)

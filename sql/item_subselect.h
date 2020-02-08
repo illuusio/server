@@ -33,6 +33,7 @@ class subselect_hash_sj_engine;
 class Item_bool_func2;
 class Comp_creator;
 class With_element;
+class Field_pair;
 
 typedef class st_select_lex SELECT_LEX;
 
@@ -46,7 +47,8 @@ class Cached_item;
 /* base class for subselects */
 
 class Item_subselect :public Item_result_field,
-                      protected Used_tables_and_const_cache
+                      protected Used_tables_and_const_cache,
+                      protected With_sum_func_cache
 {
   bool value_assigned;   /* value already assigned to subselect */
   bool own_engine;  /* the engine was not taken from other Item_subselect */
@@ -71,6 +73,8 @@ protected:
     to substitute 'this' with a constant item.
   */
   bool forced_const;
+  /* Set to the result of the last call of is_expensive()  */
+  bool expensive_fl;
 #ifndef DBUG_OFF
   /* Count the number of times this subquery predicate has been executed. */
   uint exec_counter;
@@ -183,6 +187,8 @@ public:
   }
   bool fix_fields(THD *thd, Item **ref);
   bool with_subquery() const { DBUG_ASSERT(fixed); return true; }
+  bool with_sum_func() const { return m_with_sum_func; }
+  With_sum_func_cache* get_with_sum_func_cache() { return this; }
   bool mark_as_dependent(THD *thd, st_select_lex *select, Item *item);
   void fix_after_pullout(st_select_lex *new_parent, Item **ref, bool merge);
   void recalc_used_tables(st_select_lex *new_parent, bool after_pullout);
@@ -302,9 +308,10 @@ public:
   double val_real();
   longlong val_int ();
   String *val_str (String *);
+  bool val_native(THD *thd, Native *);
   my_decimal *val_decimal(my_decimal *);
   bool val_bool();
-  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate);
+  bool get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate);
   const Type_handler *type_handler() const;
   bool fix_length_and_dec();
 
@@ -395,14 +402,14 @@ public:
   }
   void no_rows_in_result();
 
-  const Type_handler *type_handler() const { return &type_handler_longlong; }
+  const Type_handler *type_handler() const { return &type_handler_bool; }
   longlong val_int();
   double val_real();
   String *val_str(String*);
   my_decimal *val_decimal(my_decimal *);
   bool val_bool();
-  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
-  { return get_date_from_int(ltime, fuzzydate); }
+  bool get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate)
+  { return get_date_from_int(thd, ltime, fuzzydate); }
   bool fix_fields(THD *thd, Item **ref);
   bool fix_length_and_dec();
   void print(String *str, enum_query_type query_type);
@@ -570,6 +577,8 @@ public:
   */
   bool is_registered_semijoin;
   
+  List<Field_pair> corresponding_fields;
+
   /*
     Used to determine how this subselect item is represented in the item tree,
     in case there is a need to locate it there and replace with something else.
@@ -621,7 +630,6 @@ public:
   double val_real();
   String *val_str(String*);
   my_decimal *val_decimal(my_decimal *);
-  void update_null_value () { (void) val_bool(); }
   bool val_bool();
   bool test_limit(st_select_lex_unit *unit);
   void print(String *str, enum_query_type query_type);
@@ -741,6 +749,8 @@ public:
     return 0;
   };
 
+  bool pushdown_cond_for_in_subquery(THD *thd, Item *cond);
+
   friend class Item_ref_null_helper;
   friend class Item_is_not_null_test;
   friend class Item_in_optimizer;
@@ -852,7 +862,6 @@ protected:
   bool set_row(List<Item> &item_list, Item_cache **row);
 };
 
-
 class subselect_single_select_engine: public subselect_engine
 {
   bool prepared;       /* simple subselect is prepared */
@@ -886,9 +895,10 @@ public:
 
   friend class subselect_hash_sj_engine;
   friend class Item_in_subselect;
-  friend bool setup_jtbm_semi_joins(JOIN *join, List<TABLE_LIST> *join_list,
-                                    Item **join_where);
-
+  friend bool execute_degenerate_jtbm_semi_join(THD *thd,
+                                                TABLE_LIST *tbl,
+                                                Item_in_subselect *subq_pred,
+                                                List<Item> &eq_list);
 };
 
 

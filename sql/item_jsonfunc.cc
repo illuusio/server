@@ -374,17 +374,11 @@ static int path_setup_nwc(json_path_t *p, CHARSET_INFO *i_cs,
 longlong Item_func_json_valid::val_int()
 {
   String *js= args[0]->val_json(&tmp_value);
-  json_engine_t je;
 
   if ((null_value= args[0]->null_value))
     return 0;
 
-  json_scan_start(&je, js->charset(), (const uchar *) js->ptr(),
-                  (const uchar *) js->ptr()+js->length());
-
-  while (json_scan_next(&je) == 0) {}
-
-  return je.s.error == 0;
+  return json_valid(js->ptr(), js->length(), js->charset());
 }
 
 
@@ -1422,7 +1416,7 @@ null_return:
 
 static int append_json_value(String *str, Item *item, String *tmp_val)
 {
-  if (item->is_bool_type())
+  if (item->type_handler()->is_bool_type())
   {
     longlong v_int= item->val_int();
     const char *t_f;
@@ -2229,7 +2223,7 @@ static int do_merge_patch(String *str, json_engine_t *je1, json_engine_t *je2,
     json_string_t key_name;
     size_t sav_len;
     bool mrg_empty;
-  
+
     *empty_result= FALSE;
     json_string_set_cs(&key_name, je1->s.cs);
 

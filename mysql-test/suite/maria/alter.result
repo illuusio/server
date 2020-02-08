@@ -73,7 +73,7 @@ SELECT count(a),sum(a) FROM t2;
 count(a)	sum(a)
 0	NULL
 ALTER TABLE t2 CHANGE IF EXISTS d c INT;
-ERROR 22007: Incorrect datetime value: '4'
+ERROR 22007: Truncated incorrect datetime value: '4'
 SELECT count(a),sum(a) FROM t2;
 count(a)	sum(a)
 0	NULL

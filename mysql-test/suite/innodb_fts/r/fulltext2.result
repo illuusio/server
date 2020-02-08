@@ -260,6 +260,7 @@ INSERT INTO t1 (id, first_name, last_name) VALUES
 (16, 'Nelson', 'Muntz');
 analyze table t1;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 SELECT fts_doc_id, first_name, last_name, MATCH(first_name) AGAINST('Homer' IN BOOLEAN MODE) AS score FROM t1;
 fts_doc_id	first_name	last_name	score

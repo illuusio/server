@@ -282,7 +282,7 @@ lock_wait_suspend_thread(
 
 	if (thr->lock_state == QUE_THR_LOCK_ROW) {
 		srv_stats.n_lock_wait_count.inc();
-		srv_stats.n_lock_wait_current_count.inc();
+		srv_stats.n_lock_wait_current_count++;
 		start_time = my_interval_timer();
 	}
 
@@ -385,7 +385,7 @@ lock_wait_suspend_thread(
 			thd_storage_lock_wait(trx->mysql_thd, diff_time);
 		}
 
-		srv_stats.n_lock_wait_current_count.dec();
+		srv_stats.n_lock_wait_current_count--;
 
 		DBUG_EXECUTE_IF("lock_instrument_slow_query_log",
 			os_thread_sleep(1000););

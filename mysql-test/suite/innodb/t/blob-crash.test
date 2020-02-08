@@ -29,6 +29,7 @@ begin;
 INSERT INTO t1 (a, b) VALUES (6, REPEAT('a', 4*1024*1024));
 
 let $shutdown_timeout=0;
+let $restart_noprint=2;
 --source include/restart_mysqld.inc
 
 SELECT a, right(b, 50) FROM t1;

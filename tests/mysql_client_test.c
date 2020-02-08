@@ -7612,8 +7612,8 @@ static void test_explain_bug()
   verify_prepare_field(result, 7, "ref", "", MYSQL_TYPE_VAR_STRING,
                        "", "", "", NAME_CHAR_LEN * HA_MAX_KEY_SEG, 0);
 
-  verify_prepare_field(result, 8, "rows", "", MYSQL_TYPE_LONGLONG,
-                       "", "", "", 10, 0);
+  verify_prepare_field(result, 8, "rows", "", MYSQL_TYPE_VAR_STRING,
+                       "", "", "", NAME_CHAR_LEN, 0);
 
   verify_prepare_field(result, 9, "Extra", "", MYSQL_TYPE_VAR_STRING,
                        "", "", "", 255, 0);
@@ -8423,6 +8423,50 @@ static void test_list_information_schema_fields()
 }
 
 
+static void test_list_fields_blob()
+{
+  MYSQL_RES *result;
+  int rc;
+  myheader("test_list_fields_blob");
+
+  rc= mysql_query(mysql, "drop table if exists t1");
+  myquery(rc);
+
+  rc= mysql_query(mysql, "create table t1(c1 tinyblob, c2 blob, c3 mediumblob, c4 longblob)");
+  myquery(rc);
+
+  result= mysql_list_fields(mysql, "t1", NULL);
+  mytest(result);
+
+  rc= my_process_result_set(result);
+  DIE_UNLESS(rc == 0);
+
+  /*
+    All BLOB variant Fields are displayed as MYSQL_TYPE_BLOB in
+    the result set metadata. Note, some Items display the exact
+    BLOB type. This inconsistency should be fixed eventually.
+  */
+  verify_prepare_field(result, 0, "c1", "c1", MYSQL_TYPE_BLOB,
+                       "t1", "t1",
+                       current_db, 255, NULL);
+
+  verify_prepare_field(result, 1, "c2", "c2", MYSQL_TYPE_BLOB,
+                       "t1", "t1",
+                       current_db, 65535, NULL);
+
+  verify_prepare_field(result, 2, "c3", "c3", MYSQL_TYPE_BLOB,
+                       "t1", "t1",
+                       current_db, 16777215, NULL);
+
+  verify_prepare_field(result, 3, "c4", "c4", MYSQL_TYPE_BLOB,
+                       "t1", "t1",
+                       current_db, 4294967295ULL, NULL);
+
+  mysql_free_result(result);
+  myquery(mysql_query(mysql, "drop table t1"));
+}
+
+
 static void test_list_fields_default()
 {
   int rc, i;
@@ -8493,6 +8537,43 @@ static void test_list_fields_default()
 }
 
 
+/**
+  Note, this test covers MDEV-18408 and MDEV-18685
+*/
+
+static void test_mdev18408()
+{
+  MYSQL_RES *result;
+  int rc;
+  myheader("test_mdev18408s");
+
+  rc= mysql_query(mysql, "DROP TABLE IF EXISTS t1");
+  myquery(rc);
+
+  rc= mysql_query(mysql, "DROP VIEW IF EXISTS v1");
+  myquery(rc);
+
+  rc= mysql_query(mysql, "CREATE TABLE t1 (c1 TIMESTAMP NULL DEFAULT NULL)");
+  myquery(rc);
+
+  rc= mysql_query(mysql, "CREATE VIEW v1 AS SELECT c1 FROM t1");
+  myquery(rc);
+
+  result= mysql_list_fields(mysql, "v1", NULL);
+  mytest(result);
+
+  rc= my_process_result_set(result);
+  DIE_UNLESS(rc == 0);
+
+  verify_prepare_field(result, 0, "c1", "c1", MYSQL_TYPE_TIMESTAMP,
+                       "v1", "v1",  current_db, 19, 0);
+
+  mysql_free_result(result);
+  myquery(mysql_query(mysql, "DROP VIEW v1"));
+  myquery(mysql_query(mysql, "DROP TABLE t1"));
+}
+
+
 static void test_bug19671()
 {
   MYSQL_RES *result;
@@ -8519,7 +8600,7 @@ static void test_bug19671()
   DIE_UNLESS(rc == 0);
 
   verify_prepare_field(result, 0, "f1", "f1", MYSQL_TYPE_LONG,
-                       "v1", "v1", current_db, 11, "0");
+                       "v1", "v1", current_db, 11, NULL);
 
   mysql_free_result(result);
   myquery(mysql_query(mysql, "drop view v1"));
@@ -20904,6 +20985,7 @@ static struct my_tests_st my_tests[]= {
   { "test_mem_overun", test_mem_overun },
   { "test_list_fields", test_list_fields },
   { "test_list_information_schema_fields", test_list_information_schema_fields },
+  { "test_list_fields_blob", test_list_fields_blob },
   { "test_list_fields_default", test_list_fields_default },
   { "test_free_result", test_free_result },
   { "test_free_store_result", test_free_store_result },
@@ -21096,6 +21178,7 @@ static struct my_tests_st my_tests[]= {
   { "test_bulk_replace", test_bulk_replace },
 #endif
   { "test_explain_meta", test_explain_meta },
+  { "test_mdev18408", test_mdev18408 },
   { 0, 0 }
 };
 

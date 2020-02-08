@@ -306,7 +306,7 @@ static bool open_only_one_table(THD* thd, TABLE_LIST* table,
                                 bool is_view_operator_func)
 {
   LEX *lex= thd->lex;
-  SELECT_LEX *select= &lex->select_lex;
+  SELECT_LEX *select= lex->first_select_lex();
   TABLE_LIST *save_next_global, *save_next_local;
   bool open_error;
   save_next_global= table->next_global;
@@ -770,7 +770,7 @@ static bool mysql_admin_table(THD* thd, TABLE_LIST* tables,
       }
       collect_eis=
         (table->table->s->table_category == TABLE_CATEGORY_USER &&
-         (get_use_stat_tables_mode(thd) > NEVER ||
+         (check_eits_collection_allowed(thd) ||
           lex->with_persistent_for_clause));
 
 
@@ -1301,7 +1301,7 @@ bool mysql_preload_keys(THD* thd, TABLE_LIST* tables)
 bool Sql_cmd_analyze_table::execute(THD *thd)
 {
   LEX *m_lex= thd->lex;
-  TABLE_LIST *first_table= m_lex->select_lex.table_list.first;
+  TABLE_LIST *first_table= m_lex->first_select_lex()->table_list.first;
   bool res= TRUE;
   thr_lock_type lock_type = TL_READ_NO_INSERT;
   DBUG_ENTER("Sql_cmd_analyze_table::execute");
@@ -1309,6 +1309,9 @@ bool Sql_cmd_analyze_table::execute(THD *thd)
   if (check_table_access(thd, SELECT_ACL | INSERT_ACL, first_table,
                          FALSE, UINT_MAX, FALSE))
     goto error;
+  if (thd->has_read_only_protection())
+    goto error;
+
   WSREP_TO_ISOLATION_BEGIN_WRTCHK(NULL, NULL, first_table);
   res= mysql_admin_table(thd, first_table, &m_lex->check_opt,
                          "analyze", lock_type, 1, 0, 0, 0,
@@ -1321,11 +1324,13 @@ bool Sql_cmd_analyze_table::execute(THD *thd)
     */
     res= write_bin_log(thd, TRUE, thd->query(), thd->query_length());
   }
-  m_lex->select_lex.table_list.first= first_table;
+  m_lex->first_select_lex()->table_list.first= first_table;
   m_lex->query_tables= first_table;
 
 error:
-WSREP_ERROR_LABEL:
+#ifdef WITH_WSREP
+wsrep_error_label:
+#endif
   DBUG_RETURN(res);
 }
 
@@ -1333,7 +1338,7 @@ WSREP_ERROR_LABEL:
 bool Sql_cmd_check_table::execute(THD *thd)
 {
   LEX *m_lex= thd->lex;
-  TABLE_LIST *first_table= m_lex->select_lex.table_list.first;
+  TABLE_LIST *first_table= m_lex->first_select_lex()->table_list.first;
   thr_lock_type lock_type = TL_READ_NO_INSERT;
   bool res= TRUE;
   DBUG_ENTER("Sql_cmd_check_table::execute");
@@ -1346,7 +1351,7 @@ bool Sql_cmd_check_table::execute(THD *thd)
                          lock_type, 0, 0, HA_OPEN_FOR_REPAIR, 0,
                          &handler::ha_check, &view_check);
 
-  m_lex->select_lex.table_list.first= first_table;
+  m_lex->first_select_lex()->table_list.first= first_table;
   m_lex->query_tables= first_table;
 
 error:
@@ -1357,7 +1362,7 @@ error:
 bool Sql_cmd_optimize_table::execute(THD *thd)
 {
   LEX *m_lex= thd->lex;
-  TABLE_LIST *first_table= m_lex->select_lex.table_list.first;
+  TABLE_LIST *first_table= m_lex->first_select_lex()->table_list.first;
   bool res= TRUE;
   DBUG_ENTER("Sql_cmd_optimize_table::execute");
 
@@ -1379,11 +1384,13 @@ bool Sql_cmd_optimize_table::execute(THD *thd)
     */
     res= write_bin_log(thd, TRUE, thd->query(), thd->query_length());
   }
-  m_lex->select_lex.table_list.first= first_table;
+  m_lex->first_select_lex()->table_list.first= first_table;
   m_lex->query_tables= first_table;
 
 error:
-WSREP_ERROR_LABEL:
+#ifdef WITH_WSREP
+wsrep_error_label:
+#endif
   DBUG_RETURN(res);
 }
 
@@ -1391,7 +1398,7 @@ WSREP_ERROR_LABEL:
 bool Sql_cmd_repair_table::execute(THD *thd)
 {
   LEX *m_lex= thd->lex;
-  TABLE_LIST *first_table= m_lex->select_lex.table_list.first;
+  TABLE_LIST *first_table= m_lex->first_select_lex()->table_list.first;
   bool res= TRUE;
   DBUG_ENTER("Sql_cmd_repair_table::execute");
 
@@ -1413,10 +1420,12 @@ bool Sql_cmd_repair_table::execute(THD *thd)
     */
     res= write_bin_log(thd, TRUE, thd->query(), thd->query_length());
   }
-  m_lex->select_lex.table_list.first= first_table;
+  m_lex->first_select_lex()->table_list.first= first_table;
   m_lex->query_tables= first_table;
 
 error:
-WSREP_ERROR_LABEL:
+#ifdef WITH_WSREP
+wsrep_error_label:
+#endif
   DBUG_RETURN(res);
 }

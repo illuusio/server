@@ -54,10 +54,6 @@ savepoint. */
 @return	old mode */
 #define mtr_set_log_mode(m, d)	(m)->set_log_mode((d))
 
-/** Read 1 - 4 bytes from a file page buffered in the buffer pool.
-@return	value read */
-#define mtr_read_ulint(p, t, m)	(m)->read_ulint((p), (t))
-
 /** Release an object in the memo stack.
 @return true if released */
 #define mtr_memo_release(m, o, t)					\
@@ -238,13 +234,6 @@ struct mtr_t {
 	@return whether the mini-transaction is associated with the space */
 	bool is_named_space(const fil_space_t* space) const;
 #endif /* UNIV_DEBUG */
-
-	/** Read 1 - 4 bytes from a file page buffered in the buffer pool.
-	@param ptr	pointer from where to read
-	@param type)	MLOG_1BYTE, MLOG_2BYTES, MLOG_4BYTES
-	@return	value read */
-	inline ulint read_ulint(const byte* ptr, mlog_id_t type) const
-		MY_ATTRIBUTE((warn_unused_result));
 
 	/** Acquire a tablespace X-latch.
 	@param[in]	space_id	tablespace ID

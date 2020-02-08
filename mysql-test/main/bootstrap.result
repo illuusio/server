@@ -1,11 +1,13 @@
 drop table if exists t1;
+# Kill the server
+# restart
 drop table t1;
+# Kill the server
+# restart
 drop table t1;
 ERROR 42S02: Unknown table 'test.t1'
-set @my_max_allowed_packet= @@max_allowed_packet;
-set @@global.max_allowed_packet= greatest(1073741824, @@max_allowed_packet);
-set @max_allowed_packed=@@global.max_allowed_packet;
-set global max_allowed_packet=@my_max_allowed_packet;
+# Kill the server
+# restart
 drop table t1;
 End of 5.1 tests
 #
@@ -15,7 +17,11 @@ End of 5.1 tests
 SELECT 'bug' as '' FROM INFORMATION_SCHEMA.ENGINES WHERE engine='innodb'
  and SUPPORT='YES';
 
+# Kill the server
+# restart
 End of 5.5 tests
+# Kill the server
+# restart
 flush tables;
 show create table t1;
 Table	Create Table
@@ -27,3 +33,5 @@ select * from mysql.plugin;
 name	dl
 EXAMPLE	ha_example.so
 truncate table mysql.plugin;
+# Kill the server
+# restart

@@ -496,7 +496,7 @@ int main(int argc, char **argv)
     old_mysqld_exe_exists?",this can take some time":"(skipped)");
 
   char socket_param[FN_REFLEN];
-  sprintf_s(socket_param, "--socket=mysql_upgrade_service_%d",
+  sprintf_s(socket_param, "--socket=mysql_upgrade_service_%u",
     GetCurrentProcessId());
 
   DWORD start_duration_ms = 0;
@@ -513,7 +513,7 @@ int main(int argc, char **argv)
       die("Cannot start mysqld.exe process, last error =%u", GetLastError());
     }
     char pipe_name[64];
-    snprintf(pipe_name, sizeof(pipe_name), "\\\\.\\pipe\\mysql_upgrade_service_%u",
+    snprintf(pipe_name, sizeof(pipe_name), "\\\\.\\pipe\\mysql_upgrade_service_%lu",
       GetCurrentProcessId());
     for (;;)
     {

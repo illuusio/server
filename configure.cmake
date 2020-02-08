@@ -53,11 +53,6 @@ IF(NOT SYSTEM_TYPE)
 ENDIF()
 
 IF(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND (NOT MSVC))
-  # MySQL "canonical" GCC flags. At least -fno-rtti flag affects
-  # ABI and cannot be simply removed. 
-  SET(CMAKE_CXX_FLAGS 
-    "${CMAKE_CXX_FLAGS} -fno-rtti")
-
   IF (CMAKE_EXE_LINKER_FLAGS MATCHES " -static " 
      OR CMAKE_EXE_LINKER_FLAGS MATCHES " -static$")
      SET(HAVE_DLOPEN FALSE CACHE "Disable dlopen due to -static flag" FORCE)
@@ -196,7 +191,6 @@ CHECK_INCLUDE_FILES (inttypes.h HAVE_INTTYPES_H)
 CHECK_INCLUDE_FILES (langinfo.h HAVE_LANGINFO_H)
 CHECK_INCLUDE_FILES (link.h HAVE_LINK_H)
 CHECK_INCLUDE_FILES (linux/unistd.h HAVE_LINUX_UNISTD_H)
-CHECK_INCLUDE_FILES (linux/falloc.h HAVE_LINUX_FALLOC_H)
 CHECK_INCLUDE_FILES (limits.h HAVE_LIMITS_H)
 CHECK_INCLUDE_FILES (locale.h HAVE_LOCALE_H)
 CHECK_INCLUDE_FILES (malloc.h HAVE_MALLOC_H)
@@ -260,7 +254,7 @@ SET(CMAKE_REQUIRED_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS} -DPACKAGE=test) # b
 CHECK_INCLUDE_FILES (bfd.h BFD_H_EXISTS)
 IF(BFD_H_EXISTS)
   IF(NOT_FOR_DISTRIBUTION)
-    SET(NON_DISTRIBUTABLE_WARNING "GPLv3")
+    SET(NON_DISTRIBUTABLE_WARNING "GPLv3" CACHE INTERNAL "")
     SET(HAVE_BFD_H 1)
   ENDIF()
 ENDIF()
@@ -400,6 +394,7 @@ CHECK_FUNCTION_EXISTS (setlocale HAVE_SETLOCALE)
 CHECK_FUNCTION_EXISTS (sigaction HAVE_SIGACTION)
 CHECK_FUNCTION_EXISTS (sigthreadmask HAVE_SIGTHREADMASK)
 CHECK_FUNCTION_EXISTS (sigwait HAVE_SIGWAIT)
+CHECK_FUNCTION_EXISTS (sigwaitinfo HAVE_SIGWAITINFO)
 CHECK_FUNCTION_EXISTS (sigset HAVE_SIGSET)
 CHECK_FUNCTION_EXISTS (sleep HAVE_SLEEP)
 CHECK_FUNCTION_EXISTS (snprintf HAVE_SNPRINTF)
@@ -442,8 +437,6 @@ SET(CMAKE_REQUIRED_FLAGS)
 CHECK_INCLUDE_FILES(time.h HAVE_TIME_H)
 CHECK_INCLUDE_FILES(sys/time.h HAVE_SYS_TIME_H)
 CHECK_INCLUDE_FILES(sys/times.h HAVE_SYS_TIMES_H)
-CHECK_INCLUDE_FILES(asm/msr.h HAVE_ASM_MSR_H)
-#msr.h has rdtscll()
 
 CHECK_INCLUDE_FILES(ia64intrin.h HAVE_IA64INTRIN_H)
 
@@ -457,9 +450,6 @@ CHECK_FUNCTION_EXISTS(ftime HAVE_FTIME)
 
 CHECK_FUNCTION_EXISTS(time HAVE_TIME)
 # We can use time() on Macintosh if there is no ftime().
-
-CHECK_FUNCTION_EXISTS(rdtscll HAVE_RDTSCLL)
-# I doubt that we'll ever reach the check for this.
 
 
 #
@@ -869,30 +859,6 @@ SET(SIGNAL_WITH_VIO_CLOSE 1)
 MARK_AS_ADVANCED(NO_ALARM)
 
 
-CHECK_CXX_SOURCE_COMPILES("
-int main()
-{
-  int foo= -10; int bar= 10;
-  long long int foo64= -10; long long int bar64= 10;
-  if (!__sync_fetch_and_add(&foo, bar) || foo)
-    return -1;
-  bar= __sync_lock_test_and_set(&foo, bar);
-  if (bar || foo != 10)
-    return -1;
-  bar= __sync_val_compare_and_swap(&bar, foo, 15);
-  if (bar)
-    return -1;
-  if (!__sync_fetch_and_add(&foo64, bar64) || foo64)
-    return -1;
-  bar64= __sync_lock_test_and_set(&foo64, bar64);
-  if (bar64 || foo64 != 10)
-    return -1;
-  bar64= __sync_val_compare_and_swap(&bar64, foo, 15);
-  if (bar64)
-    return -1;
-  return 0;
-}"
-HAVE_GCC_ATOMIC_BUILTINS)
 CHECK_CXX_SOURCE_COMPILES("
 int main()
 {

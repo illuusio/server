@@ -36,7 +36,7 @@
 
 #ifndef NO_DLL
 
-#include "../../../../wsrep/wsrep_api.h"
+#include "../../../../wsrep-lib/wsrep-API/v26/wsrep_api.h"
 
 /**************************************************************************
  * Library loader

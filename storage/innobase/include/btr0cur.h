@@ -729,11 +729,12 @@ btr_free_externally_stored_field(
 					ignored if rec == NULL */
 	bool		rollback,	/*!< in: performing rollback? */
 	mtr_t*		local_mtr);	/*!< in: mtr containing the latch */
+
 /** Copies the prefix of an externally stored field of a record.
 The clustered index record must be protected by a lock or a page latch.
 @param[out]	buf		the field, or a prefix of it
 @param[in]	len		length of buf, in bytes
-@param[in]	page_size	BLOB page size
+@param[in]	zip_size	ROW_FORMAT=COMPRESSED page size, or 0
 @param[in]	data		'internally' stored part of the field
 containing also the reference to the external part; must be protected by
 a lock or a page latch
@@ -744,7 +745,7 @@ ulint
 btr_copy_externally_stored_field_prefix(
 	byte*			buf,
 	ulint			len,
-	const page_size_t&	page_size,
+	ulint			zip_size,
 	const byte*		data,
 	ulint			local_len);
 
@@ -754,7 +755,7 @@ The clustered index record must be protected by a lock or a page latch.
 @param[in]	data		'internally' stored part of the field
 containing also the reference to the external part; must be protected by
 a lock or a page latch
-@param[in]	page_size	BLOB page size
+@param[in]	zip_size	ROW_FORMAT=COMPRESSED page size, or 0
 @param[in]	local_len	length of data
 @param[in,out]	heap		mem heap
 @return the whole field copied to heap */
@@ -762,7 +763,7 @@ byte*
 btr_copy_externally_stored_field(
 	ulint*			len,
 	const byte*		data,
-	const page_size_t&	page_size,
+	ulint			zip_size,
 	ulint			local_len,
 	mem_heap_t*		heap);
 
@@ -770,7 +771,7 @@ btr_copy_externally_stored_field(
 @param[in]	rec		record in a clustered index; must be
 protected by a lock or a page latch
 @param[in]	offset		array returned by rec_get_offsets()
-@param[in]	page_size	BLOB page size
+@param[in]	zip_size	ROW_FORMAT=COMPRESSED page size, or 0
 @param[in]	no		field number
 @param[out]	len		length of the field
 @param[in,out]	heap		mem heap
@@ -779,7 +780,7 @@ byte*
 btr_rec_copy_externally_stored_field(
 	const rec_t*		rec,
 	const offset_t*		offsets,
-	const page_size_t&	page_size,
+	ulint			zip_size,
 	ulint			no,
 	ulint*			len,
 	mem_heap_t*		heap);
@@ -810,6 +811,7 @@ btr_rec_set_deleted_flag(
 /** Latches the leaf page or pages requested.
 @param[in]	block		leaf page where the search converged
 @param[in]	page_id		page id of the leaf
+@param[in]	zip_size	ROW_FORMAT=COMPRESSED page size, or 0
 @param[in]	latch_mode	BTR_SEARCH_LEAF, ...
 @param[in]	cursor		cursor
 @param[in]	mtr		mini-transaction
@@ -818,7 +820,7 @@ btr_latch_leaves_t
 btr_cur_latch_leaves(
 	buf_block_t*		block,
 	const page_id_t		page_id,
-	const page_size_t&	page_size,
+	ulint			zip_size,
 	ulint			latch_mode,
 	btr_cur_t*		cursor,
 	mtr_t*			mtr);
@@ -1021,7 +1023,7 @@ inherited external field. */
 #define BTR_EXTERN_INHERITED_FLAG	64U
 
 /** Number of searches down the B-tree in btr_cur_search_to_nth_level(). */
-extern ulint	btr_cur_n_non_sea;
+extern Atomic_counter<ulint>	btr_cur_n_non_sea;
 /** Old value of btr_cur_n_non_sea.  Copied by
 srv_refresh_innodb_monitor_stats().  Referenced by
 srv_printf_innodb_monitor(). */

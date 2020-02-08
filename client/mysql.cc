@@ -161,6 +161,7 @@ static uint my_end_arg;
 static char * opt_mysql_unix_port=0;
 static int connect_flag=CLIENT_INTERACTIVE;
 static my_bool opt_binary_mode= FALSE;
+static my_bool opt_connect_expired_password= FALSE;
 static int interrupted_query= 0;
 static char *current_host,*current_db,*current_user=0,*opt_password=0,
             *current_prompt=0, *delimiter_str= 0,
@@ -197,10 +198,8 @@ static char delimiter[16]= DEFAULT_DELIMITER;
 static uint delimiter_length= 1;
 unsigned short terminal_width= 80;
 
-#ifdef HAVE_SMEM
-static char *shared_memory_base_name=0;
-#endif
 static uint opt_protocol=0;
+static const char *opt_protocol_type= "";
 static CHARSET_INFO *charset_info= &my_charset_latin1;
 
 #include "sslopt-vars.h"
@@ -282,9 +281,9 @@ static COMMANDS commands[] = {
   { "edit",   'e', com_edit,   0, "Edit command with $EDITOR."},
 #endif
   { "ego",    'G', com_ego,    0,
-    "Send command to mysql server, display result vertically."},
+    "Send command to MariaDB server, display result vertically."},
   { "exit",   'q', com_quit,   0, "Exit mysql. Same as quit."},
-  { "go",     'g', com_go,     0, "Send command to mysql server." },
+  { "go",     'g', com_go,     0, "Send command to MariaDB server." },
   { "help",   'h', com_help,   1, "Display this help." },
 #ifdef USE_POPEN
   { "nopager",'n', com_nopager,0, "Disable pager, print to stdout." },
@@ -1035,7 +1034,7 @@ static COMMANDS commands[] = {
 };
 
 static const char *load_default_groups[]=
-{ "mysql", "client", "client-server", "client-mariadb", 0 };
+{ "mysql", "mariadb-client", "client", "client-server", "client-mariadb", 0 };
 
 static int         embedded_server_arg_count= 0;
 static char       *embedded_server_args[MAX_SERVER_ARGS];
@@ -1341,9 +1340,6 @@ sig_handler mysql_end(int sig)
   my_free(full_username);
   my_free(part_username);
   my_free(default_prompt);
-#ifdef HAVE_SMEM
-  my_free(shared_memory_base_name);
-#endif
   my_free(current_prompt);
   while (embedded_server_arg_count > 1)
     my_free(embedded_server_args[--embedded_server_arg_count]);
@@ -1368,16 +1364,13 @@ static bool do_connect(MYSQL *mysql, const char *host, const char *user,
 		  opt_ssl_capath, opt_ssl_cipher);
     mysql_options(mysql, MYSQL_OPT_SSL_CRL, opt_ssl_crl);
     mysql_options(mysql, MYSQL_OPT_SSL_CRLPATH, opt_ssl_crlpath);
+    mysql_options(mysql, MARIADB_OPT_TLS_VERSION, opt_tls_version);
   }
   mysql_options(mysql,MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
                 (char*)&opt_ssl_verify_server_cert);
 #endif
   if (opt_protocol)
     mysql_options(mysql,MYSQL_OPT_PROTOCOL,(char*)&opt_protocol);
-#ifdef HAVE_SMEM
-  if (shared_memory_base_name)
-    mysql_options(mysql,MYSQL_SHARED_MEMORY_BASE_NAME,shared_memory_base_name);
-#endif
   if (opt_plugin_dir && *opt_plugin_dir)
     mysql_options(mysql, MYSQL_PLUGIN_DIR, opt_plugin_dir);
 
@@ -1548,7 +1541,7 @@ static struct my_option my_long_options[] =
    &ignore_spaces, &ignore_spaces, 0, GET_BOOL, NO_ARG, 0, 0,
    0, 0, 0, 0},
   {"init-command", OPT_INIT_COMMAND,
-   "SQL Command to execute when connecting to MySQL server. Will "
+   "SQL Command to execute when connecting to MariaDB server. Will "
    "automatically be re-executed when reconnecting.",
    &opt_init_command, &opt_init_command, 0,
    GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -1610,11 +1603,12 @@ static struct my_option my_long_options[] =
    "Get progress reports for long running commands (like ALTER TABLE)",
    &opt_progress_reports, &opt_progress_reports, 0, GET_BOOL, NO_ARG, 1, 0,
    0, 0, 0, 0},
-  {"prompt", OPT_PROMPT, "Set the mysql prompt to this value.",
+  {"prompt", OPT_PROMPT, "Set the command line prompt to this value.",
    &current_prompt, &current_prompt, 0, GET_STR_ALLOC,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"protocol", OPT_MYSQL_PROTOCOL, "The protocol to use for connection (tcp, socket, pipe, memory).",
-   0, 0, 0, GET_STR,  REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"protocol", OPT_MYSQL_PROTOCOL, "The protocol to use for connection (tcp, socket, pipe).",
+   &opt_protocol_type, &opt_protocol_type, 0, GET_STR,  REQUIRED_ARG,
+   0, 0, 0, 0, 0, 0},
   {"quick", 'q',
    "Don't cache result, print it row by row. This may slow down the server "
    "if the output is suspended. Doesn't use history file.",
@@ -1627,11 +1621,6 @@ static struct my_option my_long_options[] =
    &opt_reconnect, &opt_reconnect, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
   {"silent", 's', "Be more silent. Print results with a tab as separator, "
    "each row on new line.", 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef HAVE_SMEM
-  {"shared-memory-base-name", OPT_SHARED_MEMORY_BASE_NAME,
-   "Base name of shared memory.", &shared_memory_base_name,
-   &shared_memory_base_name, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-#endif
   {"socket", 'S', "The socket file to use for connection.",
    &opt_mysql_unix_port, &opt_mysql_unix_port, 0, GET_STR_ALLOC,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -1702,6 +1691,11 @@ static struct my_option my_long_options[] =
    "piped to mysql or loaded using the 'source' command). This is necessary "
    "when processing output from mysqlbinlog that may contain blobs.",
    &opt_binary_mode, &opt_binary_mode, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"connect-expired-password", 0,
+   "Notify the server that this client is prepared to handle expired "
+   "password sandbox mode even if --batch was specified.",
+   &opt_connect_expired_password, &opt_connect_expired_password, 0, GET_BOOL,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -1795,8 +1789,10 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     break;
   case OPT_MYSQL_PROTOCOL:
 #ifndef EMBEDDED_LIBRARY
-    if ((opt_protocol= find_type_with_warning(argument, &sql_protocol_typelib,
-                                              opt->name)) <= 0)
+    if (!argument[0])
+      opt_protocol= 0;
+    else if ((opt_protocol= find_type_with_warning(argument, &sql_protocol_typelib,
+                                                   opt->name)) <= 0)
       exit(1);
 #endif
     break;
@@ -1883,6 +1879,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
   case 'W':
 #ifdef __WIN__
     opt_protocol = MYSQL_PROTOCOL_PIPE;
+    opt_protocol_type= "pipe";
 #endif
     break;
 #include <sslopt-case.h>
@@ -3144,7 +3141,7 @@ com_help(String *buffer __attribute__((unused)),
 
   put_info("\nGeneral information about MariaDB can be found at\n"
            "http://mariadb.org\n", INFO_INFO);
-  put_info("List of all MySQL commands:", INFO_INFO);
+  put_info("List of all client commands:", INFO_INFO);
   if (!named_cmds)
     put_info("Note that all text commands must be first on line and end with ';'",INFO_INFO);
   for (i = 0; commands[i].name; i++)
@@ -4702,6 +4699,9 @@ sql_real_connect(char *host,char *database,char *user,char *password,
   if (!strcmp(default_charset,MYSQL_AUTODETECT_CHARSET_NAME))
     default_charset= (char *)my_default_csname();
   mysql_options(&mysql, MYSQL_SET_CHARSET_NAME, default_charset);
+
+  my_bool can_handle_expired= opt_connect_expired_password || !status.batch;
+  mysql_options(&mysql, MYSQL_OPT_CAN_HANDLE_EXPIRED_PASSWORDS, &can_handle_expired);
 
   if (!do_connect(&mysql, host, user, password, database,
                   connect_flag | CLIENT_MULTI_STATEMENTS))

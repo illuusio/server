@@ -16,25 +16,11 @@
 #include <my_global.h>
 #include <my_atomic.h>
 #include <my_cpu.h>
+#include <my_rdtsc.h>
 
 #ifdef HAVE_PAUSE_INSTRUCTION
 /** How many times to invoke PAUSE in a loop */
 unsigned my_cpu_relax_multiplier = 200;
-
-# include <stdint.h>
-
-# ifdef _MSC_VER
-#  include <intrin.h>
-#  define my_timer_cycles __rdtsc
-# elif !defined __x86_64__
-/* On some x86 targets, __rdtsc() causes an unresolved external symbol error,
-instead of being inlined. Let us fall back to my_timer_cycles(), which
-internally invokes rdtsc. */
-#  include <my_rdtsc.h>
-# else
-#  include <x86intrin.h>
-#  define my_timer_cycles __rdtsc
-# endif
 
 #define PAUSE4  MY_RELAX_CPU(); MY_RELAX_CPU(); MY_RELAX_CPU(); MY_RELAX_CPU()
 #define PAUSE16 PAUSE4; PAUSE4; PAUSE4; PAUSE4
@@ -82,7 +68,7 @@ internally invokes rdtsc. */
 */
 void my_cpu_init(void)
 {
-  uint64_t t0, t1, t2;
+  ulonglong t0, t1, t2;
   t0= my_timer_cycles();
   PAUSE16;
   t1= my_timer_cycles();

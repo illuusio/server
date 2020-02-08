@@ -11,12 +11,12 @@ mysql.columns_priv                                 OK
 mysql.db                                           OK
 mysql.event                                        OK
 mysql.func                                         OK
+mysql.global_priv                                  OK
 mysql.gtid_slave_pos                               OK
 mysql.help_category                                OK
 mysql.help_keyword                                 OK
 mysql.help_relation                                OK
 mysql.help_topic                                   OK
-mysql.host                                         OK
 mysql.index_stats                                  OK
 mysql.innodb_index_stats                           OK
 mysql.innodb_table_stats                           OK
@@ -34,7 +34,6 @@ mysql.time_zone_name                               OK
 mysql.time_zone_transition                         OK
 mysql.time_zone_transition_type                    OK
 mysql.transaction_registry                         OK
-mysql.user                                         OK
 mtr.global_suppressions                            Table is already up to date
 mtr.test_suppressions                              Table is already up to date
 mysql.column_stats                                 OK
@@ -42,12 +41,12 @@ mysql.columns_priv                                 OK
 mysql.db                                           OK
 mysql.event                                        OK
 mysql.func                                         OK
+mysql.global_priv                                  OK
 mysql.gtid_slave_pos                               OK
 mysql.help_category                                OK
 mysql.help_keyword                                 OK
 mysql.help_relation                                OK
 mysql.help_topic                                   OK
-mysql.host                                         OK
 mysql.index_stats                                  OK
 mysql.innodb_index_stats
 note     : Table does not support optimize, doing recreate + analyze instead
@@ -71,18 +70,17 @@ mysql.time_zone_transition_type                    OK
 mysql.transaction_registry
 note     : Table does not support optimize, doing recreate + analyze instead
 status   : OK
-mysql.user                                         OK
 mysql.column_stats                                 OK
 mysql.columns_priv                                 OK
 mysql.db                                           OK
 mysql.event                                        OK
 mysql.func                                         OK
+mysql.global_priv                                  OK
 mysql.gtid_slave_pos                               OK
 mysql.help_category                                OK
 mysql.help_keyword                                 OK
 mysql.help_relation                                OK
 mysql.help_topic                                   OK
-mysql.host                                         OK
 mysql.index_stats                                  OK
 mysql.innodb_index_stats                           OK
 mysql.innodb_table_stats                           OK
@@ -100,18 +98,17 @@ mysql.time_zone_name                               OK
 mysql.time_zone_transition                         OK
 mysql.time_zone_transition_type                    OK
 mysql.transaction_registry                         OK
-mysql.user                                         OK
 mysql.column_stats                                 Table is already up to date
 mysql.columns_priv                                 Table is already up to date
 mysql.db                                           Table is already up to date
 mysql.event                                        Table is already up to date
 mysql.func                                         Table is already up to date
+mysql.global_priv                                  Table is already up to date
 mysql.gtid_slave_pos                               Table is already up to date
 mysql.help_category                                Table is already up to date
 mysql.help_keyword                                 Table is already up to date
 mysql.help_relation                                Table is already up to date
 mysql.help_topic                                   Table is already up to date
-mysql.host                                         Table is already up to date
 mysql.index_stats                                  Table is already up to date
 mysql.innodb_index_stats
 note     : Table does not support optimize, doing recreate + analyze instead
@@ -135,7 +132,6 @@ mysql.time_zone_transition_type                    Table is already up to date
 mysql.transaction_registry
 note     : Table does not support optimize, doing recreate + analyze instead
 status   : OK
-mysql.user                                         Table is already up to date
 create table t1 (a int) engine=myisam;
 create view v1 as select * from t1;
 test.t1                                            OK
@@ -441,12 +437,12 @@ mysql.columns_priv                                 Table is already up to date
 mysql.db                                           Table is already up to date
 mysql.event                                        Table is already up to date
 mysql.func                                         Table is already up to date
+mysql.global_priv                                  Table is already up to date
 mysql.gtid_slave_pos                               Table is already up to date
 mysql.help_category                                Table is already up to date
 mysql.help_keyword                                 Table is already up to date
 mysql.help_relation                                Table is already up to date
 mysql.help_topic                                   Table is already up to date
-mysql.host                                         Table is already up to date
 mysql.index_stats                                  Table is already up to date
 mysql.innodb_index_stats                           OK
 mysql.innodb_table_stats                           OK
@@ -464,7 +460,6 @@ mysql.time_zone_name                               Table is already up to date
 mysql.time_zone_transition                         Table is already up to date
 mysql.time_zone_transition_type                    Table is already up to date
 mysql.transaction_registry                         OK
-mysql.user                                         Table is already up to date
 mysqltest1.t1
 warning  : Table is marked as crashed
 warning  : Size of datafile is: 4       Should be: 0
@@ -481,11 +476,11 @@ drop database mysqltest1;
 #
 create table t1(a int);
 insert into t1 (a) values (1), (2), (3);
-select * from mysql.column_stats;
-db_name	table_name	column_name	min_value	max_value	nulls_ratio	avg_length	avg_frequency	hist_size	hist_type	histogram
+select db_name,table_name,column_name,min_value,max_value,nulls_ratio,avg_length,avg_frequency from mysql.column_stats order by db_name,table_name;
+db_name	table_name	column_name	min_value	max_value	nulls_ratio	avg_length	avg_frequency
 test.t1                                            Engine-independent statistics collected
 status   : OK
-select * from mysql.column_stats where db_name = 'test' and table_name = 't1';
-db_name	table_name	column_name	min_value	max_value	nulls_ratio	avg_length	avg_frequency	hist_size	hist_type	histogram
-test	t1	a	1	3	0.0000	4.0000	1.0000	#	#	#
+select db_name,table_name,column_name,min_value,max_value,nulls_ratio,avg_length,avg_frequency from mysql.column_stats where db_name = 'test' and table_name = 't1' order by db_name,table_name;
+db_name	table_name	column_name	min_value	max_value	nulls_ratio	avg_length	avg_frequency
+test	t1	a	1	3	0.0000	4.0000	1.0000
 drop table t1;

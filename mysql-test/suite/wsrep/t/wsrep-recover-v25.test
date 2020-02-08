@@ -37,21 +37,8 @@ if ($log_bin) {
 # The expected recovered seqno is 1 corresponding to initial cluster
 # configuration change.
 #
---source include/kill_mysqld.inc
---source wsrep-recover-step.inc
---echo Expect seqno 0
---echo $wsrep_recover_start_position_seqno
+let $restart_noprint=2;
 
---let $restart_parameters = --wsrep-start-position=$wsrep_recover_start_position_uuid:$wsrep_recover_start_position_seqno
---source include/start_mysqld.inc
---source include/wait_wsrep_ready.inc
-
-#
-# Senario 2
-# The expected recovered seqno is 1 corresponding to CREATE TABLE
-#
-
-CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=InnoDB;
 --source include/kill_mysqld.inc
 --source wsrep-recover-step.inc
 --echo Expect seqno 1
@@ -62,58 +49,71 @@ CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=InnoDB;
 --source include/wait_wsrep_ready.inc
 
 #
-# Scenario 3
-# The expected recovered seqno is 2 corresponding to CREATE TABLE and INSERT.
+# Senario 2
+# The expected recovered seqno is 3 corresponding to two configuration
+# changes and CREATE TABLE
 #
-# The expected wsrep_last_committed after the server is restarted is 2.
+
+CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=InnoDB;
+let $restart_noprint=2;
+--source include/kill_mysqld.inc
+--source wsrep-recover-step.inc
+--echo Expect seqno 3
+--echo $wsrep_recover_start_position_seqno
+
+--let $restart_parameters = --wsrep-start-position=$wsrep_recover_start_position_uuid:$wsrep_recover_start_position_seqno
+--source include/start_mysqld.inc
+--source include/wait_wsrep_ready.inc
+
+#
+# Scenario 3
+# The expected recovered seqno is 5 corresponding to three configuration
+# changes, CREATE TABLE and INSERT.
+#
+# The expected wsrep_last_committed after the server is restarted is 6.
 #
 
 INSERT INTO t1 VALUES (5);
+let $restart_noprint=2;
 --source include/kill_mysqld.inc
 --source wsrep-recover-step.inc
---echo Expect seqno 2
+--echo Expect seqno 5
 --echo $wsrep_recover_start_position_seqno
 --let $restart_parameters = --wsrep-start-position=$wsrep_recover_start_position_uuid:$wsrep_recover_start_position_seqno
 --source include/start_mysqld.inc
 --source include/wait_wsrep_ready.inc
 
-SELECT VARIABLE_VALUE `expect 2` FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_last_committed';
+SELECT VARIABLE_VALUE `expect 6` FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_last_committed';
 
 #
 # Scenario 4
 #
 # The INSERT gets prepared but not committed.
 #
-# If binlog is off, the expected outcome is that the INSERT gets committed
-# since it is already committed in the cluster. If binlog is on, the INSERT
+# This scenario is not applicable if binlog is not on since the
+# commit is not 2PC.
+#
+# If binlog is on, the INSERT
 # should be rolled back during recovery phase since it has not yet
 # been logged into binlog.
 #
---connect con1, localhost, root
-SET DEBUG_SYNC = "ha_commit_trans_after_prepare SIGNAL after_prepare_reached WAIT_FOR continue";
---send INSERT INTO t1 VALUES (7)
-
---connection default
-SET DEBUG_SYNC = "now WAIT_FOR after_prepare_reached";
---source include/kill_mysqld.inc
---source wsrep-recover-step.inc
 if ($log_bin) {
-  --echo Expect seqno 2
-}
-if (!$log_bin) {
-  --echo Expect seqno 3
-}
---echo $wsrep_recover_start_position_seqno
---let $restart_parameters = --wsrep-start-position=$wsrep_recover_start_position_uuid:$wsrep_recover_start_position_seqno
---source include/start_mysqld.inc
---source include/wait_wsrep_ready.inc
+   --connect con1, localhost, root
+   SET DEBUG_SYNC = "ha_commit_trans_after_prepare SIGNAL after_prepare_reached WAIT_FOR continue";
+   --send INSERT INTO t1 VALUES (7)
 
-if ($log_bin) {
-  --echo Expect 5
+   --connection default
+   let $restart_noprint=2;
+   SET DEBUG_SYNC = "now WAIT_FOR after_prepare_reached";
+   --source include/kill_mysqld.inc
+   --source wsrep-recover-step.inc
+   --echo Expect seqno 6
+   --echo $wsrep_recover_start_position_seqno
+   --let $restart_parameters = --wsrep-start-position=$wsrep_recover_start_position_uuid:$wsrep_recover_start_position_seqno
+   --source include/start_mysqld.inc
+   --source include/wait_wsrep_ready.inc
+   --echo Expect 5
+   SELECT * FROM t1;
 }
-if (!$log_bin) {
-   --echo Expect 5 7
-}
-SELECT * FROM t1;
 
 DROP TABLE t1;

@@ -14,6 +14,7 @@ INSERT INTO t3 SELECT * FROM t1;
 
 --echo # Restart the server with encryption
 
+let $restart_noprint=2;
 let $restart_parameters= --innodb_encryption_threads=5 --innodb_encryption_rotate_key_age=16384;
 --source include/restart_mysqld.inc
 

@@ -37,6 +37,13 @@ ALTER TABLE `cardtest_tbl` ENABLE KEYS;
 UNLOCK TABLES;
 
 use cardtest02;
+--sleep 20
+
+let $cardinality1 = `SELECT cardinality from information_schema.statistics WHERE TABLE_NAME = 'cardtest_tbl'`;
+let $table_rows1 = `SELECT table_rows from information_schema.tables WHERE TABLE_NAME = 'cardtest_tbl'`;
+let $avg_row_length1 = `SELECT avg_row_length from information_schema.tables WHERE TABLE_NAME = 'cardtest_tbl'`;
+let $data_length1 = `SELECT data_length from information_schema.tables WHERE TABLE_NAME = 'cardtest_tbl'`;
+
 --let $wait_timeout=600
 --let $wait_condition = SELECT table_rows = 301 from information_schema.tables WHERE TABLE_NAME = 'cardtest_tbl';
 --source include/wait_condition.inc

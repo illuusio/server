@@ -391,6 +391,9 @@ private:
     part_share->next_auto_inc_val= part_share->prev_auto_inc_val;
     handler::restore_auto_increment();
   }
+  void sum_copy_info(handler *file);
+  void sum_copy_infos();
+  void reset_copy_info();
   /** Temporary storage for new partitions Handler_shares during ALTER */
   List<Parts_share_refs> m_new_partitions_share_refs;
   /** Sorted array of partition ids in descending order of number of rows. */
@@ -648,7 +651,7 @@ public:
     start_bulk_insert and end_bulk_insert is called before and after a
     number of calls to write_row.
   */
-  virtual int write_row(uchar * buf);
+  virtual int write_row(const uchar * buf);
   virtual bool start_bulk_update();
   virtual int exec_bulk_update(ha_rows *dup_key_found);
   virtual int end_bulk_update();
@@ -657,7 +660,7 @@ public:
   virtual int update_row(const uchar * old_data, const uchar * new_data);
   virtual int direct_update_rows_init(List<Item> *update_fields);
   virtual int pre_direct_update_rows_init(List<Item> *update_fields);
-  virtual int direct_update_rows(ha_rows *update_rows);
+  virtual int direct_update_rows(ha_rows *update_rows, ha_rows *found_rows);
   virtual int pre_direct_update_rows();
   virtual bool start_bulk_delete();
   virtual int end_bulk_delete();
@@ -948,6 +951,10 @@ public:
   */
   virtual double scan_time();
 
+  virtual double key_scan_time(uint inx);
+
+  virtual double keyread_time(uint inx, uint ranges, ha_rows rows);
+
   /*
     The next method will never be called if you do not implement indexes.
   */
@@ -1075,10 +1082,6 @@ public:
     Can't define a table without primary key (and cannot handle a table
     with hidden primary key)
     (No handler has this limitation currently)
-
-    HA_WANTS_PRIMARY_KEY:
-    Can't define a table without primary key except sequences
-    (Only InnoDB has this when using innodb_force_primary_key == ON)
 
     HA_STATS_RECORDS_IS_EXACT:
     Does the counter of records after the info call specify an exact
@@ -1475,6 +1478,9 @@ public:
     int check_misplaced_rows(uint read_part_id, bool repair);
     void append_row_to_str(String &str);
     public:
+
+    virtual int pre_calculate_checksum();
+    virtual int calculate_checksum();
 
   /* Enabled keycache for performance reasons, WL#4571 */
     virtual int assign_to_keycache(THD* thd, HA_CHECK_OPT *check_opt);

@@ -460,6 +460,7 @@ Check transaction state */
 	ut_ad((t)->lock.table_locks.empty());				\
 	ut_ad(!(t)->autoinc_locks					\
 	      || ib_vector_is_empty((t)->autoinc_locks));		\
+	ut_ad(UT_LIST_GET_LEN((t)->lock.evicted_tables) == 0);		\
 	ut_ad((t)->dict_operation == TRX_DICT_OP_NONE);			\
 } while(0)
 
@@ -558,6 +559,11 @@ struct trx_lock_t {
 					lock_sys.mutex. Otherwise, this may
 					only be modified by the thread that is
 					serving the running transaction. */
+#ifdef WITH_WSREP
+	bool		was_chosen_as_wsrep_victim;
+					/*!< high priority wsrep thread has
+					marked this trx to abort */
+#endif /* WITH_WSREP */
 
 	/** Pre-allocated record locks */
 	struct {
@@ -583,6 +589,9 @@ struct trx_lock_t {
 
 	lock_list	table_locks;	/*!< All table locks requested by this
 					transaction, including AUTOINC locks */
+
+	/** List of pending trx_t::evict_table() */
+	UT_LIST_BASE_NODE_T(dict_table_t) evicted_tables;
 
 	bool		cancel;		/*!< true if the transaction is being
 					rolled back either via deadlock
@@ -674,7 +683,7 @@ with exactly one user transaction. There are some exceptions to this:
 
 * For DDL operations, a subtransaction is allocated that modifies the
 data dictionary tables. Lock waits and deadlocks are prevented by
-acquiring the dict_operation_lock before starting the subtransaction
+acquiring the dict_sys.latch before starting the subtransaction
 and releasing it after committing the subtransaction.
 
 * The purge system uses a special transaction that is not associated
@@ -750,7 +759,7 @@ private:
     that it is no longer "active".
   */
 
-  int32_t n_ref;
+  Atomic_counter<int32_t> n_ref;
 
 
 public:
@@ -905,8 +914,8 @@ public:
 	ib_uint32_t	dict_operation_lock_mode;
 					/*!< 0, RW_S_LATCH, or RW_X_LATCH:
 					the latch mode trx currently holds
-					on dict_operation_lock. Protected
-					by dict_operation_lock. */
+					on dict_sys.latch. Protected
+					by dict_sys.latch. */
 
 	/** wall-clock time of the latest transition to TRX_STATE_ACTIVE;
 	used for diagnostic purposes only */
@@ -1112,19 +1121,23 @@ public:
   /** Release any explicit locks of a committing transaction. */
   inline void release_locks();
 
+  /** Evict a table definition due to the rollback of ALTER TABLE.
+  @param[in]	table_id	table identifier */
+  void evict_table(table_id_t table_id);
+
 
   bool is_referenced()
   {
-    return my_atomic_load32_explicit(&n_ref, MY_MEMORY_ORDER_RELAXED) > 0;
+    return n_ref > 0;
   }
 
 
   void reference()
   {
 #ifdef UNIV_DEBUG
-  int32_t old_n_ref=
+    auto old_n_ref=
 #endif
-    my_atomic_add32_explicit(&n_ref, 1, MY_MEMORY_ORDER_RELAXED);
+    n_ref++;
     ut_ad(old_n_ref >= 0);
   }
 
@@ -1132,9 +1145,9 @@ public:
   void release_reference()
   {
 #ifdef UNIV_DEBUG
-  int32_t old_n_ref=
+    auto old_n_ref=
 #endif
-    my_atomic_add32_explicit(&n_ref, -1, MY_MEMORY_ORDER_RELAXED);
+    n_ref--;
     ut_ad(old_n_ref > 0);
   }
 

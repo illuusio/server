@@ -90,9 +90,7 @@ static int prepare_for_fill(TABLE_LIST *tables)
     in SHOW STATUS and we want to avoid skewing the statistics)
   */
   thd->variables.pseudo_thread_id= thd->thread_id;
-  mysql_mutex_lock(&LOCK_thread_count);
-  threads.append(thd);
-  mysql_mutex_unlock(&LOCK_thread_count);
+  server_threads.insert(thd);
   thd->thread_stack= (char*) &tables;
   if (thd->store_globals())
     return 1;
@@ -117,11 +115,12 @@ static int prepare_for_fill(TABLE_LIST *tables)
 
   tables->init_one_table(&INFORMATION_SCHEMA_NAME, &tbl_name, 0, TL_READ);
   tables->schema_table= i_s_feedback;
+  tables->select_lex= thd->lex->first_select_lex();
+  DBUG_ASSERT(tables->select_lex);
   tables->table= create_schema_table(thd, tables);
   if (!tables->table)
     return 1;
 
-  tables->select_lex= thd->lex->current_select;
   tables->table->pos_in_table_list= tables;
 
   return 0;
@@ -138,7 +137,7 @@ static int prepare_for_fill(TABLE_LIST *tables)
 */
 static bool going_down()
 {
-  return shutdown_plugin || shutdown_in_progress || (thd && thd->killed);
+  return shutdown_plugin || abort_loop || (thd && thd->killed);
 }
 
 /**
@@ -257,12 +256,9 @@ ret:
       reset all thread local status variables to minimize
       the effect of the background thread on SHOW STATUS.
     */
-    mysql_mutex_lock(&LOCK_thread_count);
+    server_threads.erase(thd);
     thd->set_status_var_init();
     thd->killed= KILL_CONNECTION;
-    thd->unlink();
-    mysql_cond_broadcast(&COND_thread_count);
-    mysql_mutex_unlock(&LOCK_thread_count);
     delete thd;
     thd= 0;
   }

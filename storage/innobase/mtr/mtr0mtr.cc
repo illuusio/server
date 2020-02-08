@@ -28,9 +28,9 @@ Created 11/26/1995 Heikki Tuuri
 
 #include "buf0buf.h"
 #include "buf0flu.h"
+#include "fsp0sysspace.h"
 #include "page0types.h"
 #include "mtr0log.h"
-#include "row0trunc.h"
 #include "log0recv.h"
 
 /** Iterate over a memo block in reverse. */
@@ -167,7 +167,7 @@ struct FindPage
 			slot->object);
 
 		if (m_ptr < block->frame
-		    || m_ptr >= block->frame + block->page.size.logical()) {
+		    || m_ptr >= block->frame + srv_page_size) {
 			return(true);
 		}
 
@@ -226,7 +226,7 @@ static void memo_slot_release(mtr_memo_slot_t *slot)
   case MTR_MEMO_PAGE_SX_FIX:
   case MTR_MEMO_PAGE_X_FIX:
     buf_block_t *block= reinterpret_cast<buf_block_t*>(slot->object);
-    buf_block_unfix(block);
+    block->unfix();
     buf_page_release_latch(block, slot->type);
     break;
   }
@@ -262,7 +262,7 @@ struct ReleaseLatches {
     case MTR_MEMO_PAGE_SX_FIX:
     case MTR_MEMO_PAGE_X_FIX:
       buf_block_t *block= reinterpret_cast<buf_block_t*>(slot->object);
-      buf_block_unfix(block);
+      block->unfix();
       buf_page_release_latch(block, slot->type);
       break;
     }
@@ -564,8 +564,7 @@ mtr_t::x_lock_space(ulint space_id, const char* file, unsigned line)
 		ut_ad(get_log_mode() != MTR_LOG_NO_REDO
 		      || space->purpose == FIL_TYPE_TEMPORARY
 		      || space->purpose == FIL_TYPE_IMPORT
-		      || my_atomic_loadlint(&space->redo_skipped_count) > 0
-		      || srv_is_tablespace_truncated(space->id));
+		      || space->redo_skipped_count > 0);
 	}
 
 	ut_ad(space);

@@ -3715,7 +3715,7 @@ static bool do_unique_checks_fn(THD *thd) {
 
 #endif // defined(TOKU_INCLUDE_RFR) && TOKU_INCLUDE_RFR
 
-int ha_tokudb::do_uniqueness_checks(uchar* record, DB_TXN* txn, THD* thd) {
+int ha_tokudb::do_uniqueness_checks(const uchar* record, DB_TXN* txn, THD* thd) {
     int error = 0;
     //
     // first do uniqueness checks
@@ -3758,7 +3758,7 @@ cleanup:
     return error;
 }
 
-void ha_tokudb::test_row_packing(uchar* record, DBT* pk_key, DBT* pk_val) {
+void ha_tokudb::test_row_packing(const uchar* record, DBT* pk_key, DBT* pk_val) {
     int error;
     DBT row, key;
     //
@@ -3999,7 +3999,7 @@ out:
 //      0 on success
 //      error otherwise
 //
-int ha_tokudb::write_row(uchar * record) {
+int ha_tokudb::write_row(const uchar * record) {
     TOKUDB_HANDLER_DBUG_ENTER("%p", record);
 
     DBT row, prim_key;
@@ -6937,7 +6937,7 @@ void ha_tokudb::trace_create_table_info(TABLE* form) {
                 field->flags);
         }
         for (i = 0; i < form->s->keys; i++) {
-            KEY *key = &form->s->key_info[i];
+            KEY *key = &form->key_info[i];
             TOKUDB_HANDLER_TRACE(
                 "key:%d:%s:%d",
                 i,
@@ -7065,7 +7065,7 @@ int ha_tokudb::create_secondary_dictionary(
     sprintf(dict_name, "key-%s", key_info->name.str);
     make_name(newname, newname_len, name, dict_name);
 
-    prim_key = (hpk) ? NULL : &form->s->key_info[primary_key];
+    prim_key = (hpk) ? NULL : &form->key_info[primary_key];
 
     //
     // setup the row descriptor
@@ -7177,7 +7177,7 @@ int ha_tokudb::create_main_dictionary(
 
     make_name(newname, newname_len, name, "main");
 
-    prim_key = (hpk) ? NULL : &form->s->key_info[primary_key];
+    prim_key = (hpk) ? NULL : &form->key_info[primary_key];
 
     //
     // setup the row descriptor
@@ -7442,7 +7442,7 @@ int ha_tokudb::create(
 
             error = write_key_name_to_status(
                 status_block,
-                form->s->key_info[i].name.str,
+                form->key_info[i].name.str,
                 txn);
             if (error) {
                 goto cleanup;
@@ -7788,13 +7788,18 @@ double ha_tokudb::scan_time() {
     DBUG_RETURN(ret_val);
 }
 
+bool ha_tokudb::is_clustering_key(uint index)
+{
+    return index == primary_key || key_is_clustering(&table->key_info[index]);
+}
+
 double ha_tokudb::keyread_time(uint index, uint ranges, ha_rows rows)
 {
     TOKUDB_HANDLER_DBUG_ENTER("%u %u %" PRIu64, index, ranges, (uint64_t) rows);
-    double ret_val;
-    if (index == primary_key || key_is_clustering(&table->key_info[index])) {
-        ret_val = read_time(index, ranges, rows);
-        DBUG_RETURN(ret_val);
+    double cost;
+    if (index == primary_key || is_clustering_key(index)) {
+        cost = read_time(index, ranges, rows);
+        DBUG_RETURN(cost);
     }
     /*
       It is assumed that we will read trough the whole key range and that all
@@ -7804,11 +7809,8 @@ double ha_tokudb::keyread_time(uint index, uint ranges, ha_rows rows)
       blocks read. This model does not take into account clustered indexes -
       engines that support that (e.g. InnoDB) may want to overwrite this method.
     */
-    double keys_per_block= (stats.block_size/2.0/
-                            (table->key_info[index].key_length +
-                             ref_length) + 1);
-    ret_val = (rows + keys_per_block - 1)/ keys_per_block;
-    TOKUDB_HANDLER_DBUG_RETURN_DOUBLE(ret_val);
+    cost= handler::keyread_time(index, ranges, rows);
+    TOKUDB_HANDLER_DBUG_RETURN_DOUBLE(cost);
 }
 
 //
@@ -8170,7 +8172,7 @@ int ha_tokudb::tokudb_add_index(
     for (uint i = 0; i < num_of_keys; i++) {
         for (uint j = 0; j < table_arg->s->keys; j++) {
             if (strcmp(key_info[i].name.str,
-                       table_arg->s->key_info[j].name.str) == 0) {
+                       table_arg->key_info[j].name.str) == 0) {
                 error = HA_ERR_WRONG_COMMAND;
                 goto cleanup;
             }

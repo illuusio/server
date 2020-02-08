@@ -69,7 +69,7 @@ class ha_myisam: public handler
   void change_table_ptr(TABLE *table_arg, TABLE_SHARE *share);
   int open(const char *name, int mode, uint test_if_locked);
   int close(void);
-  int write_row(uchar * buf);
+  int write_row(const uchar * buf);
   int update_row(const uchar * old_data, const uchar * new_data);
   int delete_row(const uchar * buf);
   int index_read_map(uchar *buf, const uchar *key, key_part_map keypart_map,
@@ -171,6 +171,8 @@ public:
 
   /* Index condition pushdown implementation */
   Item *idx_cond_push(uint keyno, Item* idx_cond);
+  bool rowid_filter_push(Rowid_filter* rowid_filter);
+
 private:
   DsMrr_impl ds_mrr;
   friend ICP_RESULT index_cond_func_myisam(void *arg);

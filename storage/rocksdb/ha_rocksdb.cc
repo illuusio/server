@@ -7199,7 +7199,7 @@ int ha_rocksdb::create_cfs(
                        tbl_def_arg->full_tablename().c_str(),
                        table_arg->key_info[i].key_part[part].field->field_name.str);
 
-          my_error(ER_INTERNAL_ERROR, MYF(ME_JUST_WARNING), buf);
+          my_error(ER_INTERNAL_ERROR, MYF(ME_WARNING), buf);
         }
       }
     }
@@ -8750,7 +8750,7 @@ int ha_rocksdb::check(THD *const thd, HA_CHECK_OPT *const check_opt) {
       int res;
       // NO_LINT_DEBUG
       sql_print_verbose_info("CHECKTABLE %s:   Checking index %s", table_name,
-                             table->key_info[keyno].name);
+                             table->key_info[keyno].name.str);
       while (1) {
         if (!rows) {
           res = index_first(table->record[0]);
@@ -9538,7 +9538,7 @@ const std::string ha_rocksdb::get_table_comment(const TABLE *const table_arg) {
     HA_EXIT_SUCCESS  OK
     other            HA_ERR error code (can be SE-specific)
 */
-int ha_rocksdb::write_row(uchar *const buf) {
+int ha_rocksdb::write_row(const uchar *const buf) {
   DBUG_ENTER_FUNC();
 
   DBUG_ASSERT(buf != nullptr);
@@ -10976,11 +10976,15 @@ int ha_rocksdb::info(uint flag) {
         stats.records += m_table_handler->m_mtcache_count;
         stats.data_file_length += m_table_handler->m_mtcache_size;
       }
+
+      // Do like InnoDB does. stats.records=0 confuses the optimizer
+      if (stats.records == 0 && !(flag & (HA_STATUS_TIME | HA_STATUS_OPEN))) {
+        stats.records++;
+      }
     }
 
-    if (rocksdb_debug_optimizer_n_rows > 0) {
+    if (rocksdb_debug_optimizer_n_rows > 0)
       stats.records = rocksdb_debug_optimizer_n_rows;
-    }
 
     if (stats.records != 0) {
       stats.mean_rec_length = stats.data_file_length / stats.records;

@@ -271,6 +271,9 @@ Sql_cmd_truncate_table::handler_truncate(THD *thd, TABLE_LIST *table_ref,
 bool Sql_cmd_truncate_table::lock_table(THD *thd, TABLE_LIST *table_ref,
                                         bool *hton_can_recreate)
 {
+  handlerton *hton;
+  bool versioned;
+  bool sequence= false;
   TABLE *table= NULL;
   DBUG_ENTER("Sql_cmd_truncate_table::lock_table");
 
@@ -298,43 +301,43 @@ bool Sql_cmd_truncate_table::lock_table(THD *thd, TABLE_LIST *table_ref,
                                             table_ref->table_name.str, NULL)))
       DBUG_RETURN(TRUE);
 
-    *hton_can_recreate= ha_check_storage_engine_flag(table->file->ht,
-                                                     HTON_CAN_RECREATE);
+    versioned= table->versioned();
+    hton= table->file->ht;
     table_ref->mdl_request.ticket= table->mdl_ticket;
   }
   else
   {
-    handlerton *hton;
-    bool is_sequence;
-
-    /* Acquire an exclusive lock. */
     DBUG_ASSERT(table_ref->next_global == NULL);
     if (lock_table_names(thd, table_ref, NULL,
                          thd->variables.lock_wait_timeout, 0))
       DBUG_RETURN(TRUE);
 
-    if (!ha_table_exists(thd, &table_ref->db, &table_ref->table_name,
-                         &hton, &is_sequence) ||
-        hton == view_pseudo_hton)
+    TABLE_SHARE *share= tdc_acquire_share(thd, table_ref, GTS_TABLE | GTS_VIEW);
+    if (share == NULL)
+      DBUG_RETURN(TRUE);
+    DBUG_ASSERT(share != UNUSABLE_TABLE_SHARE);
+
+    versioned= share->versioned;
+    sequence= share->table_type == TABLE_TYPE_SEQUENCE;
+    hton= share->db_type();
+
+    tdc_release_share(share);
+
+    if (hton == view_pseudo_hton)
     {
       my_error(ER_NO_SUCH_TABLE, MYF(0), table_ref->db.str,
                table_ref->table_name.str);
       DBUG_RETURN(TRUE);
     }
+  }
 
-    if (!hton)
-    {
-      /*
-        The table exists, but its storage engine is unknown, perhaps not
-        loaded at the moment. We need to open and parse the frm to know the
-        storage engine in question, so let's proceed with the truncation and
-        try to open the table. This will produce the correct error message
-        about unknown engine.
-      */
-      *hton_can_recreate= false;
-    }
-    else
-      *hton_can_recreate= !is_sequence && hton->flags & HTON_CAN_RECREATE;
+  *hton_can_recreate= !sequence
+                      && ha_check_storage_engine_flag(hton, HTON_CAN_RECREATE);
+
+  if (versioned)
+  {
+    my_error(ER_VERS_NOT_SUPPORTED, MYF(0), "TRUNCATE TABLE");
+    DBUG_RETURN(TRUE);
   }
 
   /*
@@ -412,9 +415,11 @@ bool Sql_cmd_truncate_table::truncate_table(THD *thd, TABLE_LIST *table_ref)
   {
     bool hton_can_recreate;
 
+#ifdef WITH_WSREP
     if (WSREP(thd) &&
         wsrep_to_isolation_begin(thd, table_ref->db.str, table_ref->table_name.str, 0))
         DBUG_RETURN(TRUE);
+#endif /* WITH_WSREP */
     if (lock_table(thd, table_ref, &hton_can_recreate))
       DBUG_RETURN(TRUE);
 
@@ -491,7 +496,7 @@ bool Sql_cmd_truncate_table::truncate_table(THD *thd, TABLE_LIST *table_ref)
 bool Sql_cmd_truncate_table::execute(THD *thd)
 {
   bool res= TRUE;
-  TABLE_LIST *table= thd->lex->select_lex.table_list.first;
+  TABLE_LIST *table= thd->lex->first_select_lex()->table_list.first;
   DBUG_ENTER("Sql_cmd_truncate_table::execute");
 
   if (check_one_table_access(thd, DROP_ACL, table))

@@ -102,6 +102,7 @@ use mtr_unique;
 use mtr_results;
 use IO::Socket::INET;
 use IO::Select;
+use Time::HiRes qw(gettimeofday);
 
 require "mtr_process.pl";
 require "mtr_io.pl";
@@ -177,6 +178,7 @@ my @DEFAULT_SUITES= qw(
     binlog_encryption-
     csv-
     compat/oracle-
+    compat/mssql-
     encryption-
     federated-
     funcs_1-
@@ -203,6 +205,7 @@ my @DEFAULT_SUITES= qw(
     unit-
     vcol-
     versioning-
+    period-
   );
 my $opt_suites;
 
@@ -495,9 +498,9 @@ sub check_wsrep_support() {
       # WSREP_PROVIDER env not defined. Lets try to locate the wsrep provider
       # library.
       $file_wsrep_provider=
-        mtr_file_exists("/usr/lib64/galera-3/libgalera_smm.so",
+        mtr_file_exists("/usr/lib64/galera-4/libgalera_smm.so",
                         "/usr/lib64/galera/libgalera_smm.so",
-                        "/usr/lib/galera-3/libgalera_smm.so",
+                        "/usr/lib/galera-4/libgalera_smm.so",
                         "/usr/lib/galera/libgalera_smm.so");
       if ($file_wsrep_provider ne "") {
         # wsrep provider library found !
@@ -2421,8 +2424,10 @@ sub environment_setup {
   #
   $ENV{'LC_ALL'}=             "C";
   $ENV{'LC_CTYPE'}=           "C";
-
   $ENV{'LC_COLLATE'}=         "C";
+
+  $ENV{'OPENSSL_CONF'}=       "/dev/null";
+
   $ENV{'USE_RUNNING_SERVER'}= using_extern();
   $ENV{'MYSQL_TEST_DIR'}=     $glob_mysql_test_dir;
   $ENV{'DEFAULT_MASTER_PORT'}= $mysqld_variables{'port'};
@@ -2468,6 +2473,10 @@ sub environment_setup {
   $ENV{'EXE_MYSQL'}=                $exe_mysql;
   $ENV{'MYSQL_PLUGIN'}=             $exe_mysql_plugin;
   $ENV{'MYSQL_EMBEDDED'}=           $exe_mysql_embedded;
+  if(IS_WINDOWS)
+  {
+     $ENV{'MYSQL_INSTALL_DB_EXE'}=  mtr_exe_exists("$bindir/sql$opt_vs_config/mysql_install_db");
+  }
 
   my $client_config_exe=
     mtr_exe_maybe_exists(
@@ -2751,66 +2760,70 @@ sub setup_vardir() {
   copytree("$glob_mysql_test_dir/std_data", "$opt_vardir/std_data", "0022");
 
   # create a plugin dir and copy or symlink plugins into it
-  if ($source_dist)
+  unless($plugindir)
   {
-    $plugindir="$opt_vardir/plugins";
-    mkpath($plugindir);
-    if (IS_WINDOWS)
+    if ($source_dist)
     {
-      if (!$opt_embedded_server)
+      $plugindir="$opt_vardir/plugins";
+      mkpath($plugindir);
+      if (IS_WINDOWS)
       {
-        for (<$bindir/storage/*$opt_vs_config/*.dll>,
-             <$bindir/plugin/*$opt_vs_config/*.dll>,
-             <$bindir/libmariadb$opt_vs_config/*.dll>,
-             <$bindir/sql$opt_vs_config/*.dll>)
+        if (!$opt_embedded_server)
+        {
+          for (<$bindir/storage/*$opt_vs_config/*.dll>,
+               <$bindir/plugin/*$opt_vs_config/*.dll>,
+               <$bindir/libmariadb$opt_vs_config/*.dll>,
+               <$bindir/sql$opt_vs_config/*.dll>)
+          {
+            my $pname=basename($_);
+            copy rel2abs($_), "$plugindir/$pname";
+            set_plugin_var($pname);
+          }
+        }
+      }
+      else
+      {
+        my $opt_use_copy= 1;
+        if (symlink "$opt_vardir/run", "$plugindir/symlink_test")
+        {
+          $opt_use_copy= 0;
+          unlink "$plugindir/symlink_test";
+        }
+
+        for (<$bindir/storage/*/*.so>,
+             <$bindir/plugin/*/*.so>,
+             <$bindir/plugin/*/auth_pam_tool_dir>,
+             <$bindir/libmariadb/plugins/*/*.so>,
+             <$bindir/libmariadb/*.so>,
+             <$bindir/sql/*.so>)
         {
           my $pname=basename($_);
-          copy rel2abs($_), "$plugindir/$pname";
+          if ($opt_use_copy)
+          {
+            copy rel2abs($_), "$plugindir/$pname";
+          }
+          else
+          {
+            symlink rel2abs($_), "$plugindir/$pname";
+          }
           set_plugin_var($pname);
         }
       }
     }
     else
     {
-      my $opt_use_copy= 1;
-      if (symlink "$opt_vardir/run", "$plugindir/symlink_test")
-      {
-        $opt_use_copy= 0;
-        unlink "$plugindir/symlink_test";
-      }
-
-      for (<$bindir/storage/*/*.so>,
-           <$bindir/plugin/*/*.so>,
-           <$bindir/libmariadb/plugins/*/*.so>,
-           <$bindir/libmariadb/*.so>,
-           <$bindir/sql/*.so>)
+      # hm, what paths work for debs and for rpms ?
+      for (<$bindir/lib64/mysql/plugin/*.so>,
+           <$bindir/lib/mysql/plugin/*.so>,
+           <$bindir/lib64/mariadb/plugin/*.so>,
+           <$bindir/lib/mariadb/plugin/*.so>,
+           <$bindir/lib/plugin/*.so>,             # bintar
+           <$bindir/lib/plugin/*.dll>)
       {
         my $pname=basename($_);
-        if ($opt_use_copy)
-        {
-          copy rel2abs($_), "$plugindir/$pname";
-        }
-        else
-        {
-          symlink rel2abs($_), "$plugindir/$pname";
-        }
         set_plugin_var($pname);
+        $plugindir=dirname($_) unless $plugindir;
       }
-    }
-  }
-  else
-  {
-    $plugindir= $mysqld_variables{'plugin-dir'} || '.';
-    # hm, what paths work for debs and for rpms ?
-    for (<$bindir/lib64/mysql/plugin/*.so>,
-         <$bindir/lib/mysql/plugin/*.so>,
-         <$bindir/lib64/mariadb/plugin/*.so>,
-         <$bindir/lib/mariadb/plugin/*.so>,
-         <$bindir/lib/plugin/*.so>,             # bintar
-         <$bindir/lib/plugin/*.dll>)
-    {
-      my $pname=basename($_);
-      set_plugin_var($pname);
     }
   }
 
@@ -3073,9 +3086,9 @@ sub mysql_server_wait {
   my ($mysqld, $tinfo) = @_;
 
   if (!sleep_until_file_created($mysqld->value('pid-file'),
-                                      $opt_start_timeout,
-                                      $mysqld->{'proc'},
-                                      $warn_seconds))
+                                $opt_start_timeout,
+                                $mysqld->{'proc'},
+                                $warn_seconds))
   {
     $tinfo->{comment}= "Failed to start ".$mysqld->name() . "\n";
     return 1;
@@ -3089,6 +3102,7 @@ sub mysql_server_wait {
       return 1;
     }
   }
+
   return 0;
 }
 
@@ -3435,8 +3449,8 @@ sub mysql_install_db {
                             $bootstrap_sql_file);
 
       # mysql.gtid_slave_pos was created in InnoDB, but many tests
-      # run without InnoDB. Alter it to MyISAM now
-      mtr_tofile($bootstrap_sql_file, "ALTER TABLE gtid_slave_pos ENGINE=MyISAM;\n");
+      # run without InnoDB. Alter it to Aria now
+      mtr_tofile($bootstrap_sql_file, "ALTER TABLE gtid_slave_pos ENGINE=Aria transactional=0;\n");
     }
     else
     {
@@ -3453,7 +3467,7 @@ sub mysql_install_db {
 
     # Remove anonymous users
     mtr_tofile($bootstrap_sql_file,
-         "DELETE FROM mysql.user where user= '';\n");
+         "DELETE FROM mysql.global_priv where user= '';\n");
 
     # Create mtr database
     mtr_tofile($bootstrap_sql_file,
@@ -3476,6 +3490,7 @@ sub mysql_install_db {
   # Create directories mysql
   mkpath("$install_datadir/mysql");
 
+  my $realtime= gettimeofday();
   if ( My::SafeProcess->run
        (
 	name          => "bootstrap",
@@ -3492,6 +3507,10 @@ sub mysql_install_db {
     mtr_error("Error executing mysqld --bootstrap\n" .
               "Could not install system database from $bootstrap_sql_file\n" .
 	      "The $path_bootstrap_log file contains:\n$data\n");
+  }
+  else
+  {
+    mtr_verbose("Spent " . sprintf("%.3f", (gettimeofday() - $realtime)) . " seconds in bootstrap");
   }
 }
 
@@ -4703,6 +4722,7 @@ sub extract_warning_lines ($$) {
      qr|Access denied for user|,
      qr|Aborted connection|,
      qr|table.*is full|,
+     qr|\[ERROR\] mysqld: \Z|,  # Warning from Aria recovery
      qr|Linux Native AIO|, # warning that aio does not work on /dev/shm
      qr|InnoDB: io_setup\(\) attempt|,
      qr|InnoDB: io_setup\(\) failed with EAGAIN|,
@@ -4732,7 +4752,8 @@ sub extract_warning_lines ($$) {
      qr/InnoDB: See also */,
      qr/InnoDB: Cannot open .*ib_buffer_pool.* for reading: No such file or directory*/,
      qr/InnoDB: Table .*mysql.*innodb_table_stats.* not found./,
-     qr/InnoDB: User stopword table .* does not exist./
+     qr/InnoDB: User stopword table .* does not exist./,
+     qr/Dump thread [0-9]+ last sent to server [0-9]+ binlog file:pos .+/
 
     );
 
@@ -5757,7 +5778,6 @@ sub start_servers($) {
   for (all_servers()) {
     next unless $_->{WAIT} and started($_);
     if ($_->{WAIT}->($_, $tinfo)) {
-      $tinfo->{comment}= "Failed to start ".$_->name() . "\n";
       return 1;
     }
   }

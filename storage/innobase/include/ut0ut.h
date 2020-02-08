@@ -46,7 +46,6 @@ Created 1/20/1994 Heikki Tuuri
 #include <stdarg.h>
 
 #include <string>
-#include <my_atomic.h>
 
 /** Index name prefix in fast index creation, as a string constant */
 #define TEMP_INDEX_PREFIX_STR	"\377"
@@ -146,12 +145,6 @@ ut_2_power_up(
 	ulint	n)	/*!< in: number != 0 */
 	MY_ATTRIBUTE((const));
 
-/** Determine how many bytes (groups of 8 bits) are needed to
-store the given number of bits.
-@param b in: bits
-@return number of bytes (octets) needed to represent b */
-#define UT_BITS_IN_BYTES(b) (((b) + 7) / 8)
-
 /**********************************************************//**
 Returns the number of milliseconds since some epoch.  The
 value may wrap around.  It should only be used for heuristic
@@ -161,6 +154,12 @@ ulint
 ut_time_ms(void);
 /*============*/
 #endif /* !UNIV_INNOCHECKSUM */
+
+/** Determine how many bytes (groups of 8 bits) are needed to
+store the given number of bits.
+@param b in: bits
+@return number of bytes (octets) needed to represent b */
+#define UT_BITS_IN_BYTES(b) (((b) + 7) / 8)
 
 /** Determines if a number is zero or a power of two.
 @param[in]	n	number

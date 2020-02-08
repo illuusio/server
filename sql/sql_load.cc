@@ -41,7 +41,8 @@
 #include "sql_trigger.h"
 #include "sql_derived.h"
 #include "sql_show.h"
-#include "debug_sync.h"
+
+#include "wsrep_mysqld.h"
 
 extern "C" int _my_b_net_read(IO_CACHE *info, uchar *Buffer, size_t Count);
 
@@ -99,63 +100,40 @@ public:
 #define PUSH(A) *(stack_pos++)=(A)
 
 #ifdef WITH_WSREP
-/** If requested by wsrep_load_data_splitting, commit and restart
-the transaction after every 10,000 inserted rows. */
-
-static bool wsrep_load_data_split(THD *thd, const TABLE *table,
-				  const COPY_INFO &info)
+/** If requested by wsrep_load_data_splitting and streaming replication is
+    not enabled, replicate a streaming fragment every 10,000 rows.*/
+class Wsrep_load_data_split
 {
-  DBUG_ENTER("wsrep_load_data_split");
-
-  if (!wsrep_load_data_splitting || !wsrep_on(thd)
-      || !info.records || (info.records % 10000)
-      || !thd->transaction.stmt.ha_list
-      || thd->transaction.stmt.ha_list->ht() != binlog_hton
-      || !thd->transaction.stmt.ha_list->next()
-      || thd->transaction.stmt.ha_list->next()->next())
-    DBUG_RETURN(false);
-
-  if (handlerton* hton= thd->transaction.stmt.ha_list->next()->ht())
+public:
+  Wsrep_load_data_split(THD *thd)
+    : m_thd(thd)
+    , m_load_data_splitting(wsrep_load_data_splitting)
+    , m_fragment_unit(thd->wsrep_trx().streaming_context().fragment_unit())
+    , m_fragment_size(thd->wsrep_trx().streaming_context().fragment_size())
   {
-    if (hton->db_type != DB_TYPE_INNODB)
-      DBUG_RETURN(false);
-    WSREP_DEBUG("intermediate transaction commit in LOAD DATA");
-    wsrep_set_load_multi_commit(thd, true);
-    if (wsrep_run_wsrep_commit(thd, true) != WSREP_TRX_OK) DBUG_RETURN(true);
-    if (binlog_hton->commit(binlog_hton, thd, true)) DBUG_RETURN(true);
-    wsrep_post_commit(thd, true);
-    hton->commit(hton, thd, true);
-    wsrep_set_load_multi_commit(thd, false);
-    DEBUG_SYNC(thd, "intermediate_transaction_commit");
-    table->file->extra(HA_EXTRA_FAKE_START_STMT);
+    if (WSREP(m_thd) && m_load_data_splitting)
+    {
+      /* Override streaming settings with backward compatible values for
+         load data splitting */
+      m_thd->wsrep_cs().streaming_params(wsrep::streaming_context::row, 10000);
+    }
   }
 
-  DBUG_RETURN(false);
-}
-/*
-  If the commit fails, then an early return from
-  the function occurs there and therefore we need
-  to reset the table->auto_increment_field_not_null
-  flag, which is usually reset after calling
-  the write_record():
-*/
-#define WSREP_LOAD_DATA_SPLIT(thd,table,info)		\
-  if (wsrep_load_data_split(thd,table,info))		\
-  {							\
-    table->auto_increment_field_not_null= FALSE;	\
-    DBUG_RETURN(1);					\
+  ~Wsrep_load_data_split()
+  {
+    if (WSREP(m_thd) && m_load_data_splitting)
+    {
+      /* Restore original settings */
+      m_thd->wsrep_cs().streaming_params(m_fragment_unit, m_fragment_size);
+    }
   }
-#else /* WITH_WSREP */
-#define WSREP_LOAD_DATA_SPLIT(thd,table,info) /* empty */
+private:
+  THD *m_thd;
+  my_bool m_load_data_splitting;
+  enum wsrep::streaming_context::fragment_unit m_fragment_unit;
+  size_t m_fragment_size;
+};
 #endif /* WITH_WSREP */
-
-#define WRITE_RECORD(thd,table,info)			\
-  do {							\
-    int err_= write_record(thd, table, &info);		\
-    table->auto_increment_field_not_null= FALSE;	\
-    if (err_)						\
-      DBUG_RETURN(1);					\
-  } while (0)
 
 class READ_INFO: public Load_data_param
 {
@@ -374,6 +352,9 @@ int mysql_load(THD *thd, const sql_exchange *ex, TABLE_LIST *table_list,
   bool transactional_table __attribute__((unused));
   DBUG_ENTER("mysql_load");
 
+#ifdef WITH_WSREP
+  Wsrep_load_data_split wsrep_load_data_split(thd);
+#endif /* WITH_WSREP */
   /*
     Bug #34283
     mysqlbinlog leaves tmpfile after termination if binlog contains
@@ -410,10 +391,13 @@ int mysql_load(THD *thd, const sql_exchange *ex, TABLE_LIST *table_list,
     DBUG_RETURN(TRUE);
   if (thd->lex->handle_list_of_derived(table_list, DT_PREPARE))
     DBUG_RETURN(TRUE);
-  if (setup_tables_and_check_access(thd, &thd->lex->select_lex.context,
-                                    &thd->lex->select_lex.top_join_list,
+  if (setup_tables_and_check_access(thd,
+                                    &thd->lex->first_select_lex()->context,
+                                    &thd->lex->first_select_lex()->
+                                      top_join_list,
                                     table_list,
-                                    thd->lex->select_lex.leaf_tables, FALSE,
+                                    thd->lex->first_select_lex()->leaf_tables,
+                                    FALSE,
                                     INSERT_ACL | UPDATE_ACL,
                                     INSERT_ACL | UPDATE_ACL, FALSE))
      DBUG_RETURN(-1);
@@ -944,7 +928,7 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
   List_iterator_fast<Item> it(fields_vars);
   Item *item;
   TABLE *table= table_list->table;
-  bool progress_reports;
+  bool err, progress_reports;
   ulonglong counter, time_to_report_progress;
   DBUG_ENTER("read_fixed_length");
 
@@ -1035,9 +1019,11 @@ read_fixed_length(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
       DBUG_RETURN(-1);
     }
 
-    WSREP_LOAD_DATA_SPLIT(thd, table, info);
-    WRITE_RECORD(thd, table, info);
-
+    err= write_record(thd, table, &info);
+    table->auto_increment_field_not_null= FALSE;
+    if (err)
+      DBUG_RETURN(1);
+   
     /*
       We don't need to reset auto-increment field since we are restoring
       its default value at the beginning of each loop iteration.
@@ -1070,7 +1056,7 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
   Item *item;
   TABLE *table= table_list->table;
   uint enclosed_length;
-  bool progress_reports;
+  bool err, progress_reports;
   ulonglong counter, time_to_report_progress;
   DBUG_ENTER("read_sep_field");
 
@@ -1175,9 +1161,10 @@ read_sep_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
       DBUG_RETURN(-1);
     }
 
-    WSREP_LOAD_DATA_SPLIT(thd, table, info);
-    WRITE_RECORD(thd, table, info);
-
+    err= write_record(thd, table, &info);
+    table->auto_increment_field_not_null= FALSE;
+    if (err)
+      DBUG_RETURN(1);
     /*
       We don't need to reset auto-increment field since we are restoring
       its default value at the beginning of each loop iteration.
@@ -1221,6 +1208,7 @@ read_xml_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
   
   for ( ; ; it.rewind())
   {
+    bool err;
     if (thd->killed)
     {
       thd->send_kill_message();
@@ -1294,10 +1282,12 @@ read_xml_field(THD *thd, COPY_INFO &info, TABLE_LIST *table_list,
     case VIEW_CHECK_ERROR:
       DBUG_RETURN(-1);
     }
-
-    WSREP_LOAD_DATA_SPLIT(thd, table, info);
-    WRITE_RECORD(thd, table, info);
-
+    
+    err= write_record(thd, table, &info);
+    table->auto_increment_field_not_null= false;
+    if (err)
+      DBUG_RETURN(1);
+    
     /*
       We don't need to reset auto-increment field since we are restoring
       its default value at the beginning of each loop iteration.

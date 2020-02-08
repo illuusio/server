@@ -40,7 +40,7 @@ MAP_ANON but MAP_ANON is marked as deprecated */
 
 /** The total amount of memory currently allocated from the operating
 system with os_mem_alloc_large(). */
-ulint	os_total_large_mem_allocated = 0;
+Atomic_counter<ulint>	os_total_large_mem_allocated;
 
 /** Converts the current process id to a number.
 @return process id as a number */
@@ -98,9 +98,7 @@ os_mem_alloc_large(
 
 	if (ptr) {
 		*n = size;
-		my_atomic_addlint(
-			&os_total_large_mem_allocated, size);
-
+		os_total_large_mem_allocated += size;
 		UNIV_MEM_ALLOC(ptr, size);
 		return(ptr);
 	}
@@ -123,8 +121,7 @@ skip:
 		ib::info() << "VirtualAlloc(" << size << " bytes) failed;"
 			" Windows error " << GetLastError();
 	} else {
-		my_atomic_addlint(
-			&os_total_large_mem_allocated, size);
+		os_total_large_mem_allocated += size;
 		UNIV_MEM_ALLOC(ptr, size);
 	}
 #else
@@ -139,8 +136,7 @@ skip:
 			" errno " << errno;
 		ptr = NULL;
 	} else {
-		my_atomic_addlint(
-			&os_total_large_mem_allocated, size);
+		os_total_large_mem_allocated += size;
 		UNIV_MEM_ALLOC(ptr, size);
 	}
 #endif
@@ -165,8 +161,7 @@ os_mem_free_large(
 
 #ifdef HAVE_LINUX_LARGE_PAGES
 	if (my_use_large_pages && opt_large_page_size && !shmdt(ptr)) {
-		my_atomic_addlint(
-			&os_total_large_mem_allocated, -size);
+		os_total_large_mem_allocated -= size;
 		return;
 	}
 #endif /* HAVE_LINUX_LARGE_PAGES */
@@ -177,8 +172,7 @@ os_mem_free_large(
 		ib::error() << "VirtualFree(" << ptr << ", " << size
 			<< ") failed; Windows error " << GetLastError();
 	} else {
-		my_atomic_addlint(
-			&os_total_large_mem_allocated, -lint(size));
+		os_total_large_mem_allocated -= size;
 	}
 #elif !defined OS_MAP_ANON
 	ut_free(ptr);
@@ -191,8 +185,7 @@ os_mem_free_large(
 		ib::error() << "munmap(" << ptr << ", " << size << ") failed;"
 			" errno " << errno;
 	} else {
-		my_atomic_addlint(
-			&os_total_large_mem_allocated, -size);
+		os_total_large_mem_allocated -= size;
 	}
 #endif
 }

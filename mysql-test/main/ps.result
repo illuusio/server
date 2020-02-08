@@ -244,6 +244,8 @@ prepare stmt1 from "insert into t1 select i from t1";
 execute stmt1;
 execute stmt1;
 prepare stmt1 from "select * from t1 into outfile '<MYSQLTEST_VARDIR>/tmp/f1.txt'";
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 execute stmt1;
 deallocate prepare stmt1;
 drop table t1;
@@ -1379,9 +1381,11 @@ test.t1	optimize	status	Table is already up to date
 prepare stmt from "analyze table t1";
 execute stmt;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	Table is already up to date
 execute stmt;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	Table is already up to date
 prepare stmt from "repair table t1, t2, t3";
 execute stmt;
@@ -1408,13 +1412,19 @@ test.t3	optimize	status	Table is already up to date
 prepare stmt from "analyze table t1, t2, t3";
 execute stmt;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	Table is already up to date
+test.t2	analyze	status	Engine-independent statistics collected
 test.t2	analyze	status	Table is already up to date
+test.t3	analyze	status	Engine-independent statistics collected
 test.t3	analyze	status	Table is already up to date
 execute stmt;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	Table is already up to date
+test.t2	analyze	status	Engine-independent statistics collected
 test.t2	analyze	status	Table is already up to date
+test.t3	analyze	status	Engine-independent statistics collected
 test.t3	analyze	status	Table is already up to date
 prepare stmt from "repair table t1, t4, t3";
 execute stmt;
@@ -1447,11 +1457,13 @@ execute stmt;
 Table	Op	Msg_type	Msg_text
 test.t4	analyze	Error	Table 'test.t4' doesn't exist
 test.t4	analyze	status	Operation failed
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	Table is already up to date
 execute stmt;
 Table	Op	Msg_type	Msg_text
 test.t4	analyze	Error	Table 'test.t4' doesn't exist
 test.t4	analyze	status	Operation failed
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	Table is already up to date
 deallocate prepare stmt;
 drop table t1, t2, t3;
@@ -1518,6 +1530,7 @@ Field	Type	Null	Key	Default	Extra
 i	int(11)	YES		NULL	
 execute stmt_analyze;
 Table	Op	Msg_type	Msg_text
+mysqltest_long_database_name_to_thrash_heap.t1	analyze	status	Engine-independent statistics collected
 mysqltest_long_database_name_to_thrash_heap.t1	analyze	status	Table is already up to date
 execute stmt_optimize;
 Table	Op	Msg_type	Msg_text
@@ -2132,12 +2145,13 @@ Database	Table	In_use	Name_locked
 mysql	general_log	0	0
 select Host, User from mysql.user limit 0;
 Host	User
-select Host, Db from mysql.host limit 0;
-Host	Db
 show open tables from mysql;
 Database	Table	In_use	Name_locked
+mysql	column_stats	0	0
 mysql	general_log	0	0
-mysql	host	0	0
+mysql	global_priv	0	0
+mysql	index_stats	0	0
+mysql	table_stats	0	0
 mysql	user	0	0
 call proc_1();
 show open tables from mysql;
@@ -2145,12 +2159,13 @@ Database	Table	In_use	Name_locked
 mysql	general_log	0	0
 select Host, User from mysql.user limit 0;
 Host	User
-select Host, Db from mysql.host limit 0;
-Host	Db
 show open tables from mysql;
 Database	Table	In_use	Name_locked
+mysql	column_stats	0	0
 mysql	general_log	0	0
-mysql	host	0	0
+mysql	global_priv	0	0
+mysql	index_stats	0	0
+mysql	table_stats	0	0
 mysql	user	0	0
 call proc_1();
 show open tables from mysql;
@@ -2158,12 +2173,13 @@ Database	Table	In_use	Name_locked
 mysql	general_log	0	0
 select Host, User from mysql.user limit 0;
 Host	User
-select Host, Db from mysql.host limit 0;
-Host	Db
 show open tables from mysql;
 Database	Table	In_use	Name_locked
+mysql	column_stats	0	0
 mysql	general_log	0	0
-mysql	host	0	0
+mysql	global_priv	0	0
+mysql	index_stats	0	0
+mysql	table_stats	0	0
 mysql	user	0	0
 call proc_1();
 show open tables from mysql;
@@ -2171,12 +2187,13 @@ Database	Table	In_use	Name_locked
 mysql	general_log	0	0
 select Host, User from mysql.user limit 0;
 Host	User
-select Host, Db from mysql.host limit 0;
-Host	Db
 show open tables from mysql;
 Database	Table	In_use	Name_locked
+mysql	column_stats	0	0
 mysql	general_log	0	0
-mysql	host	0	0
+mysql	global_priv	0	0
+mysql	index_stats	0	0
+mysql	table_stats	0	0
 mysql	user	0	0
 flush tables;
 create function func_1() returns int begin flush tables; return 1; end|
@@ -2189,12 +2206,13 @@ drop procedure proc_1;
 flush tables;
 select Host, User from mysql.user limit 0;
 Host	User
-select Host, Db from mysql.host limit 0;
-Host	Db
 show open tables from mysql;
 Database	Table	In_use	Name_locked
+mysql	column_stats	0	0
 mysql	general_log	0	0
-mysql	host	0	0
+mysql	global_priv	0	0
+mysql	index_stats	0	0
+mysql	table_stats	0	0
 mysql	user	0	0
 prepare abc from "flush tables";
 execute abc;
@@ -2203,12 +2221,13 @@ Database	Table	In_use	Name_locked
 mysql	general_log	0	0
 select Host, User from mysql.user limit 0;
 Host	User
-select Host, Db from mysql.host limit 0;
-Host	Db
 show open tables from mysql;
 Database	Table	In_use	Name_locked
+mysql	column_stats	0	0
 mysql	general_log	0	0
-mysql	host	0	0
+mysql	global_priv	0	0
+mysql	index_stats	0	0
+mysql	table_stats	0	0
 mysql	user	0	0
 execute abc;
 show open tables from mysql;
@@ -2216,12 +2235,13 @@ Database	Table	In_use	Name_locked
 mysql	general_log	0	0
 select Host, User from mysql.user limit 0;
 Host	User
-select Host, Db from mysql.host limit 0;
-Host	Db
 show open tables from mysql;
 Database	Table	In_use	Name_locked
+mysql	column_stats	0	0
 mysql	general_log	0	0
-mysql	host	0	0
+mysql	global_priv	0	0
+mysql	index_stats	0	0
+mysql	table_stats	0	0
 mysql	user	0	0
 execute abc;
 show open tables from mysql;
@@ -2229,12 +2249,13 @@ Database	Table	In_use	Name_locked
 mysql	general_log	0	0
 select Host, User from mysql.user limit 0;
 Host	User
-select Host, Db from mysql.host limit 0;
-Host	Db
 show open tables from mysql;
 Database	Table	In_use	Name_locked
+mysql	column_stats	0	0
 mysql	general_log	0	0
-mysql	host	0	0
+mysql	global_priv	0	0
+mysql	index_stats	0	0
+mysql	table_stats	0	0
 mysql	user	0	0
 flush tables;
 deallocate prepare abc;
@@ -4423,15 +4444,15 @@ drop table t1;
 CREATE TABLE t1 (id date, count int);
 insert into t1 values ("2019-06-11",1),("2019-06-12",2);
 update t1 set count = count + 1 where id = '1bad';
-ERROR 22007: Incorrect datetime value: '1bad'
+ERROR 22007: Truncated incorrect datetime value: '1bad'
 prepare stmt from "update t1 set count = count + 1 where id = '1bad'";
 execute stmt;
-ERROR 22007: Incorrect datetime value: '1bad'
+ERROR 22007: Truncated incorrect datetime value: '1bad'
 deallocate prepare stmt;
 prepare stmt from 'update t1 set count = count + 1 where id = ?';
 set @a = '1bad';
 execute stmt using @a;
-ERROR 22007: Incorrect datetime value: '1bad'
+ERROR 22007: Truncated incorrect datetime value: '1bad'
 deallocate prepare stmt;
 drop table t1;
 set sql_mode=@save_sql_mode;
@@ -4526,7 +4547,7 @@ DEALLOCATE PREPARE stmt;
 #
 PREPARE stmt FROM 'SELECT ? FROM DUAL';
 EXECUTE stmt USING (SELECT 1);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'SELECT 1)' at line 1
+ERROR 42000: EXECUTE..USING does not support subqueries or stored functions
 DEALLOCATE PREPARE stmt;
 CREATE FUNCTION f1() RETURNS VARCHAR(10) RETURN 'test';
 PREPARE stmt FROM 'SELECT ? FROM DUAL';
@@ -4725,10 +4746,10 @@ ERROR 21000: Operand should contain 1 column(s)
 # Testing disallowed expressions in USING
 #
 EXECUTE IMMEDIATE 'SELECT ? FROM DUAL' USING (SELECT 1);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'SELECT 1)' at line 1
+ERROR 42000: EXECUTE..USING does not support subqueries or stored functions
 CREATE FUNCTION f1() RETURNS VARCHAR(10) RETURN 'test';
 EXECUTE IMMEDIATE 'SELECT ? FROM DUAL' USING f1();
-ERROR 42000: EXECUTE..USING does not support subqueries or stored functions
+ERROR 42000: EXECUTE IMMEDIATE does not support subqueries or stored functions
 DROP FUNCTION f1;
 #
 # DDL
@@ -4911,9 +4932,9 @@ ERROR HY000: Illegal mix of collations (latin1_swedish_ci,COERCIBLE) and (latin2
 PREPARE stmt FROM CONCAT(_latin1'SELECT 1 AS c FROM ', _latin2 'DUAL');
 ERROR HY000: Illegal mix of collations (latin1_swedish_ci,COERCIBLE) and (latin2_general_ci,COERCIBLE) for operation 'concat'
 EXECUTE IMMEDIATE (SELECT 'SELECT 1');
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'SELECT 'SELECT 1')' at line 1
+ERROR 42000: EXECUTE IMMEDIATE does not support subqueries or stored functions
 PREPARE stmt FROM (SELECT 'SELECT 1');
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'SELECT 'SELECT 1')' at line 1
+ERROR 42000: PREPARE..FROM does not support subqueries or stored functions
 EXECUTE IMMEDIATE a;
 ERROR 42S22: Unknown column 'a' in 'field list'
 PREPARE stmt FROM a;
@@ -5329,6 +5350,7 @@ CREATE PROCEDURE p1(tn VARCHAR(32))
 EXECUTE IMMEDIATE CONCAT('ANALYZE TABLE ',tn);
 CALL p1('t1');
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	Table is already up to date
 DROP PROCEDURE p1;
 DROP TABLE t1;
@@ -5451,4 +5473,22 @@ drop view v1;
 drop table t1;
 #
 # End of 10.2 tests
+#
+#
+# MDEV-19263: Server crashes in mysql_handle_single_derived
+# upon 2nd execution of PS
+#
+CREATE TABLE t1 (f INT);
+CREATE VIEW v1 AS SELECT * FROM t1;
+CREATE TRIGGER tr BEFORE INSERT ON t1 FOR EACH ROW INSERT INTO v1 SELECT * FROM x;
+PREPARE stmt FROM "INSERT INTO v1 VALUES (1)";
+EXECUTE stmt;
+ERROR 42S02: Table 'test.x' doesn't exist
+EXECUTE stmt;
+ERROR 42S02: Table 'test.x' doesn't exist
+DEALLOCATE PREPARE stmt;
+DROP VIEW v1;
+DROP TABLE t1;
+#
+# End of 10.4 tests
 #

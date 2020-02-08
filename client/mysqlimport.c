@@ -67,10 +67,6 @@ static longlong opt_ignore_lines= -1;
 
 static char **argv_to_free;
 
-#ifdef HAVE_SMEM
-static char *shared_memory_base_name=0;
-#endif
-
 static struct my_option my_long_options[] =
 {
   {"character-sets-dir", OPT_CHARSETS_DIR,
@@ -163,15 +159,10 @@ static struct my_option my_long_options[] =
    &opt_mysql_port,
    &opt_mysql_port, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0,
    0},
-  {"protocol", OPT_MYSQL_PROTOCOL, "The protocol to use for connection (tcp, socket, pipe, memory).",
+  {"protocol", OPT_MYSQL_PROTOCOL, "The protocol to use for connection (tcp, socket, pipe).",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"replace", 'r', "If duplicate unique key was found, replace old row.",
    &replace, &replace, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef HAVE_SMEM
-  {"shared-memory-base-name", OPT_SHARED_MEMORY_BASE_NAME,
-   "Base name of shared memory.", &shared_memory_base_name, &shared_memory_base_name,
-   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-#endif
   {"silent", 's', "Be more silent.", &silent, &silent, 0,
    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"socket", 'S', "The socket file to use for connection.",
@@ -196,7 +187,8 @@ static struct my_option my_long_options[] =
 
 
 static const char *load_default_groups[]=
-{ "mysqlimport","client", "client-server", "client-mariadb", 0 };
+{ "mysqlimport", "mariadb-import", "client", "client-server", "client-mariadb",
+  0 };
 
 
 static void print_version(void)
@@ -210,13 +202,14 @@ static void usage(void)
 {
   puts("Copyright 2000-2008 MySQL AB, 2008 Sun Microsystems, Inc.");
   puts("Copyright 2008-2011 Oracle and Monty Program Ab.");
+  puts("Copyright 2012-2019 MariaDB Corporation Ab.");
   print_version();
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"));
   printf("\
 Loads tables from text files in various formats.  The base name of the\n\
 text file must be the name of the table that should be used.\n\
-If one uses sockets to connect to the MySQL server, the server will open and\n\
-read the text file directly. In other cases the client will open the text\n\
+If one uses sockets to connect to the MariaDB server, the server will open\n\
+and read the text file directly. In other cases the client will open the text\n\
 file. The SQL command 'LOAD DATA INFILE' is used to import the rows.\n");
 
   printf("\nUsage: %s [OPTIONS] database textfile...\n",my_progname);
@@ -458,16 +451,13 @@ static MYSQL *db_connect(char *host, char *database,
 		  opt_ssl_capath, opt_ssl_cipher);
     mysql_options(mysql, MYSQL_OPT_SSL_CRL, opt_ssl_crl);
     mysql_options(mysql, MYSQL_OPT_SSL_CRLPATH, opt_ssl_crlpath);
+    mysql_options(mysql, MARIADB_OPT_TLS_VERSION, opt_tls_version);
   }
   mysql_options(mysql,MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
                 (char*)&opt_ssl_verify_server_cert);
 #endif
   if (opt_protocol)
     mysql_options(mysql,MYSQL_OPT_PROTOCOL,(char*)&opt_protocol);
-#ifdef HAVE_SMEM
-  if (shared_memory_base_name)
-    mysql_options(mysql,MYSQL_SHARED_MEMORY_BASE_NAME,shared_memory_base_name);
-#endif
 
   if (opt_plugin_dir && *opt_plugin_dir)
     mysql_options(mysql, MYSQL_PLUGIN_DIR, opt_plugin_dir);
@@ -525,9 +515,6 @@ static void safe_exit(int error, MYSQL *mysql)
     mysql_close(mysql);
 
   mysql_library_end();
-#ifdef HAVE_SMEM
-  my_free(shared_memory_base_name);
-#endif
   free_defaults(argv_to_free);
   my_free(opt_password);
   if (error)

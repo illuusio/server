@@ -1000,9 +1000,9 @@ fts_table_fetch_doc_ids(
 	error = fts_eval_sql(trx, graph);
 	fts_sql_commit(trx);
 
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	que_graph_free(graph);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 
 	if (error == DB_SUCCESS) {
 		ib_vector_sort(doc_ids->doc_ids, fts_update_doc_id_cmp);
@@ -2943,8 +2943,8 @@ fts_optimize_init(void)
 	/* Add fts tables to fts_slots which could be skipped
 	during dict_load_table_one() because fts_optimize_thread
 	wasn't even started. */
-	mutex_enter(&dict_sys->mutex);
-	for (dict_table_t* table = UT_LIST_GET_FIRST(dict_sys->table_LRU);
+	mutex_enter(&dict_sys.mutex);
+	for (dict_table_t* table = UT_LIST_GET_FIRST(dict_sys.table_LRU);
 	     table != NULL;
 	     table = UT_LIST_GET_NEXT(table_LRU, table)) {
 		if (!table->fts || !dict_table_has_fts_index(table)) {
@@ -2958,7 +2958,7 @@ fts_optimize_init(void)
 		fts_optimize_new_table(table);
 		table->fts->in_queue = true;
 	}
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 
 	fts_opt_shutdown_event = os_event_create(0);
 	last_check_sync_time = time(NULL);

@@ -435,7 +435,7 @@ row_merge_buf_redundant_convert(
 	const dfield_t*		row_field,
 	dfield_t*		field,
 	ulint			len,
-	const page_size_t&	page_size,
+	ulint			zip_size,
 	mem_heap_t*		heap)
 {
 	ut_ad(field->type.mbminlen == 1);
@@ -455,7 +455,7 @@ row_merge_buf_redundant_convert(
 			    field_ref_zero, BTR_EXTERN_FIELD_REF_SIZE));
 
 		byte*	data = btr_copy_externally_stored_field(
-			&ext_len, field_data, page_size, field_len, heap);
+			&ext_len, field_data, zip_size, field_len, heap);
 
 		ut_ad(ext_len < len);
 
@@ -697,13 +697,13 @@ row_merge_buf_add(
 				if (conv_heap != NULL) {
 					row_merge_buf_redundant_convert(
 						row_field, field, col->len,
-						dict_table_page_size(old_table),
+						old_table->space->zip_size(),
 						conv_heap);
 				} else {
 					/* Field length mismatch should not
 					happen when rebuilding redundant row
 					format table. */
-					ut_ad(dict_table_is_comp(index->table));
+					ut_ad(index->table->not_redundant());
 				}
 			}
 		}
@@ -1853,7 +1853,7 @@ row_merge_read_clustered_index(
 	btr_pcur_open_at_index_side(
 		true, clust_index, BTR_SEARCH_LEAF, &pcur, true, 0, &mtr);
 	btr_pcur_move_to_next_user_rec(&pcur, &mtr);
-	if (rec_is_metadata(btr_pcur_get_rec(&pcur), clust_index)) {
+	if (rec_is_metadata(btr_pcur_get_rec(&pcur), *clust_index)) {
 		ut_ad(btr_pcur_is_on_user_rec(&pcur));
 		/* Skip the metadata pseudo-record. */
 	} else {
@@ -1968,8 +1968,8 @@ row_merge_read_clustered_index(
 				goto scan_next;
 			}
 
-			if (my_atomic_load32_explicit(&clust_index->lock.waiters,
-						      MY_MEMORY_ORDER_RELAXED)) {
+			if (clust_index->lock.waiters.load(
+						std::memory_order_relaxed)) {
 				/* There are waiters on the clustered
 				index tree lock, likely the purge
 				thread. Store and restore the cursor
@@ -2027,7 +2027,7 @@ end_of_index:
 				block = btr_block_get(
 					page_id_t(block->page.id.space(),
 						  next_page_no),
-					block->page.size,
+					block->zip_size(),
 					BTR_SEARCH_LEAF,
 					clust_index, &mtr);
 
@@ -3419,7 +3419,7 @@ void
 row_merge_copy_blobs(
 	const mrec_t*		mrec,
 	const offset_t*		offsets,
-	const page_size_t&	page_size,
+	ulint			zip_size,
 	dtuple_t*		tuple,
 	mem_heap_t*		heap)
 {
@@ -3457,10 +3457,10 @@ row_merge_copy_blobs(
 				     BTR_EXTERN_FIELD_REF_SIZE));
 
 			data = btr_copy_externally_stored_field(
-				&len, field_data, page_size, field_len, heap);
+				&len, field_data, zip_size, field_len, heap);
 		} else {
 			data = btr_rec_copy_externally_stored_field(
-				mrec, offsets, page_size, i, &len, heap);
+				mrec, offsets, zip_size, i, &len, heap);
 		}
 
 		/* Because we have locked the table, any records
@@ -3652,8 +3652,7 @@ row_merge_insert_index_tuples(
 			row_log_table_blob_alloc() and
 			row_log_table_blob_free(). */
 			row_merge_copy_blobs(
-				mrec, offsets,
-				dict_table_page_size(old_table),
+				mrec, offsets, old_table->space->zip_size(),
 				dtuple, tuple_heap);
 		}
 
@@ -3736,10 +3735,9 @@ row_merge_drop_index_dict(
 	pars_info_t*	info;
 
 	ut_ad(!srv_read_only_mode);
-	ut_ad(mutex_own(&dict_sys->mutex));
 	ut_ad(trx->dict_operation_lock_mode == RW_X_LATCH);
 	ut_ad(trx_get_dict_operation(trx) == TRX_DICT_OP_INDEX);
-	ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_X));
+	ut_d(dict_sys.assert_locked());
 
 	info = pars_info_create();
 	pars_info_add_ull_literal(info, "indexid", index_id);
@@ -3799,17 +3797,16 @@ row_merge_drop_indexes_dict(
 	pars_info_t*	info;
 
 	ut_ad(!srv_read_only_mode);
-	ut_ad(mutex_own(&dict_sys->mutex));
 	ut_ad(trx->dict_operation_lock_mode == RW_X_LATCH);
 	ut_ad(trx_get_dict_operation(trx) == TRX_DICT_OP_INDEX);
-	ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_X));
+	ut_d(dict_sys.assert_locked());
 
 	/* It is possible that table->n_ref_count > 1 when
 	locked=TRUE. In this case, all code that should have an open
 	handle to the table be waiting for the next statement to execute,
 	or waiting for a meta-data lock.
 
-	A concurrent purge will be prevented by dict_operation_lock. */
+	A concurrent purge will be prevented by dict_sys.latch. */
 
 	info = pars_info_create();
 	pars_info_add_ull_literal(info, "tableid", table_id);
@@ -3849,10 +3846,9 @@ row_merge_drop_indexes(
 	dict_index_t*	next_index;
 
 	ut_ad(!srv_read_only_mode);
-	ut_ad(mutex_own(&dict_sys->mutex));
 	ut_ad(trx->dict_operation_lock_mode == RW_X_LATCH);
 	ut_ad(trx_get_dict_operation(trx) == TRX_DICT_OP_INDEX);
-	ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_X));
+	ut_d(dict_sys.assert_locked());
 
 	index = dict_table_get_first_index(table);
 	ut_ad(dict_index_is_clust(index));
@@ -3866,7 +3862,7 @@ row_merge_drop_indexes(
 	handle to the table be waiting for the next statement to execute,
 	or waiting for a meta-data lock.
 
-	A concurrent purge will be prevented by dict_operation_lock. */
+	A concurrent purge will be prevented by dict_sys.latch. */
 
 	if (!locked && (table->get_ref_count() > 1
 			|| UT_LIST_GET_FIRST(table->locks))) {
@@ -3933,7 +3929,7 @@ row_merge_drop_indexes(
 				rw_lock_x_unlock(dict_index_get_lock(index));
 
 				DEBUG_SYNC_C("merge_drop_index_after_abort");
-				/* covered by dict_sys->mutex */
+				/* covered by dict_sys.mutex */
 				MONITOR_INC(MONITOR_BACKGROUND_DROP_INDEX);
 				/* fall through */
 			case ONLINE_INDEX_ABORTED:
@@ -3996,7 +3992,7 @@ row_merge_drop_indexes(
 				break;
 			case ONLINE_INDEX_ABORTED:
 			case ONLINE_INDEX_ABORTED_DROPPED:
-				/* covered by dict_sys->mutex */
+				/* covered by dict_sys.mutex */
 				MONITOR_DEC(MONITOR_BACKGROUND_DROP_INDEX);
 			}
 
@@ -4301,7 +4297,7 @@ row_merge_rename_tables_dict(
 
 	ut_ad(!srv_read_only_mode);
 	ut_ad(old_table != new_table);
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_d(dict_sys.assert_locked());
 	ut_a(trx->dict_operation_lock_mode == RW_X_LATCH);
 	ut_ad(trx_get_dict_operation(trx) == TRX_DICT_OP_TABLE
 	      || trx_get_dict_operation(trx) == TRX_DICT_OP_INDEX);
@@ -4670,7 +4666,7 @@ row_merge_build_indexes(
 			created */
 			if (!row_fts_psort_info_init(
 					trx, dup, new_table, opt_doc_id_size,
-					dict_table_page_size(old_table),
+					old_table->space->zip_size(),
 					&psort_info, &merge_info)) {
 				error = DB_CORRUPTION;
 				goto func_exit;
@@ -4985,7 +4981,8 @@ func_exit:
 	alloc.deallocate_large(block, &block_pfx, block_size);
 
 	if (crypt_block) {
-		alloc.deallocate_large(crypt_block, &crypt_pfx, block_size);
+		alloc.deallocate_large(crypt_block, &crypt_pfx,
+				       block_size);
 	}
 
 	DICT_TF2_FLAG_UNSET(new_table, DICT_TF2_FTS_ADD_DOC_ID);

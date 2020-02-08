@@ -1703,10 +1703,7 @@ bool ha_connect::GetIndexOption(KEY *kp, PCSZ opname)
 /****************************************************************************/
 bool ha_connect::IsUnique(uint n)
 {
-  TABLE_SHARE *s= (table) ? table->s : NULL;
-  KEY          kp= s->key_info[n];
-
-  return (kp.flags & 1) != 0;
+  return (table->key_info[n].flags & HA_NOSAME) != 0;
 } // end of IsUnique
 
 /****************************************************************************/
@@ -1976,7 +1973,7 @@ int ha_connect::OpenTable(PGLOBAL g, bool del)
     k1= k2= 0;
     n1= n2= 1;         // 1 is space for final null character
 
-    for (field= table->field; fp= *field; field++) {
+    for (field= table->field; (fp= *field); field++) {
       if (bitmap_is_set(map, fp->field_index)) {
         n1+= (fp->field_name.length + 1);
         k1++;
@@ -1992,7 +1989,7 @@ int ha_connect::OpenTable(PGLOBAL g, bool del)
     if (k1) {
       p= c1= (char*)PlugSubAlloc(g, NULL, n1);
 
-      for (field= table->field; fp= *field; field++)
+      for (field= table->field; (fp= *field); field++)
         if (bitmap_is_set(map, fp->field_index)) {
           strcpy(p, fp->field_name.str);
           p+= (fp->field_name.length + 1);
@@ -2004,7 +2001,7 @@ int ha_connect::OpenTable(PGLOBAL g, bool del)
     if (k2) {
       p= c2= (char*)PlugSubAlloc(g, NULL, n2);
 
-      for (field= table->field; fp= *field; field++)
+      for (field= table->field; (fp= *field); field++)
         if (bitmap_is_set(ump, fp->field_index)) {
           strcpy(p, fp->field_name.str);
 
@@ -2031,11 +2028,13 @@ int ha_connect::OpenTable(PGLOBAL g, bool del)
     istable= true;
 //  strmake(tname, table_name, sizeof(tname)-1);
 
+#ifdef NOT_USED_VARIABLE
     // We may be in a create index query
     if (xmod == MODE_ANY && *tdbp->GetName() != '#') {
       // The current indexes
       PIXDEF oldpix= GetIndexInfo();
       } // endif xmod
+#endif
 
   } else
     htrc("OpenTable: %s\n", g->Message);
@@ -2062,7 +2061,7 @@ bool ha_connect::CheckColumnList(PGLOBAL g)
   MY_BITMAP *map= table->read_set;
 
 	try {
-    for (field= table->field; fp= *field; field++)
+          for (field= table->field; (fp= *field); field++)
       if (bitmap_is_set(map, fp->field_index)) {
         if (!(colp= tdbp->ColDB(g, (PSZ)fp->field_name.str, 0))) {
           sprintf(g->Message, "Column %s not found in %s", 
@@ -2135,9 +2134,8 @@ int ha_connect::MakeRecord(char *buf)
   DBUG_ENTER("ha_connect::MakeRecord");
 
   if (trace(2))
-    htrc("Maps: read=%08X write=%08X vcol=%08X defr=%08X defw=%08X\n",
+    htrc("Maps: read=%08X write=%08X defr=%08X defw=%08X\n",
             *table->read_set->bitmap, *table->write_set->bitmap,
-            (table->vcol_set) ? *table->vcol_set->bitmap : 0,
             *table->def_read_set.bitmap, *table->def_write_set.bitmap);
 
   // Avoid asserts in field::store() for columns that are not updated
@@ -2777,37 +2775,40 @@ PFIL ha_connect::CondFilter(PGLOBAL g, Item *cond)
         if (!i && (ismul))
           return NULL;
 
-				switch (args[i]->real_type()) {
-          case COND::STRING_ITEM:
-						res= pval->val_str(&tmp);
-						pp->Value= PlugSubAllocStr(g, NULL, res->ptr(), res->length());
-            pp->Type= (pp->Value) ? TYPE_STRING : TYPE_ERROR;
-            break;
-          case COND::INT_ITEM:
-            pp->Type= TYPE_INT;
-            pp->Value= PlugSubAlloc(g, NULL, sizeof(int));
-            *((int*)pp->Value)= (int)pval->val_int();
-            break;
-          case COND::DATE_ITEM:
-            pp->Type= TYPE_DATE;
-            pp->Value= PlugSubAlloc(g, NULL, sizeof(int));
-            *((int*)pp->Value)= (int)pval->val_int_from_date();
-            break;
-          case COND::REAL_ITEM:
-            pp->Type= TYPE_DOUBLE;
-            pp->Value= PlugSubAlloc(g, NULL, sizeof(double));
-            *((double*)pp->Value)= pval->val_real();
-            break;
-          case COND::DECIMAL_ITEM:
-            pp->Type= TYPE_DOUBLE;
-            pp->Value= PlugSubAlloc(g, NULL, sizeof(double));
-            *((double*)pp->Value)= pval->val_real_from_decimal();
-            break;
+        switch (args[i]->real_type()) {
+          case COND::CONST_ITEM:
+          switch (args[i]->cmp_type()) {
+            case STRING_RESULT:
+              res= pval->val_str(&tmp);
+              pp->Value= PlugSubAllocStr(g, NULL, res->ptr(), res->length());
+              pp->Type= (pp->Value) ? TYPE_STRING : TYPE_ERROR;
+              break;
+            case INT_RESULT:
+              pp->Type= TYPE_INT;
+              pp->Value= PlugSubAlloc(g, NULL, sizeof(int));
+              *((int*)pp->Value)= (int)pval->val_int();
+              break;
+            case TIME_RESULT:
+              pp->Type= TYPE_DATE;
+              pp->Value= PlugSubAlloc(g, NULL, sizeof(int));
+              *((int*)pp->Value)= (int) Temporal_hybrid(pval).to_longlong();
+              break;
+            case REAL_RESULT:
+            case DECIMAL_RESULT:
+              pp->Type= TYPE_DOUBLE;
+              pp->Value= PlugSubAlloc(g, NULL, sizeof(double));
+              *((double*)pp->Value)= pval->val_real();
+              break;
+            case ROW_RESULT:
+              DBUG_ASSERT(0);
+              return NULL;
+          }
+          break;
           case COND::CACHE_ITEM:    // Possible ???
           case COND::NULL_ITEM:     // TODO: handle this
           default:
             return NULL;
-          } // endswitch type
+        } // endswitch type
 
 				if (trace(1))
           htrc("Value type=%hd\n", pp->Type);
@@ -3061,12 +3062,8 @@ PCFIL ha_connect::CheckCond(PGLOBAL g, PCFIL filp, const Item *cond)
         Item::Type type= args[i]->real_type();
 
         switch (type) {
-          case COND::STRING_ITEM:
-          case COND::INT_ITEM:
-          case COND::REAL_ITEM:
+          case COND::CONST_ITEM:
           case COND::NULL_ITEM:
-          case COND::DECIMAL_ITEM:
-          case COND::DATE_ITEM:
           case COND::CACHE_ITEM:
             break;
           default:
@@ -3102,14 +3099,14 @@ PCFIL ha_connect::CheckCond(PGLOBAL g, PCFIL filp, const Item *cond)
                 strcat(s, "'}");
                 break;
                 } // endif ODBC
-
-							// fall through
+		// fall through
             case MYSQL_TYPE_DATE:
               if (tty == TYPE_AM_ODBC) {
                 strcat(s, "{d '");
                 strcat(strncat(s, res->ptr(), res->length()), "'}");
                 break;
                 } // endif ODBC
+		// fall through
 
             case MYSQL_TYPE_TIME:
               if (tty == TYPE_AM_ODBC) {
@@ -3117,6 +3114,7 @@ PCFIL ha_connect::CheckCond(PGLOBAL g, PCFIL filp, const Item *cond)
                 strcat(strncat(s, res->ptr(), res->length()), "'}");
                 break;
                 } // endif ODBC
+		// fall through
 
             case MYSQL_TYPE_VARCHAR:
               if (tty == TYPE_AM_ODBC && i) {
@@ -3606,7 +3604,7 @@ int ha_connect::close(void)
   item_sum.cc, item_sum.cc, sql_acl.cc, sql_insert.cc,
   sql_insert.cc, sql_select.cc, sql_table.cc, sql_udf.cc and sql_update.cc
 */
-int ha_connect::write_row(uchar *buf)
+int ha_connect::write_row(const uchar *buf)
 {
   int      rc= 0;
   PGLOBAL& g= xp->g;
@@ -4305,8 +4303,6 @@ int ha_connect::info(uint flag)
 
   // tdbp must be available to get updated info
   if (xp->CheckQuery(valid_query_id) || !tdbp) {
-    PDBUSER dup= PlgGetUser(g);
-    PCATLG  cat= (dup) ? dup->Catalog : NULL;
 
     if (xmod == MODE_ANY || xmod == MODE_ALTER) {
       // Pure info, not a query
@@ -4591,12 +4587,14 @@ MODE ha_connect::CheckMode(PGLOBAL g, THD *thd,
 //      break;
 			case SQLCOM_DELETE_MULTI:
 				*cras= true;
+                                // fall through
 			case SQLCOM_DELETE:
       case SQLCOM_TRUNCATE:
         newmode= MODE_DELETE;
         break;
       case SQLCOM_UPDATE_MULTI:
 				*cras= true;
+                                // fall through
 			case SQLCOM_UPDATE:
 				newmode= MODE_UPDATE;
         break;
@@ -4606,6 +4604,7 @@ MODE ha_connect::CheckMode(PGLOBAL g, THD *thd,
         break;
       case SQLCOM_FLUSH:
         locked= 0;
+        // fall through
       case SQLCOM_DROP_TABLE:
       case SQLCOM_RENAME_TABLE:
         newmode= MODE_ANY;
@@ -5527,7 +5526,7 @@ static int connect_assisted_discovery(handlerton *, THD* thd,
 	PCSZ     nsp= NULL, cls= NULL;
 #endif   // __WIN__
 //int      hdr, mxe;
-	int      port= 0, mxr= 0, rc= 0, mul= 0, lrecl= 0;
+	int      port= 0, mxr __attribute__((unused)) = 0, rc= 0, mul= 0;
 //PCSZ     tabtyp= NULL;
 #if defined(ODBC_SUPPORT)
   POPARM   sop= NULL;
@@ -5550,8 +5549,6 @@ static int connect_assisted_discovery(handlerton *, THD* thd,
   if (!g)
     return HA_ERR_INTERNAL_ERROR;
 
-  PDBUSER  dup= PlgGetUser(g);
-  PCATLG   cat= (dup) ? dup->Catalog : NULL;
   PTOS     topt= table_s->option_struct;
   char     buf[1024];
   String   sql(buf, sizeof(buf), system_charset_info);
@@ -5794,6 +5791,7 @@ static int connect_assisted_discovery(handlerton *, THD* thd,
 #endif   // __WIN__
 			case TAB_PIVOT:
 				supfnc= FNC_NO;
+                                // fall through
 			case TAB_PRX:
 			case TAB_TBL:
 			case TAB_XCL:
@@ -6032,7 +6030,7 @@ static int connect_assisted_discovery(handlerton *, THD* thd,
 				} // endfor crp
 
 			} else {
-				char *schem= NULL;
+                                char *schem __attribute__((unused)) = NULL;
 				char *tn= NULL;
 
 				// Not a catalog table
@@ -7061,7 +7059,7 @@ ha_connect::check_if_supported_inplace_alter(TABLE *altered_table,
     ALTER_DROP_PK_INDEX;
 
   alter_table_operations inplace_offline_operations=
-    ALTER_COLUMN_EQUAL_PACK_LENGTH |
+    ALTER_COLUMN_TYPE_CHANGE_BY_ENGINE |
     ALTER_COLUMN_NAME |
     ALTER_COLUMN_DEFAULT |
     ALTER_CHANGE_CREATE_OPTION |
@@ -7160,7 +7158,7 @@ ha_connect::check_if_supported_inplace_alter(TABLE *altered_table,
 
 #if 0
   uint table_changes= (ha_alter_info->handler_flags &
-                       ALTER_COLUMN_EQUAL_PACK_LENGTH) ?
+                       ALTER_COLUMN_TYPE_CHANGE_BY_ENGINE) ?
     IS_EQUAL_PACK_LENGTH : IS_EQUAL_YES;
 
   if (table->file->check_if_incompatible_data(create_info, table_changes)

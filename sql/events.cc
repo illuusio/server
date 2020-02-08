@@ -336,7 +336,7 @@ Events::create_event(THD *thd, Event_parse_data *parse_data)
 
   if (check_access(thd, EVENT_ACL, parse_data->dbname.str, NULL, NULL, 0, 0))
     DBUG_RETURN(TRUE);
-  WSREP_TO_ISOLATION_BEGIN(WSREP_MYSQL_DB, NULL, NULL)
+  WSREP_TO_ISOLATION_BEGIN(WSREP_MYSQL_DB, NULL, NULL);
 
   if (lock_object_name(thd, MDL_key::EVENT,
                        parse_data->dbname.str, parse_data->name.str))
@@ -401,7 +401,7 @@ Events::create_event(THD *thd, Event_parse_data *parse_data)
         my_message_sql(ER_STARTUP,
                        "Event Error: An error occurred while creating query "
                        "string, before writing it into binary log.",
-                       MYF(ME_NOREFRESH));
+                       MYF(ME_ERROR_LOG));
         ret= true;
       }
       else
@@ -425,10 +425,10 @@ Events::create_event(THD *thd, Event_parse_data *parse_data)
   }
 
   DBUG_RETURN(ret);
-
-WSREP_ERROR_LABEL:
-  DBUG_RETURN(TRUE);
-
+#ifdef WITH_WSREP
+wsrep_error_label:
+  DBUG_RETURN(true);
+#endif
 }
 
 
@@ -556,9 +556,10 @@ Events::update_event(THD *thd, Event_parse_data *parse_data,
 
   thd->restore_stmt_binlog_format(save_binlog_format);
   DBUG_RETURN(ret);
-
-WSREP_ERROR_LABEL:
-  DBUG_RETURN(TRUE);
+#ifdef WITH_WSREP
+wsrep_error_label:
+  DBUG_RETURN(true);
+#endif
 }
 
 
@@ -623,9 +624,10 @@ Events::drop_event(THD *thd, const LEX_CSTRING *dbname,
 
   thd->restore_stmt_binlog_format(save_binlog_format);
   DBUG_RETURN(ret);
-
-WSREP_ERROR_LABEL:
-  DBUG_RETURN(TRUE);
+#ifdef WITH_WSREP
+wsrep_error_label:
+  DBUG_RETURN(true);
+#endif
 }
 
 
@@ -830,12 +832,13 @@ Events::fill_schema_events(THD *thd, TABLE_LIST *tables, COND * /* cond */)
   */
   if (thd->lex->sql_command == SQLCOM_SHOW_EVENTS)
   {
-    DBUG_ASSERT(thd->lex->select_lex.db.str);
-    if (!is_infoschema_db(&thd->lex->select_lex.db) && // There is no events in I_S
-        check_access(thd, EVENT_ACL, thd->lex->select_lex.db.str,
+    DBUG_ASSERT(thd->lex->first_select_lex()->db.str);
+    if (!is_infoschema_db(&thd->lex->first_select_lex()->db) && // There is no events in I_S
+        check_access(thd, EVENT_ACL, thd->lex->first_select_lex()->db.str,
                      NULL, NULL, 0, 0))
       DBUG_RETURN(1);
-    db= normalize_db_name(thd->lex->select_lex.db.str, db_tmp, sizeof(db_tmp));
+    db= normalize_db_name(thd->lex->first_select_lex()->db.str,
+                          db_tmp, sizeof(db_tmp));
   }
   ret= db_repository->fill_schema_events(thd, tables, db);
 
@@ -930,7 +933,7 @@ Events::init(THD *thd, bool opt_noacl_or_bootstrap)
     my_message(ER_STARTUP,
                "Event Scheduler: An error occurred when initializing "
                "system tables. Disabling the Event Scheduler.",
-               MYF(ME_NOREFRESH));
+               MYF(ME_ERROR_LOG));
     /* Disable the scheduler since the system tables are not up to date */
     opt_event_scheduler= EVENTS_OFF;
     goto end;
@@ -952,7 +955,7 @@ Events::init(THD *thd, bool opt_noacl_or_bootstrap)
   {
     my_message_sql(ER_STARTUP,
                    "Event Scheduler: Error while loading from mysql.event table.",
-                   MYF(ME_NOREFRESH));
+                   MYF(ME_ERROR_LOG));
     res= TRUE; /* fatal error: request unireg_abort */
     goto end;
   }
@@ -1169,7 +1172,7 @@ Events::load_events_from_db(THD *thd)
   {
     my_message_sql(ER_STARTUP,
                    "Event Scheduler: Failed to open table mysql.event",
-                   MYF(ME_NOREFRESH));
+                   MYF(ME_ERROR_LOG));
     DBUG_RETURN(TRUE);
   }
 
@@ -1195,7 +1198,7 @@ Events::load_events_from_db(THD *thd)
                  "Event Scheduler: "
                  "Error while loading events from mysql.event. "
                  "The table probably contains bad data or is corrupted",
-                 MYF(ME_NOREFRESH));
+                 MYF(ME_ERROR_LOG));
       delete et;
       goto end;
     }
@@ -1274,9 +1277,9 @@ Events::load_events_from_db(THD *thd)
   }
   my_printf_error(ER_STARTUP,
                   "Event Scheduler: Loaded %d event%s",
-                  MYF(ME_NOREFRESH |
+                  MYF(ME_ERROR_LOG |
                       (global_system_variables.log_warnings) ?
-                      ME_JUST_INFO: 0),
+                      ME_NOTE: 0),
                   count, (count == 1) ? "" : "s");
   ret= FALSE;
 

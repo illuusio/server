@@ -38,7 +38,7 @@ typedef struct st_vio Vio;
 enum enum_vio_type
 {
   VIO_CLOSED, VIO_TYPE_TCPIP, VIO_TYPE_SOCKET, VIO_TYPE_NAMEDPIPE,
-  VIO_TYPE_SSL, VIO_TYPE_SHARED_MEMORY
+  VIO_TYPE_SSL
 };
 
 /**
@@ -59,6 +59,11 @@ struct vio_keepalive_opts
 };
 
 
+#define VIO_TLSv1_0   1
+#define VIO_TLSv1_1   2
+#define VIO_TLSv1_2   4
+#define VIO_TLSv1_3   8
+
 #define VIO_LOCALHOST 1U                        /* a localhost connection */
 #define VIO_BUFFERED_READ 2U                    /* use buffered read */
 #define VIO_READ_BUFFER_SIZE 16384U             /* size of read buffer */
@@ -68,13 +73,6 @@ Vio* vio_new(my_socket sd, enum enum_vio_type type, uint flags);
 Vio*  mysql_socket_vio_new(MYSQL_SOCKET mysql_socket, enum enum_vio_type type, uint flags);
 #ifdef __WIN__
 Vio* vio_new_win32pipe(HANDLE hPipe);
-Vio* vio_new_win32shared_memory(HANDLE handle_file_map,
-                                HANDLE handle_map,
-                                HANDLE event_server_wrote,
-                                HANDLE event_server_read,
-                                HANDLE event_client_wrote,
-                                HANDLE event_client_read,
-                                HANDLE event_conn_closed);
 #else
 #define HANDLE void *
 #endif /* __WIN__ */
@@ -89,6 +87,7 @@ size_t	vio_write(Vio *vio, const uchar * buf, size_t size);
 int	vio_blocking(Vio *vio, my_bool onoff, my_bool *old_mode);
 my_bool	vio_is_blocking(Vio *vio);
 /* setsockopt TCP_NODELAY at IPPROTO_TCP level, when possible */
+int vio_nodelay(Vio *vio, my_bool on);
 int	vio_fastsend(Vio *vio);
 /* setsockopt SO_KEEPALIVE at SOL_SOCKET level, when possible */
 int	vio_keepalive(Vio *vio, my_bool	onoff);
@@ -147,14 +146,17 @@ int vio_getnameinfo(const struct sockaddr *sa,
 /* Set yaSSL to use same type as MySQL do for socket handles */
 typedef my_socket YASSL_SOCKET_T;
 #define YASSL_SOCKET_T_DEFINED
+#define Timeval WOLFSSL_Timeval
 #include <openssl/ssl.h>
+#undef Timeval
 #include <openssl/err.h>
 
 enum enum_ssl_init_error
 {
   SSL_INITERR_NOERROR= 0, SSL_INITERR_CERT, SSL_INITERR_KEY,
   SSL_INITERR_NOMATCH, SSL_INITERR_BAD_PATHS, SSL_INITERR_CIPHERS,
-  SSL_INITERR_MEMFAIL, SSL_INITERR_DH, SSL_INITERR_LASTERR
+  SSL_INITERR_MEMFAIL, SSL_INITERR_DH, SSL_INITERR_PROTOCOL,
+  SSL_INITERR_LASTERR
 };
 const char* sslGetErrString(enum enum_ssl_init_error err);
 
@@ -175,7 +177,8 @@ struct st_VioSSLFd
 *new_VioSSLAcceptorFd(const char *key_file, const char *cert_file,
 		      const char *ca_file,const char *ca_path,
 		      const char *cipher, enum enum_ssl_init_error *error,
-                      const char *crl_file, const char *crl_path);
+		      const char *crl_file, const char *crl_path,
+		      ulonglong tls_version);
 void free_vio_ssl_acceptor_fd(struct st_VioSSLFd *fd);
 #endif /* HAVE_OPENSSL */
 
@@ -264,22 +267,9 @@ struct st_vio
 #ifdef HAVE_OPENSSL
   void	  *ssl_arg;
 #endif
-#ifdef HAVE_SMEM
-  HANDLE  handle_file_map;
-  char    *handle_map;
-  HANDLE  event_server_wrote;
-  HANDLE  event_server_read;
-  HANDLE  event_client_wrote;
-  HANDLE  event_client_read;
-  HANDLE  event_conn_closed;
-  size_t  shared_memory_remain;
-  char    *shared_memory_pos;
-#endif /* HAVE_SMEM */
 #ifdef _WIN32
   HANDLE hPipe;
   OVERLAPPED overlapped;
-  DWORD read_timeout_ms;
-  DWORD write_timeout_ms;
 #endif
 };
 #endif /* vio_violite_h_ */

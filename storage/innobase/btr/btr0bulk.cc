@@ -94,7 +94,7 @@ PageBulk::init()
 
 		if (new_page_zip) {
 			page_create_zip(new_block, m_index, m_level, 0,
-					NULL, &m_mtr);
+					&m_mtr);
 			memset(FIL_PAGE_PREV + new_page, 0xff, 8);
 			page_zip_write_header(new_page_zip,
 					      FIL_PAGE_PREV + new_page,
@@ -107,12 +107,12 @@ PageBulk::init()
 		} else {
 			ut_ad(!dict_index_is_spatial(m_index));
 			page_create(new_block, &m_mtr,
-				    dict_table_is_comp(m_index->table),
+				    m_index->table->not_redundant(),
 				    false);
-			mlog_write_ulint(FIL_PAGE_PREV + new_page, FIL_NULL,
-					 MLOG_4BYTES, &m_mtr);
-			mlog_write_ulint(FIL_PAGE_NEXT + new_page, FIL_NULL,
-					 MLOG_4BYTES, &m_mtr);
+			compile_time_assert(FIL_PAGE_NEXT
+					    == FIL_PAGE_PREV + 4);
+			compile_time_assert(FIL_NULL == 0xffffffff);
+			mlog_memset(new_block, FIL_PAGE_PREV, 8, 0xff, &m_mtr);
 			mlog_write_ulint(PAGE_HEADER + PAGE_LEVEL + new_page,
 					 m_level, MLOG_2BYTES, &m_mtr);
 			mlog_write_ull(PAGE_HEADER + PAGE_INDEX_ID + new_page,
@@ -121,7 +121,7 @@ PageBulk::init()
 	} else {
 		new_block = btr_block_get(
 			page_id_t(m_index->table->space_id, m_page_no),
-			page_size_t(m_index->table->space->flags),
+			m_index->table->space->zip_size(),
 			RW_X_LATCH, m_index, &m_mtr);
 
 		new_page = buf_block_get_frame(new_block);
@@ -374,7 +374,7 @@ PageBulk::compress()
 	ut_ad(m_page_zip != NULL);
 
 	return(page_zip_compress(m_page_zip, m_page, m_index,
-				 page_zip_level, NULL, &m_mtr));
+				 page_zip_level, &m_mtr));
 }
 
 /** Get node pointer
@@ -589,8 +589,9 @@ PageBulk::needExt(
 	const dtuple_t*		tuple,
 	ulint			rec_size)
 {
-	return(page_zip_rec_needs_ext(rec_size, m_is_comp,
-		dtuple_get_n_fields(tuple), m_block->page.size));
+	return page_zip_rec_needs_ext(rec_size, m_is_comp,
+				      dtuple_get_n_fields(tuple),
+				      m_block->zip_size());
 }
 
 /** Store external record
@@ -662,7 +663,7 @@ PageBulk::latch()
 				     __FILE__, __LINE__, &m_mtr)) {
 		m_block = buf_page_get_gen(page_id_t(m_index->table->space_id,
 						     m_page_no),
-					   univ_page_size, RW_X_LATCH,
+					   0, RW_X_LATCH,
 					   m_block, BUF_GET_IF_IN_POOL,
 					   __FILE__, __LINE__, &m_mtr, &m_err);
 
@@ -1019,7 +1020,7 @@ BtrBulk::finish(dberr_t	err)
 		ut_ad(last_page_no != FIL_NULL);
 		last_block = btr_block_get(
 			page_id_t(m_index->table->space_id, last_page_no),
-			page_size_t(m_index->table->space->flags),
+			m_index->table->space->zip_size(),
 			RW_X_LATCH, m_index, &mtr);
 		first_rec = page_rec_get_next(
 			page_get_infimum_rec(last_block->frame));
@@ -1048,6 +1049,6 @@ BtrBulk::finish(dberr_t	err)
 	ut_ad(!sync_check_iterate(dict_sync_check()));
 
 	ut_ad(err != DB_SUCCESS
-	      || btr_validate_index(m_index, NULL, false) == DB_SUCCESS);
+	      || btr_validate_index(m_index, NULL) == DB_SUCCESS);
 	return(err);
 }

@@ -37,10 +37,10 @@ ALTER TABLE time_zone_transition_type ORDER BY Time_zone_id, Transition_type_id;
 \d |
 IF (select count(*) from information_schema.global_variables where
 variable_name='wsrep_on' and variable_value='ON') = 1 THEN
-ALTER TABLE time_zone ENGINE=MyISAM;
-ALTER TABLE time_zone_name ENGINE=MyISAM;
-ALTER TABLE time_zone_transition ENGINE=MyISAM;
-ALTER TABLE time_zone_transition_type ENGINE=MyISAM;
+ALTER TABLE time_zone ENGINE=Aria;
+ALTER TABLE time_zone_name ENGINE=Aria;
+ALTER TABLE time_zone_transition ENGINE=Aria;
+ALTER TABLE time_zone_transition_type ENGINE=Aria;
 END IF|
 \d ;
 # Silent run
@@ -76,10 +76,10 @@ ALTER TABLE time_zone_transition_type ORDER BY Time_zone_id, Transition_type_id;
 \d |
 IF (select count(*) from information_schema.global_variables where
 variable_name='wsrep_on' and variable_value='ON') = 1 THEN
-ALTER TABLE time_zone ENGINE=MyISAM;
-ALTER TABLE time_zone_name ENGINE=MyISAM;
-ALTER TABLE time_zone_transition ENGINE=MyISAM;
-ALTER TABLE time_zone_transition_type ENGINE=MyISAM;
+ALTER TABLE time_zone ENGINE=Aria;
+ALTER TABLE time_zone_name ENGINE=Aria;
+ALTER TABLE time_zone_transition ENGINE=Aria;
+ALTER TABLE time_zone_transition_type ENGINE=Aria;
 END IF|
 \d ;
 #
@@ -94,10 +94,10 @@ INSERT INTO time_zone_transition_type (Time_zone_id, Transition_type_id, Offset,
 \d |
 IF (select count(*) from information_schema.global_variables where
 variable_name='wsrep_on' and variable_value='ON') = 1 THEN
-ALTER TABLE time_zone ENGINE=MyISAM;
-ALTER TABLE time_zone_name ENGINE=MyISAM;
-ALTER TABLE time_zone_transition ENGINE=MyISAM;
-ALTER TABLE time_zone_transition_type ENGINE=MyISAM;
+ALTER TABLE time_zone ENGINE=Aria;
+ALTER TABLE time_zone_name ENGINE=Aria;
+ALTER TABLE time_zone_transition ENGINE=Aria;
+ALTER TABLE time_zone_transition_type ENGINE=Aria;
 END IF|
 \d ;
 #
@@ -113,16 +113,16 @@ TRUNCATE TABLE time_zone_leap_second;
 \d |
 IF (select count(*) from information_schema.global_variables where
 variable_name='wsrep_on' and variable_value='ON') = 1 THEN
-ALTER TABLE time_zone_leap_second ENGINE=MyISAM;
+ALTER TABLE time_zone_leap_second ENGINE=Aria;
 END IF|
 \d ;
 ALTER TABLE time_zone_leap_second ORDER BY Transition_time;
 \d |
 IF (select count(*) from information_schema.global_variables where
 variable_name='wsrep_on' and variable_value='ON') = 1 THEN
-ALTER TABLE time_zone ENGINE=MyISAM;
-ALTER TABLE time_zone_name ENGINE=MyISAM;
-ALTER TABLE time_zone_transition ENGINE=MyISAM;
-ALTER TABLE time_zone_transition_type ENGINE=MyISAM;
+ALTER TABLE time_zone ENGINE=Aria;
+ALTER TABLE time_zone_name ENGINE=Aria;
+ALTER TABLE time_zone_transition ENGINE=Aria;
+ALTER TABLE time_zone_transition_type ENGINE=Aria;
 END IF|
 \d ;

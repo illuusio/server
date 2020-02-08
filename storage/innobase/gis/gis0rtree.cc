@@ -740,6 +740,8 @@ rtr_adjust_upper_level(
 
 	mem_heap_free(heap);
 
+	ut_ad(block->zip_size() == index->table->space->zip_size());
+
 	const uint32_t next_page_no = btr_page_get_next(page);
 
 	if (next_page_no != FIL_NULL) {
@@ -747,8 +749,8 @@ rtr_adjust_upper_level(
 					     next_page_no);
 
 		buf_block_t*	next_block = btr_block_get(
-			next_page_id, dict_table_page_size(index->table),
-			RW_X_LATCH, index, mtr);
+			next_page_id, block->zip_size(), RW_X_LATCH,
+			index, mtr);
 #ifdef UNIV_BTR_DEBUG
 		ut_a(page_is_comp(next_block->frame) == page_is_comp(page));
 		ut_a(btr_page_get_prev(next_block->frame)
@@ -892,7 +894,7 @@ rtr_split_page_move_rec_list(
 		mtr_set_log_mode(mtr, log_mode);
 
 		if (!page_zip_compress(new_page_zip, new_page, index,
-				       page_zip_level, NULL, mtr)) {
+				       page_zip_level, mtr)) {
 			ulint	ret_pos;
 
 			/* Before trying to reorganize the page,
@@ -1847,7 +1849,7 @@ rtr_estimate_n_rows_in_range(
 
 	buf_block_t* block = btr_block_get(
 		page_id_t(index->table->space_id, index->page),
-		page_size_t(index->table->space->flags),
+		index->table->space->zip_size(),
 		RW_S_LATCH, index, &mtr);
 	const page_t* page = buf_block_get_frame(block);
 	const unsigned n_recs = page_header_get_field(page, PAGE_N_RECS);

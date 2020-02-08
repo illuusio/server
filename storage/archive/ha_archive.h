@@ -95,7 +95,7 @@ class ha_archive: public handler
   void destroy_record_buffer(archive_record_buffer *r);
   int frm_copy(azio_stream *src, azio_stream *dst);
   int frm_compare(azio_stream *src);
-  unsigned int pack_row_v1(uchar *record);
+  unsigned int pack_row_v1(const uchar *record);
 
 public:
   ha_archive(handlerton *hton, TABLE_SHARE *table_arg);
@@ -108,7 +108,7 @@ public:
     return (HA_NO_TRANSACTIONS | HA_REC_NOT_IN_SEQ | HA_CAN_BIT_FIELD |
             HA_BINLOG_ROW_CAPABLE | HA_BINLOG_STMT_CAPABLE |
             HA_STATS_RECORDS_IS_EXACT | HA_CAN_EXPORT |
-            HA_HAS_RECORDS | HA_CAN_REPAIR |
+            HA_HAS_RECORDS | HA_CAN_REPAIR | HA_SLOW_RND_POS |
             HA_FILE_BASED | HA_CAN_INSERT_DELAYED | HA_CAN_GEOMETRY);
   }
   ulong index_flags(uint idx, uint part, bool all_parts) const
@@ -131,8 +131,8 @@ public:
   int index_next(uchar * buf);
   int open(const char *name, int mode, uint test_if_locked);
   int close(void);
-  int write_row(uchar * buf);
-  int real_write_row(uchar *buf, azio_stream *writer);
+  int write_row(const uchar * buf);
+  int real_write_row(const uchar *buf, azio_stream *writer);
   int truncate();
   int rnd_init(bool scan=1);
   int rnd_next(uchar *buf);
@@ -148,6 +148,7 @@ public:
   int read_data_header(azio_stream *file_to_read);
   void position(const uchar *record);
   int info(uint);
+  int extra(enum ha_extra_function operation);
   void update_create_info(HA_CREATE_INFO *create_info);
   int create(const char *name, TABLE *form, HA_CREATE_INFO *create_info);
   int optimize(THD* thd, HA_CHECK_OPT* check_opt);
@@ -167,7 +168,7 @@ public:
   uint32 max_row_length(const uchar *buf);
   bool fix_rec_buff(unsigned int length);
   int unpack_row(azio_stream *file_to_read, uchar *record);
-  unsigned int pack_row(uchar *record, azio_stream *writer);
+  unsigned int pack_row(const uchar *record, azio_stream *writer);
   bool check_if_incompatible_data(HA_CREATE_INFO *info, uint table_changes);
   int external_lock(THD *thd, int lock_type);
 private:

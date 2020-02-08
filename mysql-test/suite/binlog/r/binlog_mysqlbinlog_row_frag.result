@@ -1,7 +1,7 @@
 CREATE TABLE t (a TEXT);
 RESET MASTER;
 INSERT INTO t SET a=repeat('a', 1024);
-SELECT a from t into @a;
+SELECT a into @a from t;
 FLUSH LOGS;
 DELETE FROM t;
 FOUND 1 /BINLOG @binlog_fragment_0, @binlog_fragment_1/ in mysqlbinlog.sql

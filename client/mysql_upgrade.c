@@ -111,7 +111,7 @@ static struct my_option my_long_options[]=
    &opt_default_auth, &opt_default_auth, 0,
    GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"force", 'f', "Force execution of mysqlcheck even if mysql_upgrade "
-   "has already been executed for the current version of MySQL.",
+   "has already been executed for the current version of MariaDB.",
    &opt_force, &opt_force, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"host", 'h', "Connect to host.", 0,
    0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -135,13 +135,8 @@ static struct my_option my_long_options[]=
    "built-in default (" STRINGIFY_ARG(MYSQL_PORT) ").",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"protocol", OPT_MYSQL_PROTOCOL,
-   "The protocol to use for connection (tcp, socket, pipe, memory).",
+   "The protocol to use for connection (tcp, socket, pipe).",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef HAVE_SMEM
-  {"shared-memory-base-name", OPT_SHARED_MEMORY_BASE_NAME,
-   "Base name of shared memory.", 0,
-   0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-#endif
   {"silent", OPT_SILENT, "Print less information", &opt_silent,
    &opt_silent, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"socket", 'S', "The socket file to use for connection.",
@@ -178,6 +173,7 @@ static const char *load_default_groups[]=
 {
   "client",          /* Read settings how to connect to server */
   "mysql_upgrade",   /* Read special settings for mysql_upgrade */
+  "mariadb-upgrade", /* Read special settings for mysql_upgrade */
   "client-server",   /* Reads settings common between client & server */
   "client-mariadb",  /* Read mariadb unique client settings */
   0
@@ -354,7 +350,6 @@ get_one_option(int optid, const struct my_option *opt,
   case 'P': /* --port */
   case 'S': /* --socket */
   case OPT_MYSQL_PROTOCOL: /* --protocol */
-  case OPT_SHARED_MEMORY_BASE_NAME: /* --shared-memory-base-name */
   case OPT_PLUGIN_DIR:                          /* --plugin-dir */
   case OPT_DEFAULT_AUTH:                        /* --default-auth */
     add_one_option_cmd_line(&conn_args, opt, argument);
@@ -388,7 +383,7 @@ static int run_command(char* cmd,
   if (opt_verbose >= 4)
     puts(cmd);
 
-  if (!(res_file= popen(cmd, "r")))
+  if (!(res_file= my_popen(cmd, IF_WIN("rt","r"))))
     die("popen(\"%s\", \"r\") failed", cmd);
 
   while (fgets(buf, sizeof(buf), res_file))
@@ -406,7 +401,7 @@ static int run_command(char* cmd,
     }
   }
 
-  error= pclose(res_file);
+  error= my_pclose(res_file);
   return WEXITSTATUS(error);
 }
 
@@ -814,7 +809,7 @@ static my_bool is_mysql()
       strstr(ds_events_struct.str, "IGNORE_BAD_TABLE_OPTIONS") != NULL)
     ret= FALSE;
   else
-    verbose("MySQL upgrade detected");
+    verbose("MariaDB upgrade detected");
 
   dynstr_free(&ds_events_struct);
   return(ret);
@@ -884,10 +879,14 @@ static int run_mysqlcheck_fixnames(void)
 
 static const char *expected_errors[]=
 {
+  "ERROR 1051", /* Unknown table */
   "ERROR 1060", /* Duplicate column name */
   "ERROR 1061", /* Duplicate key name */
   "ERROR 1054", /* Unknown column */
+  "ERROR 1146", /* Table does not exist */
   "ERROR 1290", /* RR_OPTION_PREVENTS_STATEMENT */
+  "ERROR 1347", /* 'mysql.user' is not of type 'BASE TABLE' */
+  "ERROR 1348", /* Column 'Show_db_priv' is not updatable */
   0
 };
 
@@ -1198,7 +1197,7 @@ int main(int argc, char **argv)
   */
   if (!opt_force && upgrade_already_done(0))
   {
-    printf("This installation of MySQL is already upgraded to %s, "
+    printf("This installation of MariaDB is already upgraded to %s, "
            "use --force if you still need to run mysql_upgrade\n",
            MYSQL_SERVER_VERSION);
     goto end;

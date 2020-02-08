@@ -120,7 +120,7 @@ enum mlog_id_t {
 	/** mark an index record as the predefined minimum record */
 	MLOG_REC_MIN_MARK = 26,
 
-	/** initialize an ibuf bitmap page */
+	/** initialize an ibuf bitmap page (used in MariaDB 10.2 and 10.3) */
 	MLOG_IBUF_BITMAP_INIT = 27,
 
 #ifdef UNIV_LOG_LSN_DEBUG
@@ -218,7 +218,8 @@ enum mlog_id_t {
 	/** initialize a file page */
 	MLOG_INIT_FILE_PAGE2 = 59,
 
-	/** Table is being truncated. (Marked only for file-per-table) */
+	/** Table is being truncated. (Was used in 10.2 and 10.3;
+	not supported for crash-upgrade to 10.4 or later.) */
 	MLOG_TRUNCATE = 60,
 
 	/** notify that an index tree is being loaded without writing
@@ -229,8 +230,14 @@ enum mlog_id_t {
 	of a ROW_FORMAT=COMPRESSED table */
 	MLOG_ZIP_WRITE_TRX_ID = 62,
 
+	/** initialize a page with a string of identical bytes */
+	MLOG_MEMSET = 63,
+
+	/** Zero-fill a page that is not allocated. */
+	MLOG_INIT_FREE_PAGE = 64,
+
 	/** biggest value (used in assertions) */
-	MLOG_BIGGEST_TYPE = MLOG_ZIP_WRITE_TRX_ID,
+	MLOG_BIGGEST_TYPE = MLOG_INIT_FREE_PAGE,
 
 	/** log record for writing/updating crypt data of
 	a tablespace */

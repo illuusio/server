@@ -56,7 +56,6 @@ dict_create_sys_tables_tuple(
 					which the memory for the built
 					tuple is allocated */
 {
-	dict_table_t*	sys_tables;
 	dtuple_t*	entry;
 	dfield_t*	dfield;
 	byte*		ptr;
@@ -67,11 +66,9 @@ dict_create_sys_tables_tuple(
 	ut_ad(heap);
 	ut_ad(table->n_cols >= DATA_N_SYS_COLS);
 
-	sys_tables = dict_sys->sys_tables;
-
 	entry = dtuple_create(heap, 8 + DATA_N_SYS_COLS);
 
-	dict_table_copy_types(entry, sys_tables);
+	dict_table_copy_types(entry, dict_sys.sys_tables);
 
 	/* 0: NAME -----------------------------*/
 	dfield = dtuple_get_nth_field(
@@ -169,7 +166,6 @@ dict_create_sys_columns_tuple(
 					which the memory for the built
 					tuple is allocated */
 {
-	dict_table_t*		sys_columns;
 	dtuple_t*		entry;
 	const dict_col_t*	column;
 	dfield_t*		dfield;
@@ -193,11 +189,9 @@ dict_create_sys_columns_tuple(
 		ut_ad(!column->is_virtual());
 	}
 
-	sys_columns = dict_sys->sys_columns;
-
 	entry = dtuple_create(heap, 7 + DATA_N_SYS_COLS);
 
-	dict_table_copy_types(entry, sys_columns);
+	dict_table_copy_types(entry, dict_sys.sys_columns);
 
 	/* 0: TABLE_ID -----------------------*/
 	dfield = dtuple_get_nth_field(entry, DICT_COL__SYS_COLUMNS__TABLE_ID);
@@ -288,7 +282,6 @@ dict_create_sys_virtual_tuple(
 	ulint			b_col_n,
 	mem_heap_t*		heap)
 {
-	dict_table_t*		sys_virtual;
 	dtuple_t*		entry;
 	const dict_col_t*	base_column;
 	dfield_t*		dfield;
@@ -301,12 +294,10 @@ dict_create_sys_virtual_tuple(
 	dict_v_col_t*	v_col = dict_table_get_nth_v_col(table, v_col_n);
 	base_column = v_col->base_col[b_col_n];
 
-	sys_virtual = dict_sys->sys_virtual;
-
 	entry = dtuple_create(heap, DICT_NUM_COLS__SYS_VIRTUAL
 			      + DATA_N_SYS_COLS);
 
-	dict_table_copy_types(entry, sys_virtual);
+	dict_table_copy_types(entry, dict_sys.sys_virtual);
 
 	/* 0: TABLE_ID -----------------------*/
 	dfield = dtuple_get_nth_field(entry, DICT_COL__SYS_VIRTUAL__TABLE_ID);
@@ -350,12 +341,14 @@ dict_build_table_def_step(
 	que_thr_t*	thr,	/*!< in: query thread */
 	tab_node_t*	node)	/*!< in: table create node */
 {
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 	dict_table_t*	table = node->table;
+	trx_t* trx = thr_get_trx(thr);
 	ut_ad(!table->is_temporary());
 	ut_ad(!table->space);
 	ut_ad(table->space_id == ULINT_UNDEFINED);
-	dict_table_assign_new_id(table, thr_get_trx(thr));
+	dict_hdr_get_new_id(&table->id, NULL, NULL);
+	trx->table_id = table->id;
 
 	/* Always set this bit for all new created tables */
 	DICT_TF2_FLAG_SET(table, DICT_TF2_FTS_AUX_HEX_NAME);
@@ -368,8 +361,6 @@ dict_build_table_def_step(
 
 		ut_ad(DICT_TF_GET_ZIP_SSIZE(table->flags) == 0
 		      || dict_table_has_atomic_blobs(table));
-		trx_t* trx = thr_get_trx(thr);
-		ut_ad(trx->table_id);
 		mtr_t mtr;
 		trx_undo_t* undo = trx->rsegs.m_redo.undo;
 		if (undo && !undo->table_id
@@ -397,7 +388,7 @@ dict_build_table_def_step(
 		}
 		/* Get a new tablespace ID */
 		ulint space_id;
-		dict_hdr_get_new_id(NULL, NULL, &space_id, table, false);
+		dict_hdr_get_new_id(NULL, NULL, &space_id);
 
 		DBUG_EXECUTE_IF(
 			"ib_create_table_fail_out_of_space_ids",
@@ -484,24 +475,21 @@ dict_create_sys_indexes_tuple(
 					which the memory for the built
 					tuple is allocated */
 {
-	dict_table_t*	sys_indexes;
 	dtuple_t*	entry;
 	dfield_t*	dfield;
 	byte*		ptr;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 	ut_ad(index);
 	ut_ad(index->table->space || index->table->file_unreadable);
 	ut_ad(!index->table->space
 	      || index->table->space->id == index->table->space_id);
 	ut_ad(heap);
 
-	sys_indexes = dict_sys->sys_indexes;
-
 	entry = dtuple_create(
 		heap, DICT_NUM_COLS__SYS_INDEXES + DATA_N_SYS_COLS);
 
-	dict_table_copy_types(entry, sys_indexes);
+	dict_table_copy_types(entry, dict_sys.sys_indexes);
 
 	/* 0: TABLE_ID -----------------------*/
 	dfield = dtuple_get_nth_field(
@@ -605,7 +593,6 @@ dict_create_sys_fields_tuple(
 					which the memory for the built
 					tuple is allocated */
 {
-	dict_table_t*	sys_fields;
 	dtuple_t*	entry;
 	dict_field_t*	field;
 	dfield_t*	dfield;
@@ -625,11 +612,9 @@ dict_create_sys_fields_tuple(
 
 	field = dict_index_get_nth_field(index, fld_no);
 
-	sys_fields = dict_sys->sys_fields;
-
 	entry = dtuple_create(heap, 3 + DATA_N_SYS_COLS);
 
-	dict_table_copy_types(entry, sys_fields);
+	dict_table_copy_types(entry, dict_sys.sys_fields);
 
 	/* 0: INDEX_ID -----------------------*/
 	dfield = dtuple_get_nth_field(entry, DICT_COL__SYS_FIELDS__INDEX_ID);
@@ -724,7 +709,7 @@ dict_build_index_def_step(
 	dtuple_t*	row;
 	trx_t*		trx;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	trx = thr_get_trx(thr);
 
@@ -745,7 +730,7 @@ dict_build_index_def_step(
 	ut_ad((UT_LIST_GET_LEN(table->indexes) > 0)
 	      || dict_index_is_clust(index));
 
-	dict_hdr_get_new_id(NULL, &index->id, NULL, table, false);
+	dict_hdr_get_new_id(NULL, &index->id, NULL);
 
 	/* Inherit the space id from the table; we store all indexes of a
 	table in the same tablespace */
@@ -775,7 +760,7 @@ dict_build_index_def(
 	dict_index_t*		index,	/*!< in/out: index */
 	trx_t*			trx)	/*!< in/out: InnoDB transaction handle */
 {
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	if (trx->table_id == 0) {
 		/* Record only the first table id. */
@@ -785,7 +770,7 @@ dict_build_index_def(
 	ut_ad((UT_LIST_GET_LEN(table->indexes) > 0)
 	      || dict_index_is_clust(index));
 
-	dict_hdr_get_new_id(NULL, &index->id, NULL, table, false);
+	dict_hdr_get_new_id(NULL, &index->id, NULL);
 
 	/* Note that the index was created by this transaction. */
 	index->trx_id = trx->id;
@@ -821,14 +806,11 @@ dict_create_index_tree_step(
 	mtr_t		mtr;
 	btr_pcur_t	pcur;
 	dict_index_t*	index;
-	dict_table_t*	sys_indexes;
 	dtuple_t*	search_tuple;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	index = node->index;
-
-	sys_indexes = dict_sys->sys_indexes;
 
 	if (index->type == DICT_FTS) {
 		/* FTS index does not need an index tree */
@@ -843,7 +825,7 @@ dict_create_index_tree_step(
 
 	search_tuple = dict_create_search_tuple(node->ind_row, node->heap);
 
-	btr_pcur_open(UT_LIST_GET_FIRST(sys_indexes->indexes),
+	btr_pcur_open(UT_LIST_GET_FIRST(dict_sys.sys_indexes->indexes),
 		      search_tuple, PAGE_CUR_L, BTR_MODIFY_LEAF,
 		      &pcur, &mtr);
 
@@ -859,7 +841,7 @@ dict_create_index_tree_step(
 
 		node->page_no = btr_create(
 			index->type, index->table->space,
-			index->id, index, NULL, &mtr);
+			index->id, index, &mtr);
 
 		if (node->page_no == FIL_NULL) {
 			err = DB_OUT_OF_FILE_SPACE;
@@ -896,7 +878,7 @@ dict_create_index_tree_in_mem(
 {
 	mtr_t		mtr;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 	ut_ad(!(index->type & DICT_FTS));
 
 	mtr_start(&mtr);
@@ -908,7 +890,7 @@ dict_create_index_tree_in_mem(
 	ut_ad(!(index->table->flags2 & DICT_TF2_DISCARDED));
 
 	index->page = btr_create(index->type, index->table->space,
-				 index->id, index, NULL, &mtr);
+				 index->id, index, &mtr);
 	mtr_commit(&mtr);
 
 	index->trx_id = trx->id;
@@ -920,16 +902,14 @@ dict_create_index_tree_in_mem(
 @param[in,out]	rec	SYS_INDEXES record
 @param[in,out]	pcur	persistent cursor on rec
 @param[in,out]	trx	dictionary transaction
-@param[in,out]	mtr	mini-transaction
-@return	whether freeing the B-tree was attempted */
-bool dict_drop_index_tree(rec_t* rec, btr_pcur_t* pcur, trx_t* trx, mtr_t* mtr)
+@param[in,out]	mtr	mini-transaction */
+void dict_drop_index_tree(rec_t* rec, btr_pcur_t* pcur, trx_t* trx, mtr_t* mtr)
 {
-	const byte*	ptr;
-	ulint		len;
-	ulint		root_page_no;
+	byte*	ptr;
+	ulint	len;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
-	ut_a(!dict_table_is_comp(dict_sys->sys_indexes));
+	ut_ad(mutex_own(&dict_sys.mutex));
+	ut_a(!dict_table_is_comp(dict_sys.sys_indexes));
 
 	ptr = rec_get_nth_field_old(rec, DICT_FLD__SYS_INDEXES__PAGE_NO, &len);
 
@@ -937,15 +917,15 @@ bool dict_drop_index_tree(rec_t* rec, btr_pcur_t* pcur, trx_t* trx, mtr_t* mtr)
 
 	btr_pcur_store_position(pcur, mtr);
 
-	root_page_no = mtr_read_ulint(ptr, MLOG_4BYTES, mtr);
+	const uint32_t root_page_no = mach_read_from_4(ptr);
 
 	if (root_page_no == FIL_NULL) {
 		/* The tree has already been freed */
-
-		return(false);
+		return;
 	}
 
-	mlog_write_ulint(const_cast<byte*>(ptr), FIL_NULL, MLOG_4BYTES, mtr);
+	compile_time_assert(FIL_NULL == 0xffffffff);
+	mlog_memset(ptr, 4, 0xff, mtr);
 
 	ptr = rec_get_nth_field_old(
 		rec, DICT_FLD__SYS_INDEXES__SPACE, &len);
@@ -958,7 +938,7 @@ bool dict_drop_index_tree(rec_t* rec, btr_pcur_t* pcur, trx_t* trx, mtr_t* mtr)
 	    && trx_get_dict_operation(trx) == TRX_DICT_OP_TABLE) {
 		/* We are about to delete the entire .ibd file;
 		do not bother to free pages inside it. */
-		return false;
+		return;
 	}
 
 	ptr = rec_get_nth_field_old(
@@ -966,109 +946,16 @@ bool dict_drop_index_tree(rec_t* rec, btr_pcur_t* pcur, trx_t* trx, mtr_t* mtr)
 
 	ut_ad(len == 8);
 
-	bool			found;
-	const page_size_t	page_size(fil_space_get_page_size(space_id,
-								  &found));
-
-	if (!found) {
-		/* It is a single table tablespace and the .ibd file is
-		missing: do nothing */
-
-		return(false);
-	}
-
-	/* If tablespace is scheduled for truncate, do not try to drop
-	the indexes in that tablespace. There is a truncate fixup action
-	which will take care of it. */
-	if (srv_is_tablespace_truncated(space_id)) {
-		return(false);
-	}
-
-	btr_free_if_exists(page_id_t(space_id, root_page_no), page_size,
-			   mach_read_from_8(ptr), mtr);
-
-	return(true);
-}
-
-/*******************************************************************//**
-Recreate the index tree associated with a row in SYS_INDEXES table.
-@return	new root page number, or FIL_NULL on failure */
-ulint
-dict_recreate_index_tree(
-/*=====================*/
-	const dict_table_t*
-			table,	/*!< in/out: the table the index belongs to */
-	btr_pcur_t*	pcur,	/*!< in/out: persistent cursor pointing to
-				record in the clustered index of
-				SYS_INDEXES table. The cursor may be
-				repositioned in this call. */
-	mtr_t*		mtr)	/*!< in/out: mtr having the latch
-				on the record page. */
-{
-	ut_ad(mutex_own(&dict_sys->mutex));
-	ut_a(!dict_table_is_comp(dict_sys->sys_indexes));
-	ut_ad(!table->space || table->space->id == table->space_id);
-
-	ulint		len;
-	const rec_t*	rec = btr_pcur_get_rec(pcur);
-
-	const byte*	ptr = rec_get_nth_field_old(
-		rec, DICT_FLD__SYS_INDEXES__PAGE_NO, &len);
-
-	ut_ad(len == 4);
-
-	ut_ad(table->space_id == mach_read_from_4(
-		      rec_get_nth_field_old(rec, DICT_FLD__SYS_INDEXES__SPACE,
-					    &len)));
-	ut_ad(len == 4);
-
-	if (!table->space) {
-		/* It is a single table tablespae and the .ibd file is
-		missing: do nothing. */
-
-		ib::warn()
-			<< "Trying to TRUNCATE a missing .ibd file of table "
-			<< table->name << "!";
-
-		return(FIL_NULL);
-	}
-
-	ptr = rec_get_nth_field_old(rec, DICT_FLD__SYS_INDEXES__TYPE, &len);
-	ut_ad(len == 4);
-	ulint	type = mach_read_from_4(ptr);
-
-	ptr = rec_get_nth_field_old(rec, DICT_FLD__SYS_INDEXES__ID, &len);
-	ut_ad(len == 8);
-	index_id_t	index_id = mach_read_from_8(ptr);
-
-	/* We will need to commit the mini-transaction in order to avoid
-	deadlocks in the btr_create() call, because otherwise we would
-	be freeing and allocating pages in the same mini-transaction. */
-	btr_pcur_store_position(pcur, mtr);
-	mtr_commit(mtr);
-
-	mtr_start(mtr);
-	mtr->set_named_space(table->space);
-	btr_pcur_restore_position(BTR_MODIFY_LEAF, pcur, mtr);
-
-	/* Find the index corresponding to this SYS_INDEXES record. */
-	for (dict_index_t* index = UT_LIST_GET_FIRST(table->indexes);
-	     index != NULL;
-	     index = UT_LIST_GET_NEXT(indexes, index)) {
-		if (index->id == index_id) {
-			ulint root_page_no = (index->type & DICT_FTS)
-				? FIL_NULL
-				: btr_create(type, table->space,
-					     index_id, index, NULL, mtr);
-			index->page = unsigned(root_page_no);
-			return root_page_no;
+	if (fil_space_t* s = fil_space_acquire_silent(space_id)) {
+		/* Ensure that the tablespace file exists
+		in order to avoid a crash in buf_page_get_gen(). */
+		if (s->size || fil_space_get_size(space_id)) {
+			btr_free_if_exists(page_id_t(space_id, root_page_no),
+					   s->zip_size(),
+					   mach_read_from_8(ptr), mtr);
 		}
+		s->release();
 	}
-
-	ib::error() << "Failed to create index with index id " << index_id
-		<< " of table " << table->name;
-
-	return(FIL_NULL);
 }
 
 /*********************************************************************//**
@@ -1097,15 +984,15 @@ tab_create_graph_create(
 	node->mode = mode;
 	node->key_id = key_id;
 
-	node->tab_def = ins_node_create(INS_DIRECT, dict_sys->sys_tables,
+	node->tab_def = ins_node_create(INS_DIRECT, dict_sys.sys_tables,
 					heap);
 	node->tab_def->common.parent = node;
 
-	node->col_def = ins_node_create(INS_DIRECT, dict_sys->sys_columns,
+	node->col_def = ins_node_create(INS_DIRECT, dict_sys.sys_columns,
 					heap);
 	node->col_def->common.parent = node;
 
-	node->v_col_def = ins_node_create(INS_DIRECT, dict_sys->sys_virtual,
+	node->v_col_def = ins_node_create(INS_DIRECT, dict_sys.sys_virtual,
                                           heap);
 	node->v_col_def->common.parent = node;
 
@@ -1144,11 +1031,11 @@ ind_create_graph_create(
 	node->heap = mem_heap_create(256);
 
 	node->ind_def = ins_node_create(INS_DIRECT,
-					dict_sys->sys_indexes, heap);
+					dict_sys.sys_indexes, heap);
 	node->ind_def->common.parent = node;
 
 	node->field_def = ins_node_create(INS_DIRECT,
-					  dict_sys->sys_fields, heap);
+					  dict_sys.sys_fields, heap);
 	node->field_def->common.parent = node;
 
 	return(node);
@@ -1167,7 +1054,7 @@ dict_create_table_step(
 	trx_t*		trx;
 
 	ut_ad(thr);
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	trx = thr_get_trx(thr);
 
@@ -1248,7 +1135,8 @@ dict_create_table_step(
 				ut_ad(node->col_no == v_col->v_pos);
 				dict_build_v_col_def_step(node);
 
-				if (node->base_col_no < v_col->num_base - 1) {
+				if (node->base_col_no
+				    < unsigned{v_col->num_base} - 1) {
 					/* move on to next base column */
 					node->base_col_no++;
 				} else {
@@ -1309,7 +1197,7 @@ dict_create_index_step(
 	trx_t*		trx;
 
 	ut_ad(thr);
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	trx = thr_get_trx(thr);
 
@@ -1467,7 +1355,7 @@ dict_check_if_system_table_exists(
 
 	ut_a(srv_get_active_thread_type() == SRV_NONE);
 
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 
 	sys_table = dict_table_get_low(tablename);
 
@@ -1485,7 +1373,7 @@ dict_check_if_system_table_exists(
 		dict_table_prevent_eviction(sys_table);
 	}
 
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 
 	return(error);
 }
@@ -1654,9 +1542,9 @@ dict_create_or_check_sys_virtual()
 		"SYS_VIRTUAL", DICT_NUM_FIELDS__SYS_VIRTUAL + 1, 1);
 
 	if (err == DB_SUCCESS) {
-		mutex_enter(&dict_sys->mutex);
-		dict_sys->sys_virtual = dict_table_get_low("SYS_VIRTUAL");
-		mutex_exit(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
+		dict_sys.sys_virtual = dict_table_get_low("SYS_VIRTUAL");
+		mutex_exit(&dict_sys.mutex);
 		return(DB_SUCCESS);
 	}
 
@@ -1730,9 +1618,9 @@ dict_create_or_check_sys_virtual()
 	dberr_t sys_virtual_err = dict_check_if_system_table_exists(
 		"SYS_VIRTUAL", DICT_NUM_FIELDS__SYS_VIRTUAL + 1, 1);
 	ut_a(sys_virtual_err == DB_SUCCESS);
-	mutex_enter(&dict_sys->mutex);
-	dict_sys->sys_virtual = dict_table_get_low("SYS_VIRTUAL");
-	mutex_exit(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
+	dict_sys.sys_virtual = dict_table_get_low("SYS_VIRTUAL");
+	mutex_exit(&dict_sys.mutex);
 
 	return(err);
 }
@@ -2129,7 +2017,7 @@ dict_create_add_foreigns_to_dictionary(
 	dict_foreign_t*	foreign;
 	dberr_t		error;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	if (NULL == dict_table_get_low("SYS_FOREIGN")) {
 
@@ -2138,6 +2026,8 @@ dict_create_add_foreigns_to_dictionary(
 
 		return(DB_ERROR);
 	}
+
+	error = DB_SUCCESS;
 
 	for (dict_foreign_set::const_iterator it = local_fk_set.begin();
 	     it != local_fk_set.end();
@@ -2150,12 +2040,11 @@ dict_create_add_foreigns_to_dictionary(
 			table->name.m_name, foreign, trx);
 
 		if (error != DB_SUCCESS) {
-
-			return(error);
+			break;
 		}
 	}
 
-	return(DB_SUCCESS);
+	return error;
 }
 
 /****************************************************************//**
@@ -2343,16 +2232,4 @@ dict_replace_tablespace_in_dictionary(
 	trx->op_info = "";
 
 	return(error);
-}
-
-/** Assign a new table ID and put it into the table cache and the transaction.
-@param[in,out]	table	Table that needs an ID
-@param[in,out]	trx	Transaction */
-void
-dict_table_assign_new_id(
-	dict_table_t*	table,
-	trx_t*		trx)
-{
-	dict_hdr_get_new_id(&table->id, NULL, NULL, table, false);
-	trx->table_id = table->id;
 }

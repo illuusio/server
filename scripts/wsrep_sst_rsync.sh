@@ -147,6 +147,7 @@ if ! [ -z $WSREP_SST_OPT_BINLOG_INDEX ]
 then
     BINLOG_INDEX_DIRNAME=$(dirname $WSREP_SST_OPT_BINLOG_INDEX)
     BINLOG_INDEX_FILENAME=$(basename $WSREP_SST_OPT_BINLOG_INDEX)
+    BINLOG_INDEX_FILENAME=${BINLOG_INDEX_FILENAME%.index}.index
 fi
 
 WSREP_LOG_DIR=${WSREP_LOG_DIR:-""}
@@ -275,11 +276,12 @@ EOF
             OLD_PWD="$(pwd)"
             cd $BINLOG_DIRNAME
 
-            if ! [ -z $WSREP_SST_OPT_BINLOG_INDEX ]
-               binlog_files_full=$(tail -n $BINLOG_N_FILES ${BINLOG_FILENAME}.index)
+            if [ -z $WSREP_SST_OPT_BINLOG_INDEX ]
             then
-               cd $BINLOG_INDEX_DIRNAME
-               binlog_files_full=$(tail -n $BINLOG_N_FILES ${BINLOG_INDEX_FILENAME}.index)
+                binlog_files_full=$(tail -n $BINLOG_N_FILES ${BINLOG_FILENAME}.index)
+            else
+                cd $BINLOG_INDEX_DIRNAME
+                binlog_files_full=$(tail -n $BINLOG_N_FILES ${BINLOG_INDEX_FILENAME})
             fi
 
             cd $BINLOG_DIRNAME
@@ -335,11 +337,11 @@ EOF
             exit 255 # unknown error
         fi
 
-        # second, we transfer InnoDB log files
+        # second, we transfer InnoDB and Aria log files
         rsync ${STUNNEL:+--rsh="$STUNNEL"} \
               --owner --group --perms --links --specials \
               --ignore-times --inplace --dirs --delete --quiet \
-              $WHOLE_FILE_OPT -f '+ /ib_logfile[0-9]*' -f '- **' "$WSREP_LOG_DIR/" \
+              $WHOLE_FILE_OPT -f '+ /ib_logfile[0-9]*' -f '+ /aria_log.*' -f '+ /aria_log_control' -f '- **' "$WSREP_LOG_DIR/" \
               rsync://$WSREP_SST_OPT_ADDR-log_dir >&2 || RC=$?
 
         if [ $RC -ne 0 ]; then
@@ -360,7 +362,7 @@ EOF
              rsync ${STUNNEL:+--rsh="$STUNNEL"} \
              --owner --group --perms --links --specials \
              --ignore-times --inplace --recursive --delete --quiet \
-             $WHOLE_FILE_OPT --exclude '*/ib_logfile*' "$WSREP_SST_OPT_DATA"/{}/ \
+             $WHOLE_FILE_OPT --exclude '*/ib_logfile*' --exclude "*/aria_log.*" --exclude "*/aria_log_control" "$WSREP_SST_OPT_DATA"/{}/ \
              rsync://$WSREP_SST_OPT_ADDR/{} >&2 || RC=$?
 
         cd "$OLD_PWD"
@@ -516,15 +518,16 @@ EOF
             # Clean up old binlog files first
             rm -f ${BINLOG_FILENAME}.*
             wsrep_log_info "Extracting binlog files:"
-            tar -xvf $BINLOG_TAR_FILE >&2
-            for ii in $(ls -1 ${BINLOG_FILENAME}.*)
-            do
-                if ! [ -z $WSREP_SST_OPT_BINLOG_INDEX ]
-                  echo ${BINLOG_DIRNAME}/${ii} >> ${BINLOG_FILENAME}.index
-		then
-                  echo ${BINLOG_DIRNAME}/${ii} >> ${BINLOG_INDEX_DIRNAME}/${BINLOG_INDEX_FILENAME}.index
+            tar -xvf $BINLOG_TAR_FILE >> _binlog_tmp_files_$!
+            while read bin_file; do
+                if [ -z $WSREP_SST_OPT_BINLOG_INDEX ]
+                then
+                    echo ${BINLOG_DIRNAME}/${bin_file} >> ${BINLOG_FILENAME}.index
+                else
+                    echo ${BINLOG_DIRNAME}/${bin_file} >> ${BINLOG_INDEX_DIRNAME}/${BINLOG_INDEX_FILENAME}
                 fi
-            done
+            done < _binlog_tmp_files_$!
+            rm -f _binlog_tmp_files_$!
         fi
         cd "$OLD_PWD"
 

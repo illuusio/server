@@ -1650,12 +1650,12 @@ i_s_cmp_per_index_fill_low(
 	RETURN_IF_INNODB_NOT_STARTED(tables->schema_table_name.str);
 
 	/* Create a snapshot of the stats so we do not bump into lock
-	order violations with dict_sys->mutex below. */
+	order violations with dict_sys.mutex below. */
 	mutex_enter(&page_zip_stat_per_index_mutex);
 	page_zip_stat_per_index_t		snap (page_zip_stat_per_index);
 	mutex_exit(&page_zip_stat_per_index_mutex);
 
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 
 	page_zip_stat_per_index_t::iterator	iter;
 	ulint					i;
@@ -1713,13 +1713,13 @@ i_s_cmp_per_index_fill_low(
 		contents of INFORMATION_SCHEMA.innodb_cmp_per_index being
 		inconsistent, but it is an acceptable compromise. */
 		if (i == 1000) {
-			mutex_exit(&dict_sys->mutex);
+			mutex_exit(&dict_sys.mutex);
 			i = 0;
-			mutex_enter(&dict_sys->mutex);
+			mutex_enter(&dict_sys.mutex);
 		}
 	}
 
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 
 	if (reset) {
 		page_zip_reset_stat_per_index();
@@ -2871,17 +2871,17 @@ i_s_fts_deleted_generic_fill(
 
 	/* Prevent DROP of the internal tables for fulltext indexes.
 	FIXME: acquire DDL-blocking MDL on the user table name! */
-	rw_lock_s_lock(&dict_operation_lock);
+	rw_lock_s_lock(&dict_sys.latch);
 
 	user_table = dict_table_open_on_id(
 		innodb_ft_aux_table_id, FALSE, DICT_TABLE_OP_NORMAL);
 
 	if (!user_table) {
-		rw_lock_s_unlock(&dict_operation_lock);
+		rw_lock_s_unlock(&dict_sys.latch);
 		DBUG_RETURN(0);
 	} else if (!dict_table_has_fts_index(user_table)) {
 		dict_table_close(user_table, FALSE, FALSE);
-		rw_lock_s_unlock(&dict_operation_lock);
+		rw_lock_s_unlock(&dict_sys.latch);
 		DBUG_RETURN(0);
 	}
 
@@ -2898,7 +2898,7 @@ i_s_fts_deleted_generic_fill(
 
 	dict_table_close(user_table, FALSE, FALSE);
 
-	rw_lock_s_unlock(&dict_operation_lock);
+	rw_lock_s_unlock(&dict_sys.latch);
 
 	trx_free(trx);
 
@@ -3281,14 +3281,14 @@ i_s_fts_index_cache_fill(
 
 	/* Prevent DROP of the internal tables for fulltext indexes.
 	FIXME: acquire DDL-blocking MDL on the user table name! */
-	rw_lock_s_lock(&dict_operation_lock);
+	rw_lock_s_lock(&dict_sys.latch);
 
 	user_table = dict_table_open_on_id(
 		innodb_ft_aux_table_id, FALSE, DICT_TABLE_OP_NORMAL);
 
 	if (!user_table) {
 no_fts:
-		rw_lock_s_unlock(&dict_operation_lock);
+		rw_lock_s_unlock(&dict_sys.latch);
 		DBUG_RETURN(0);
 	}
 
@@ -3316,7 +3316,7 @@ no_fts:
 	}
 
 	dict_table_close(user_table, FALSE, FALSE);
-	rw_lock_s_unlock(&dict_operation_lock);
+	rw_lock_s_unlock(&dict_sys.latch);
 
 	DBUG_RETURN(ret);
 }
@@ -3473,9 +3473,9 @@ i_s_fts_index_table_fill_selected(
 		}
 	}
 
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	que_graph_free(graph);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 
 	trx_free(trx);
 
@@ -3728,13 +3728,13 @@ i_s_fts_index_table_fill(
 
 	/* Prevent DROP of the internal tables for fulltext indexes.
 	FIXME: acquire DDL-blocking MDL on the user table name! */
-	rw_lock_s_lock(&dict_operation_lock);
+	rw_lock_s_lock(&dict_sys.latch);
 
 	user_table = dict_table_open_on_id(
 		innodb_ft_aux_table_id, FALSE, DICT_TABLE_OP_NORMAL);
 
 	if (!user_table) {
-		rw_lock_s_unlock(&dict_operation_lock);
+		rw_lock_s_unlock(&dict_sys.latch);
 		DBUG_RETURN(0);
 	}
 
@@ -3754,7 +3754,7 @@ i_s_fts_index_table_fill(
 
 	dict_table_close(user_table, FALSE, FALSE);
 
-	rw_lock_s_unlock(&dict_operation_lock);
+	rw_lock_s_unlock(&dict_sys.latch);
 
 	ut_free(conv_str.f_str);
 
@@ -3891,14 +3891,14 @@ i_s_fts_config_fill(
 
 	/* Prevent DROP of the internal tables for fulltext indexes.
 	FIXME: acquire DDL-blocking MDL on the user table name! */
-	rw_lock_s_lock(&dict_operation_lock);
+	rw_lock_s_lock(&dict_sys.latch);
 
 	user_table = dict_table_open_on_id(
 		innodb_ft_aux_table_id, FALSE, DICT_TABLE_OP_NORMAL);
 
 	if (!user_table) {
 no_fts:
-		rw_lock_s_unlock(&dict_operation_lock);
+		rw_lock_s_unlock(&dict_sys.latch);
 		DBUG_RETURN(0);
 	}
 
@@ -3962,7 +3962,7 @@ no_fts:
 
 	dict_table_close(user_table, FALSE, FALSE);
 
-	rw_lock_s_unlock(&dict_operation_lock);
+	rw_lock_s_unlock(&dict_sys.latch);
 
 	trx_free(trx);
 
@@ -4854,7 +4854,7 @@ i_s_innodb_buffer_page_fill(
 		if (page_info->page_type == I_S_PAGE_TYPE_INDEX) {
 			bool ret = false;
 
-			mutex_enter(&dict_sys->mutex);
+			mutex_enter(&dict_sys.mutex);
 
 			const dict_index_t* index =
 				dict_index_get_if_in_cache_low(
@@ -4879,7 +4879,7 @@ i_s_innodb_buffer_page_fill(
 						system_charset_info);
 			}
 
-			mutex_exit(&dict_sys->mutex);
+			mutex_exit(&dict_sys.mutex);
 
 			OK(ret);
 
@@ -5577,7 +5577,7 @@ i_s_innodb_buf_page_lru_fill(
 		if (page_info->page_type == I_S_PAGE_TYPE_INDEX) {
 			bool ret = false;
 
-			mutex_enter(&dict_sys->mutex);
+			mutex_enter(&dict_sys.mutex);
 
 			const dict_index_t* index =
 				dict_index_get_if_in_cache_low(
@@ -5602,7 +5602,7 @@ i_s_innodb_buf_page_lru_fill(
 						system_charset_info);
 			}
 
-			mutex_exit(&dict_sys->mutex);
+			mutex_exit(&dict_sys.mutex);
 
 			OK(ret);
 
@@ -5971,7 +5971,7 @@ i_s_dict_fill_sys_tables(
 	ulint			compact = DICT_TF_GET_COMPACT(table->flags);
 	ulint			atomic_blobs = DICT_TF_HAS_ATOMIC_BLOBS(
 								table->flags);
-	const page_size_t&	page_size = dict_tf_get_page_size(table->flags);
+	const ulint zip_size = dict_tf_get_zip_size(table->flags);
 	const char*		row_format;
 
 	if (!compact) {
@@ -6000,10 +6000,7 @@ i_s_dict_fill_sys_tables(
 
 	OK(field_store_string(fields[SYS_TABLES_ROW_FORMAT], row_format));
 
-	OK(fields[SYS_TABLES_ZIP_PAGE_SIZE]->store(
-				page_size.is_compressed()
-				? page_size.physical()
-				: 0, true));
+	OK(fields[SYS_TABLES_ZIP_PAGE_SIZE]->store(zip_size, true));
 
 	OK(field_store_string(fields[SYS_TABLES_SPACE_TYPE],
 			      table->space_id ? "Single" : "System"));
@@ -6038,7 +6035,7 @@ i_s_sys_tables_fill_table(
 	}
 
 	heap = mem_heap_create(1000);
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	mtr_start(&mtr);
 
 	rec = dict_startscan_system(&pcur, &mtr, SYS_TABLES);
@@ -6052,7 +6049,7 @@ i_s_sys_tables_fill_table(
 		err_msg = dict_process_sys_tables_rec_and_mtr_commit(
 			heap, rec, &table_rec, false, &mtr);
 
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 
 		if (!err_msg) {
 			i_s_dict_fill_sys_tables(thd, table_rec,
@@ -6070,13 +6067,13 @@ i_s_sys_tables_fill_table(
 		mem_heap_empty(heap);
 
 		/* Get the next record */
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		mtr_start(&mtr);
 		rec = dict_getnext_system(&pcur, &mtr);
 	}
 
 	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 	mem_heap_free(heap);
 
 	DBUG_RETURN(0);
@@ -6266,7 +6263,7 @@ i_s_dict_fill_sys_tablestats(
 	OK(field_store_string(fields[SYS_TABLESTATS_NAME],
 			      table->name.m_name));
 
-	dict_table_stats_lock(table, RW_S_LATCH);
+	rw_lock_s_lock(&table->stats_latch);
 
 	if (table->stat_initialized) {
 		OK(field_store_string(fields[SYS_TABLESTATS_INIT],
@@ -6296,7 +6293,7 @@ i_s_dict_fill_sys_tablestats(
 		OK(fields[SYS_TABLESTATS_MODIFIED]->store(0, true));
 	}
 
-	dict_table_stats_unlock(table, RW_S_LATCH);
+	rw_lock_s_unlock(&table->stats_latch);
 
 	OK(fields[SYS_TABLESTATS_AUTONINC]->store(table->autoinc, true));
 
@@ -6334,8 +6331,8 @@ i_s_sys_tables_fill_table_stats(
 	}
 
 	heap = mem_heap_create(1000);
-	rw_lock_s_lock(&dict_operation_lock);
-	mutex_enter(&dict_sys->mutex);
+	rw_lock_s_lock(&dict_sys.latch);
+	mutex_enter(&dict_sys.mutex);
 	mtr_start(&mtr);
 
 	rec = dict_startscan_system(&pcur, &mtr, SYS_TABLES);
@@ -6350,7 +6347,7 @@ i_s_sys_tables_fill_table_stats(
 			heap, rec, &table_rec, true, &mtr);
 
 		ulint ref_count = table_rec ? table_rec->get_ref_count() : 0;
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 
 		DBUG_EXECUTE_IF("test_sys_tablestats", {
 			if (strcmp("test/t1", table_rec->name.m_name) == 0 ) {
@@ -6368,20 +6365,20 @@ i_s_sys_tables_fill_table_stats(
 					    err_msg);
 		}
 
-		rw_lock_s_unlock(&dict_operation_lock);
+		rw_lock_s_unlock(&dict_sys.latch);
 		mem_heap_empty(heap);
 
 		/* Get the next record */
-		rw_lock_s_lock(&dict_operation_lock);
-		mutex_enter(&dict_sys->mutex);
+		rw_lock_s_lock(&dict_sys.latch);
+		mutex_enter(&dict_sys.mutex);
 
 		mtr_start(&mtr);
 		rec = dict_getnext_system(&pcur, &mtr);
 	}
 
 	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
-	rw_lock_s_unlock(&dict_operation_lock);
+	mutex_exit(&dict_sys.mutex);
+	rw_lock_s_unlock(&dict_sys.latch);
 	mem_heap_free(heap);
 
 	DBUG_RETURN(0);
@@ -6621,7 +6618,7 @@ i_s_sys_indexes_fill_table(
 	}
 
 	heap = mem_heap_create(1000);
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	mtr_start(&mtr);
 
 	/* Start scan the SYS_INDEXES table */
@@ -6643,7 +6640,7 @@ i_s_sys_indexes_fill_table(
 		space_id = space_id == 4 ? mach_read_from_4(field)
 			: ULINT_UNDEFINED;
 		mtr_commit(&mtr);
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 
 		if (!err_msg) {
 			if (int err = i_s_dict_fill_sys_indexes(
@@ -6661,13 +6658,13 @@ i_s_sys_indexes_fill_table(
 		mem_heap_empty(heap);
 
 		/* Get the next record */
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		mtr_start(&mtr);
 		rec = dict_getnext_system(&pcur, &mtr);
 	}
 
 	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 	mem_heap_free(heap);
 
 	DBUG_RETURN(0);
@@ -6874,7 +6871,7 @@ i_s_sys_columns_fill_table(
 	}
 
 	heap = mem_heap_create(1000);
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	mtr_start(&mtr);
 
 	rec = dict_startscan_system(&pcur, &mtr, SYS_COLUMNS);
@@ -6892,7 +6889,7 @@ i_s_sys_columns_fill_table(
 						       &nth_v_col);
 
 		mtr_commit(&mtr);
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 
 		if (!err_msg) {
 			i_s_dict_fill_sys_columns(thd, table_id, col_name,
@@ -6907,13 +6904,13 @@ i_s_sys_columns_fill_table(
 		mem_heap_empty(heap);
 
 		/* Get the next record */
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		mtr_start(&mtr);
 		rec = dict_getnext_system(&pcur, &mtr);
 	}
 
 	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 	mem_heap_free(heap);
 
 	DBUG_RETURN(0);
@@ -7083,7 +7080,7 @@ i_s_sys_virtual_fill_table(
 		DBUG_RETURN(0);
 	}
 
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	mtr_start(&mtr);
 
 	rec = dict_startscan_system(&pcur, &mtr, SYS_VIRTUAL);
@@ -7099,7 +7096,7 @@ i_s_sys_virtual_fill_table(
 						       &base_pos);
 
 		mtr_commit(&mtr);
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 
 		if (!err_msg) {
 			i_s_dict_fill_sys_virtual(thd, table_id, pos, base_pos,
@@ -7111,13 +7108,13 @@ i_s_sys_virtual_fill_table(
 		}
 
 		/* Get the next record */
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		mtr_start(&mtr);
 		rec = dict_getnext_system(&pcur, &mtr);
 	}
 
 	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 
 	DBUG_RETURN(0);
 }
@@ -7283,7 +7280,7 @@ i_s_sys_fields_fill_table(
 	}
 
 	heap = mem_heap_create(1000);
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	mtr_start(&mtr);
 
 	/* will save last index id so that we know whether we move to
@@ -7304,7 +7301,7 @@ i_s_sys_fields_fill_table(
 						      &pos, &index_id, last_id);
 
 		mtr_commit(&mtr);
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 
 		if (!err_msg) {
 			i_s_dict_fill_sys_fields(thd, index_id, &field_rec,
@@ -7319,13 +7316,13 @@ i_s_sys_fields_fill_table(
 		mem_heap_empty(heap);
 
 		/* Get the next record */
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		mtr_start(&mtr);
 		rec = dict_getnext_system(&pcur, &mtr);
 	}
 
 	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 	mem_heap_free(heap);
 
 	DBUG_RETURN(0);
@@ -7515,7 +7512,7 @@ i_s_sys_foreign_fill_table(
 	}
 
 	heap = mem_heap_create(1000);
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	mtr_start(&mtr);
 
 	rec = dict_startscan_system(&pcur, &mtr, SYS_FOREIGN);
@@ -7529,7 +7526,7 @@ i_s_sys_foreign_fill_table(
 		err_msg = dict_process_sys_foreign_rec(heap, rec, &foreign_rec);
 
 		mtr_commit(&mtr);
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 
 		if (!err_msg) {
 			i_s_dict_fill_sys_foreign(thd, &foreign_rec,
@@ -7544,12 +7541,12 @@ i_s_sys_foreign_fill_table(
 
 		/* Get the next record */
 		mtr_start(&mtr);
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		rec = dict_getnext_system(&pcur, &mtr);
 	}
 
 	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 	mem_heap_free(heap);
 
 	DBUG_RETURN(0);
@@ -7729,7 +7726,7 @@ i_s_sys_foreign_cols_fill_table(
 	}
 
 	heap = mem_heap_create(1000);
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	mtr_start(&mtr);
 
 	rec = dict_startscan_system(&pcur, &mtr, SYS_FOREIGN_COLS);
@@ -7746,7 +7743,7 @@ i_s_sys_foreign_cols_fill_table(
 			heap, rec, &name, &for_col_name, &ref_col_name, &pos);
 
 		mtr_commit(&mtr);
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 
 		if (!err_msg) {
 			i_s_dict_fill_sys_foreign_cols(
@@ -7761,13 +7758,13 @@ i_s_sys_foreign_cols_fill_table(
 		mem_heap_empty(heap);
 
 		/* Get the next record */
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		mtr_start(&mtr);
 		rec = dict_getnext_system(&pcur, &mtr);
 	}
 
 	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 	mem_heap_free(heap);
 
 	DBUG_RETURN(0);
@@ -7960,7 +7957,9 @@ i_s_dict_fill_sys_tablespaces(
 
 	DBUG_ENTER("i_s_dict_fill_sys_tablespaces");
 
-	if (is_system_tablespace(space)) {
+	if (fil_space_t::full_crc32(flags)) {
+		row_format = NULL;
+	} else if (is_system_tablespace(space)) {
 		row_format = "Compact, Redundant or Dynamic";
 	} else if (FSP_FLAGS_GET_ZIP_SSIZE(flags)) {
 		row_format = "Compressed";
@@ -7984,7 +7983,7 @@ i_s_dict_fill_sys_tablespaces(
 			      is_system_tablespace(space)
 			      ? "System" : "Single"));
 
-	ulint cflags = fsp_flags_is_valid(flags, space)
+	ulint cflags = fil_space_t::is_valid_flags(flags, space)
 		? flags : fsp_flags_convert_from_101(flags);
 	if (cflags == ULINT_UNDEFINED) {
 		fields[SYS_TABLESPACES_PAGE_SIZE]->set_null();
@@ -7996,19 +7995,17 @@ i_s_dict_fill_sys_tablespaces(
 		DBUG_RETURN(0);
 	}
 
-	const page_size_t page_size(cflags);
-
 	OK(fields[SYS_TABLESPACES_PAGE_SIZE]->store(
-		   page_size.logical(), true));
+		   fil_space_t::logical_size(cflags), true));
 
 	OK(fields[SYS_TABLESPACES_ZIP_PAGE_SIZE]->store(
-		   page_size.physical(), true));
+		   fil_space_t::physical_size(cflags), true));
 
 	char*	filepath = NULL;
 	if (FSP_FLAGS_HAS_DATA_DIR(cflags)) {
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		filepath = dict_get_first_path(space);
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 	}
 
 	if (filepath == NULL) {
@@ -8093,7 +8090,7 @@ i_s_sys_tablespaces_fill_table(
 	}
 
 	heap = mem_heap_create(1000);
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	mtr_start(&mtr);
 
 	for (rec = dict_startscan_system(&pcur, &mtr, SYS_TABLESPACES);
@@ -8110,7 +8107,7 @@ i_s_sys_tablespaces_fill_table(
 			heap, rec, &space, &name, &flags);
 
 		mtr_commit(&mtr);
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 
 		if (!err_msg) {
 			i_s_dict_fill_sys_tablespaces(
@@ -8125,12 +8122,12 @@ i_s_sys_tablespaces_fill_table(
 		mem_heap_empty(heap);
 
 		/* Get the next record */
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		mtr_start(&mtr);
 	}
 
 	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 	mem_heap_free(heap);
 
 	DBUG_RETURN(0);
@@ -8284,7 +8281,7 @@ i_s_sys_datafiles_fill_table(
 	}
 
 	heap = mem_heap_create(1000);
-	mutex_enter(&dict_sys->mutex);
+	mutex_enter(&dict_sys.mutex);
 	mtr_start(&mtr);
 
 	rec = dict_startscan_system(&pcur, &mtr, SYS_DATAFILES);
@@ -8299,7 +8296,7 @@ i_s_sys_datafiles_fill_table(
 			heap, rec, &space, &path);
 
 		mtr_commit(&mtr);
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 
 		if (!err_msg) {
 			i_s_dict_fill_sys_datafiles(
@@ -8313,13 +8310,13 @@ i_s_sys_datafiles_fill_table(
 		mem_heap_empty(heap);
 
 		/* Get the next record */
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		mtr_start(&mtr);
 		rec = dict_getnext_system(&pcur, &mtr);
 	}
 
 	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
+	mutex_exit(&dict_sys.mutex);
 	mem_heap_free(heap);
 
 	DBUG_RETURN(0);
@@ -8693,7 +8690,7 @@ static ST_FIELD_INFO	innodb_tablespaces_scrubbing_fields_info[] =
 
 #define TABLESPACES_SCRUBBING_COMPRESSED	2
 	{STRUCT_FLD(field_name,		"COMPRESSED"),
-	 STRUCT_FLD(field_length,	MY_INT32_NUM_DECIMAL_DIGITS),
+	 STRUCT_FLD(field_length,	1),
 	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONG),
 	 STRUCT_FLD(value,		0),
 	 STRUCT_FLD(field_flags,	MY_I_S_UNSIGNED),
@@ -8744,6 +8741,15 @@ static ST_FIELD_INFO	innodb_tablespaces_scrubbing_fields_info[] =
 	 STRUCT_FLD(field_flags,	MY_I_S_UNSIGNED),
 	 STRUCT_FLD(old_name,		""),
 	 STRUCT_FLD(open_method,	SKIP_OPEN_TABLE)},
+
+#define TABLESPACES_SCRUBBING_ON_SSD	8
+	{STRUCT_FLD(field_name,		"ON_SSD"),
+	 STRUCT_FLD(field_length,	1),
+	 STRUCT_FLD(field_type,		MYSQL_TYPE_LONG),
+	 STRUCT_FLD(value,		0),
+	 STRUCT_FLD(field_flags,	MY_I_S_UNSIGNED),
+	 STRUCT_FLD(old_name,           ""),
+	 STRUCT_FLD(open_method,        SKIP_OPEN_TABLE)},
 
 	END_OF_ST_FIELD_INFO
 };
@@ -8816,6 +8822,8 @@ i_s_dict_fill_tablespaces_scrubbing(
 		}
 	}
 
+	OK(fields[TABLESPACES_SCRUBBING_ON_SSD]->store(!space->is_rotational(),
+						       true));
 	OK(schema_table_store_record(thd, table_to_fill));
 
 	DBUG_RETURN(0);

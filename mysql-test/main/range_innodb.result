@@ -30,6 +30,7 @@ repeat('0123456789', 10)
 from t1;
 analyze table t2;
 Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	Engine-independent statistics collected
 test.t2	analyze	status	OK
 # The following must not use "Range checked for each record":
 explain select * from t0 left join t2 on t2.a <t0.a and t2.b between 50 and 250;
@@ -80,3 +81,21 @@ ERROR HY000: Table definition has changed, please retry transaction
 DROP TABLE t0,t1;
 SET @@GLOBAL.debug_dbug = @saved_dbug;
 set @@optimizer_switch= @optimizer_switch_save;
+#
+# MDEV-19634: Assertion `0' failed in row_sel_convert_mysql_key_to_innobase,
+# [Warning] InnoDB: Using a partial-field key prefix in search
+#
+CREATE TABLE t1 (
+pk INT,
+a VARCHAR(1),
+b INT,
+PRIMARY KEY (pk),
+KEY (a,b)
+) ENGINE=InnoDB;
+INSERT INTO t1 VALUES (1,'a',1),(2,'b',2);
+explain SELECT a FROM t1 WHERE pk < 0 AND a <= 'w' and b > 0;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	index	PRIMARY,a	a	9	NULL	2	Using where; Using index
+SELECT a FROM t1 WHERE pk < 0 AND a <= 'w' and b > 0;
+a
+drop table t1;

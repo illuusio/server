@@ -220,7 +220,7 @@ dict_get_first_table_name_in_db(
 	ulint		len;
 	mtr_t		mtr;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	heap = mem_heap_create(1000);
 
@@ -421,6 +421,8 @@ dict_process_sys_indexes_rec(
 	const char*	err_msg;
 	byte*		buf;
 
+	ut_d(index->is_dummy = true);
+	ut_d(index->in_instant_init = false);
 	buf = static_cast<byte*>(mem_heap_alloc(heap, 8));
 
 	/* Parse the record, and get "dict_index_t" struct filled */
@@ -801,7 +803,7 @@ dict_get_first_path(
 	char*		filepath = NULL;
 	mem_heap_t*	heap = mem_heap_create(1024);
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	mtr_start(&mtr);
 
@@ -879,8 +881,7 @@ dict_update_filepath(
 	dberr_t		err = DB_SUCCESS;
 	trx_t*		trx;
 
-	ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_X));
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_d(dict_sys.assert_locked());
 
 	trx = trx_create();
 	trx->op_info = "update filepath";
@@ -947,8 +948,7 @@ dict_replace_tablespace_and_filepath(
 	DBUG_EXECUTE_IF("innodb_fail_to_update_tablespace_dict",
 			return(DB_INTERRUPTED););
 
-	ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_X));
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_d(dict_sys.assert_locked());
 	ut_ad(filepath);
 
 	trx = trx_create();
@@ -982,7 +982,7 @@ dict_sys_tables_rec_check(
 	const byte*	field;
 	ulint		len;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	if (rec_get_deleted_flag(rec, 0)) {
 		return("delete-marked record in SYS_TABLES");
@@ -1345,8 +1345,7 @@ static ulint dict_check_sys_tables()
 
 	DBUG_ENTER("dict_check_sys_tables");
 
-	ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_X));
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_d(dict_sys.assert_locked());
 
 	mtr_start(&mtr);
 
@@ -1482,15 +1481,13 @@ void dict_check_tablespaces_and_store_max_id()
 
 	DBUG_ENTER("dict_check_tablespaces_and_store_max_id");
 
-	rw_lock_x_lock(&dict_operation_lock);
-	mutex_enter(&dict_sys->mutex);
+	dict_sys_lock();
 
 	/* Initialize the max space_id from sys header */
-	mtr_start(&mtr);
-	ulint	max_space_id = mtr_read_ulint(
-		dict_hdr_get(&mtr) + DICT_HDR_MAX_SPACE_ID,
-		MLOG_4BYTES, &mtr);
-	mtr_commit(&mtr);
+	mtr.start();
+	ulint max_space_id = mach_read_from_4(DICT_HDR_MAX_SPACE_ID
+					      + dict_hdr_get(&mtr));
+	mtr.commit();
 
 	fil_set_max_space_id_if_bigger(max_space_id);
 
@@ -1500,8 +1497,7 @@ void dict_check_tablespaces_and_store_max_id()
 	max_space_id = dict_check_sys_tables();
 	fil_set_max_space_id_if_bigger(max_space_id);
 
-	mutex_exit(&dict_sys->mutex);
-	rw_lock_x_unlock(&dict_operation_lock);
+	dict_sys_unlock();
 
 	DBUG_VOID_RETURN;
 }
@@ -1784,7 +1780,7 @@ dict_load_columns(
 	mtr_t		mtr;
 	ulint		n_skipped = 0;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	mtr_start(&mtr);
 
@@ -1901,7 +1897,7 @@ dict_load_virtual_one_col(
 	mtr_t		mtr;
 	ulint		skipped = 0;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	if (v_col->num_base == 0) {
 		return;
@@ -1940,7 +1936,7 @@ dict_load_virtual_one_col(
 	btr_pcur_open_on_user_rec(sys_virtual_index, tuple, PAGE_CUR_GE,
 				  BTR_SEARCH_LEAF, &pcur, &mtr);
 
-	for (i = 0; i < v_col->num_base + skipped; i++) {
+	for (i = 0; i < unsigned{v_col->num_base} + skipped; i++) {
 		const char*	err_msg;
 		ulint		pos;
 
@@ -2134,7 +2130,7 @@ dict_load_fields(
 	mtr_t		mtr;
 	dberr_t		error;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	mtr_start(&mtr);
 
@@ -2365,7 +2361,7 @@ dict_load_indexes(
 	mtr_t		mtr;
 	dberr_t		error = DB_SUCCESS;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	mtr_start(&mtr);
 
@@ -2559,7 +2555,7 @@ corrupted:
 			goto corrupted;
 		} else if (dict_is_sys_table(table->id)
 			   && (dict_index_is_clust(index)
-			       || ((table == dict_sys->sys_tables)
+			       || ((table == dict_sys.sys_tables)
 				   && !strcmp("ID_IND", index->name)))) {
 
 			/* The index was created in memory already at booting
@@ -2659,7 +2655,7 @@ dict_save_data_dir_path(
 	dict_table_t*	table,		/*!< in/out: table */
 	const char*	filepath)	/*!< in: filepath of tablespace */
 {
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 	ut_a(DICT_TF_HAS_DATA_DIR(table->flags));
 
 	ut_a(!table->data_dir_path);
@@ -2686,7 +2682,7 @@ dict_save_data_dir_path(
 /** Make sure the data_dir_path is saved in dict_table_t if DATA DIRECTORY
 was used. Try to read it from the fil_system first, then from SYS_DATAFILES.
 @param[in]	table		Table object
-@param[in]	dict_mutex_own	true if dict_sys->mutex is owned already */
+@param[in]	dict_mutex_own	true if dict_sys.mutex is owned already */
 void
 dict_get_and_save_data_dir_path(
 	dict_table_t*	table,
@@ -2743,7 +2739,7 @@ dict_table_t* dict_load_table(const char* name, dict_err_ignore_t ignore_err)
 	DBUG_ENTER("dict_load_table");
 	DBUG_PRINT("dict_load_table", ("loading table: '%s'", name));
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	result = dict_table_check_if_in_cache_low(name);
 
@@ -2824,7 +2820,7 @@ dict_load_tablespace(
 	}
 
 	/* Try to open the tablespace.  We set the 2nd param (fix_dict) to
-	false because we do not have an x-lock on dict_operation_lock */
+	false because we do not have an x-lock on dict_sys.latch */
 	table->space = fil_ibd_open(
 		true, false, FIL_TYPE_TABLESPACE, table->space_id,
 		dict_tf_to_fsp_flags(table->flags),
@@ -2877,7 +2873,7 @@ dict_load_table_one(
 	DBUG_ENTER("dict_load_table_one");
 	DBUG_PRINT("dict_load_table_one", ("table: %s", name.m_name));
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	heap = mem_heap_create(32000);
 
@@ -2976,7 +2972,7 @@ err_exit:
 				<< " failed, the table has"
 				" corrupted clustered indexes. Turn on"
 				" 'innodb_force_load_corrupted' to drop it";
-			dict_table_remove_from_cache(table);
+			dict_sys.remove(table);
 			table = NULL;
 			goto func_exit;
 		} else {
@@ -2998,8 +2994,7 @@ corrupted:
 				dict_table_get_first_index(table)->page);
 			mtr.start();
 			buf_block_t* block = buf_page_get(
-				page_id,
-				dict_table_page_size(table),
+				page_id, table->space->zip_size(),
 				RW_S_LATCH, &mtr);
 			const bool corrupted = !block
 				|| page_get_space_id(block->frame)
@@ -3044,7 +3039,7 @@ corrupted:
 				" foreign key indexes. Turn off"
 				" 'foreign_key_checks' and try again.";
 
-			dict_table_remove_from_cache(table);
+			dict_sys.remove(table);
 			table = NULL;
 		} else {
 			dict_mem_table_fill_foreign_vcol_set(table);
@@ -3060,7 +3055,7 @@ corrupted:
 		if (!srv_force_recovery
 		    || !index
 		    || !index->is_primary()) {
-			dict_table_remove_from_cache(table);
+			dict_sys.remove(table);
 			table = NULL;
 		} else if (index->is_corrupted()
 			   && table->is_readable()) {
@@ -3093,7 +3088,7 @@ func_exit:
 		} else if (table->can_be_evicted) {
 			/* fts_optimize_thread is not started yet.
 			So make the table as non-evictable from cache. */
-			dict_table_move_from_lru_to_non_lru(table);
+			dict_sys.prevent_eviction(table);
 		}
 	}
 
@@ -3125,7 +3120,7 @@ dict_load_table_on_id(
 	dict_table_t*	table;
 	mtr_t		mtr;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	table = NULL;
 
@@ -3136,7 +3131,7 @@ dict_load_table_on_id(
 	mtr_start(&mtr);
 	/*---------------------------------------------------*/
 	/* Get the secondary index based on ID for table SYS_TABLES */
-	sys_tables = dict_sys->sys_tables;
+	sys_tables = dict_sys.sys_tables;
 	sys_table_ids = dict_table_get_next_index(
 		dict_table_get_first_index(sys_tables));
 	ut_ad(!dict_table_is_comp(sys_tables));
@@ -3210,7 +3205,7 @@ dict_load_sys_table(
 {
 	mem_heap_t*	heap;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	heap = mem_heap_create(1000);
 
@@ -3247,7 +3242,7 @@ dict_load_foreign_cols(
 	mtr_t		mtr;
 	size_t		id_len;
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	id_len = strlen(foreign->id);
 
@@ -3394,7 +3389,7 @@ dict_load_foreign(
 	DBUG_PRINT("dict_load_foreign",
 		   ("id: '%s', check_recursive: %d", id, check_recursive));
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	id_len = strlen(id);
 
@@ -3570,7 +3565,7 @@ dict_load_foreigns(
 
 	DBUG_ENTER("dict_load_foreigns");
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	sys_foreign = dict_table_get_low("SYS_FOREIGN");
 
@@ -3729,7 +3724,7 @@ dict_load_table_id_on_index_id(
 	bool		found = false;
 	mtr_t		mtr;
 
-	ut_ad(mutex_own(&(dict_sys->mutex)));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	/* NOTE that the operation of this function is protected by
 	the dictionary mutex, and therefore no deadlocks can occur

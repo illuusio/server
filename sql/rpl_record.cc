@@ -329,6 +329,7 @@ unpack_row(rpl_group_info *rgi,
                              (int) (pack_ptr - old_pack_ptr)));
         if (!pack_ptr)
         {
+#ifdef WITH_WSREP
 	  if (WSREP_ON)
           {
             /*
@@ -343,7 +344,7 @@ unpack_row(rpl_group_info *rgi,
                        (table_found) ? "found" : "not found", row_end
             );
 	  }
-
+#endif /* WITH_WSREP */
           rgi->rli->report(ERROR_LEVEL, ER_SLAVE_CORRUPT_EVENT,
                       rgi->gtid_info(),
                       "Could not read field '%s' of table '%s.%s'",
@@ -496,7 +497,9 @@ int prepare_record(TABLE *const table, const uint skip, const bool check)
   DBUG_RETURN(0);
 }
 /**
-  Fills @c table->record[0] with computed values of extra  persistent  column which are present on slave but not on master.
+  Fills @c table->record[0] with computed values of extra  persistent  column
+  which are present on slave but not on master.
+
   @param table         Table whose record[0] buffer is prepared.
   @param master_cols   No of columns on master 
   @returns 0 on        success
@@ -513,10 +516,8 @@ int fill_extra_persistent_columns(TABLE *table, int master_cols)
     vfield= *vfield_ptr;
     if (vfield->field_index >= master_cols && vfield->stored_in_db())
     {
-      /*Set bitmap for writing*/
-      bitmap_set_bit(table->vcol_set, vfield->field_index);
+      bitmap_set_bit(table->write_set, vfield->field_index);
       error= vfield->vcol_info->expr->save_in_field(vfield,0);
-      bitmap_clear_bit(table->vcol_set, vfield->field_index);
     }
   }
   return error;

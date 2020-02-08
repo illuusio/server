@@ -225,6 +225,10 @@ Next_select_func setup_end_select_func(JOIN *join, JOIN_TAB *tab);
 int rr_sequential(READ_RECORD *info);
 int rr_sequential_and_unpack(READ_RECORD *info);
 Item *remove_pushed_top_conjuncts(THD *thd, Item *cond);
+Item *and_new_conditions_to_optimized_cond(THD *thd, Item *cond,
+                                           COND_EQUAL **cond_eq,
+                                           List<Item> &new_conds,
+                                           Item::cond_result *cond_value);
 
 #include "sql_explain.h"
 
@@ -509,6 +513,18 @@ typedef struct st_join_table {
   uint n_sj_tables;
 
   bool preread_init_done;
+
+  /*
+    Cost info to the range filter used when joining this join table
+    (Defined when the best join order has been already chosen)
+  */
+  Range_rowid_filter_cost_info *range_rowid_filter_info;
+  /* Rowid filter to be used when joining this join table */
+  Rowid_filter *rowid_filter;
+  /* Becomes true just after the used range filter has been built / filled */
+  bool is_rowid_filter_built;
+
+  void build_range_rowid_filter_if_needed();
 
   void cleanup();
   inline bool is_using_loose_index_scan()
@@ -886,6 +902,10 @@ public:
 };
 
 
+class Range_rowid_filter_cost_info;
+class Rowid_filter;
+
+
 /**
   Information about a position of table within a join order. Used in join
   optimization.
@@ -968,6 +988,10 @@ typedef struct st_position
 
   /* Info on splitting plan used at this position */  
   SplM_plan_info *spl_plan;
+
+  /* Cost info for the range filter used at this position */
+  Range_rowid_filter_cost_info *range_rowid_filter_info;
+
 } POSITION;
 
 typedef Bounds_checked_array<Item_null_result*> Item_null_array;
@@ -1479,6 +1503,11 @@ public:
   Dynamic_array<KEYUSE_EXT> *ext_keyuses_for_splitting;
 
   JOIN_TAB *sort_and_group_aggr_tab;
+  /*
+    Flag is set to true if select_lex was found to be degenerated before
+    the optimize_cond() call in JOIN::optimize_inner() method.
+  */
+  bool is_orig_degenerated;
 
   JOIN(THD *thd_arg, List<Item> &fields_arg, ulonglong select_options_arg,
        select_result *result_arg)
@@ -1574,6 +1603,7 @@ public:
     emb_sjm_nest= NULL;
     sjm_lookup_tables= 0;
     sjm_scan_tables= 0;
+    is_orig_degenerated= false;
   }
 
   /* True if the plan guarantees that it will be returned zero or one row */
@@ -1612,6 +1642,8 @@ public:
   bool optimize_unflattened_subqueries();
   bool optimize_constant_subqueries();
   int init_join_caches();
+  bool make_range_rowid_filters();
+  bool init_range_rowid_filters();
   bool make_sum_func_list(List<Item> &all_fields, List<Item> &send_fields,
 			  bool before_group_by, bool recompute= FALSE);
 
@@ -1817,10 +1849,6 @@ bool setup_copy_fields(THD *thd, TMP_TABLE_PARAM *param,
 void copy_fields(TMP_TABLE_PARAM *param);
 bool copy_funcs(Item **func_ptr, const THD *thd);
 uint find_shortest_key(TABLE *table, const key_map *usable_keys);
-Field* create_tmp_field_from_field(THD *thd, Field* org_field,
-                                   LEX_CSTRING *name, TABLE *table,
-                                   Item_field *item);
-
 bool is_indexed_agg_distinct(JOIN *join, List<Item_field> *out_args);
 
 /* functions from opt_sum.cc */
@@ -2077,12 +2105,6 @@ bool mysql_select(THD *thd,
 void free_underlaid_joins(THD *thd, SELECT_LEX *select);
 bool mysql_explain_union(THD *thd, SELECT_LEX_UNIT *unit,
                          select_result *result);
-Field *create_tmp_field(THD *thd, TABLE *table,Item *item, Item::Type type,
-			Item ***copy_func, Field **from_field,
-                        Field **def_field,
-			bool group, bool modify_item,
-			bool table_cant_handle_bit_fields,
-                        bool make_copy_field);
 
 /*
   General routine to change field->ptr of a NULL-terminated array of Field
@@ -2350,7 +2372,7 @@ Item_equal *find_item_equal(COND_EQUAL *cond_equal, Field *field,
 extern bool test_if_ref(Item *, 
                  Item_field *left_item,Item *right_item);
 
-inline bool optimizer_flag(THD *thd, uint flag)
+inline bool optimizer_flag(THD *thd, ulonglong flag)
 { 
   return (thd->variables.optimizer_switch & flag);
 }
@@ -2456,8 +2478,52 @@ public:
   ~Pushdown_query() { delete handler; }
 
   /* Function that calls the above scan functions */
-  int execute(JOIN *join);
+  int execute(JOIN *);
 };
+
+class derived_handler;
+
+class Pushdown_derived: public Sql_alloc
+{
+private:
+  bool is_analyze;
+public:
+  TABLE_LIST *derived;
+  derived_handler *handler;
+
+  Pushdown_derived(TABLE_LIST *tbl, derived_handler *h);
+
+  ~Pushdown_derived();
+
+  int execute(); 
+};
+
+
+class select_handler;
+
+
+class Pushdown_select: public Sql_alloc
+{
+private:
+  bool is_analyze;
+  List<Item> result_columns;
+  bool send_result_set_metadata();
+  bool send_data();
+  bool send_eof();
+
+public:
+  SELECT_LEX *select;
+  select_handler *handler;
+
+  Pushdown_select(SELECT_LEX *sel, select_handler *h);
+
+  ~Pushdown_select();
+
+  bool init();
+
+  int execute(); 
+};
+
 
 bool test_if_order_compatible(SQL_I_List<ORDER> &a, SQL_I_List<ORDER> &b);
 int test_if_group_changed(List<Cached_item> &list);
@@ -2465,5 +2531,14 @@ int create_sort_index(THD *thd, JOIN *join, JOIN_TAB *tab, Filesort *fsort);
 
 JOIN_TAB *first_explain_order_tab(JOIN* join);
 JOIN_TAB *next_explain_order_tab(JOIN* join, JOIN_TAB* tab);
+
+bool check_simple_equality(THD *thd, const Item::Context &ctx,
+                           Item *left_item, Item *right_item,
+                           COND_EQUAL *cond_equal);
+
+void propagate_new_equalities(THD *thd, Item *cond,
+                              List<Item_equal> *new_equalities,
+                              COND_EQUAL *inherited,
+                              bool *is_simplifiable_cond);
 
 #endif /* SQL_SELECT_INCLUDED */

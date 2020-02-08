@@ -99,6 +99,9 @@ int chk_status(HA_CHECK *param, register MI_INFO *info)
 {
   MYISAM_SHARE *share=info->s;
 
+  /* Protection for HA_EXTRA_FLUSH */
+  mysql_mutex_lock(&share->intern_lock);
+
   if (mi_is_crashed_on_repair(info))
     mi_check_print_warning(param,
 			   "Table is marked as crashed and last repair failed");
@@ -118,6 +121,7 @@ int chk_status(HA_CHECK *param, register MI_INFO *info)
     if (param->testflag & T_UPDATE_STATE)
       param->warning_printed=save;
   }
+  mysql_mutex_unlock(&share->intern_lock);
   return 0;
 }
 
@@ -4779,7 +4783,7 @@ static int replace_data_file(HA_CHECK *param, MI_INFO *info, File new_file)
     my_create_backup_name(buff, "", param->backup_time);
     my_printf_error(ER_GET_ERRMSG,
                     "Making backup of data file %s with extension '%s'",
-                    MYF(ME_JUST_INFO | ME_NOREFRESH), share->data_file_name,
+                    MYF(ME_NOTE | ME_ERROR_LOG), share->data_file_name,
                     buff);
   }
 

@@ -200,6 +200,7 @@ static char*	log_ignored_opt;
 
 
 extern my_bool opt_use_ssl;
+extern char *opt_tls_version;
 my_bool opt_ssl_verify_server_cert;
 my_bool opt_extended_validation;
 my_bool opt_encrypted_backup;
@@ -470,9 +471,18 @@ DECLARE_THREAD(dbug_execute_in_new_connection)(void *arg)
 	dbug_thread_param_t *par= (dbug_thread_param_t *)arg;
 	int err = mysql_query(par->con, par->query);
 	int err_no = mysql_errno(par->con);
-	DBUG_ASSERT(par->expect_err == err);
-	if (err && par->expect_errno)
-		DBUG_ASSERT(err_no == par->expect_errno);
+	if(par->expect_err != err)
+	{
+		msg("FATAL: dbug_execute_in_new_connection : mysql_query '%s' returns %d, instead of expected %d",
+			par->query, err, par->expect_err);
+		_exit(1);
+	}
+	if (err && par->expect_errno && par->expect_errno != err_no)
+	{
+		msg("FATAL: dbug_execute_in_new_connection: mysql_query '%s' returns mysql_errno %d, instead of expected %d",
+			par->query, err_no, par->expect_errno);
+		_exit(1);
+	}
 	mysql_close(par->con);
 	mysql_thread_end();
 	os_event_t done = par->done_event;
@@ -628,7 +638,6 @@ static void backup_file_op_fail(ulint space_id, const byte* flags,
 	const byte* name, ulint len,
 	const byte* new_name, ulint new_len)
 {
-	ut_a(opt_no_lock);
 	bool fail;
 	if (flags) {
 		msg("DDL tracking :  create %zu \"%.*s\": %x",
@@ -649,6 +658,7 @@ static void backup_file_op_fail(ulint space_id, const byte* flags,
 		msg("DDL tracking : delete %zu \"%.*s\"", space_id, int(len), name);
 	}
 	if (fail) {
+		ut_a(opt_no_lock);
 		die("DDL operation detected in the late phase of backup."
 			"Backup is inconsistent. Remove --no-lock option to fix.");
 	}
@@ -669,23 +679,13 @@ static void backup_optimized_ddl_op(ulint space_id)
   run with --no-lock. Usually aborts the backup.
 */
 static void backup_optimized_ddl_op_fail(ulint space_id) {
-	ut_a(opt_no_lock);
 	msg("DDL tracking : optimized DDL on space %zu", space_id);
 	if (ddl_tracker.tables_in_backup.find(space_id) != ddl_tracker.tables_in_backup.end()) {
+		ut_a(opt_no_lock);
 		msg("ERROR : Optimized DDL operation detected in the late phase of backup."
 			"Backup is inconsistent. Remove --no-lock option to fix.");
 		exit(EXIT_FAILURE);
 	}
-}
-
-
-/** Callback whenever MLOG_TRUNCATE happens. */
-static void backup_truncate_fail()
-{
-	msg("mariabackup: Incompatible TRUNCATE operation detected.%s",
-	    opt_lock_ddl_per_table
-	    ? ""
-	    : " Use --lock-ddl-per-table to lock all tables before backup.");
 }
 
 
@@ -831,6 +831,7 @@ enum options_xtrabackup
   OPT_BACKUP_ROCKSDB,
   OPT_XTRA_CHECK_PRIVILEGES
 };
+
 
 struct my_option xb_client_options[] =
 {
@@ -1693,7 +1694,7 @@ xb_get_one_option(int optid,
 
   case OPT_INNODB_CHECKSUM_ALGORITHM:
 
-    ut_a(srv_checksum_algorithm <= SRV_CHECKSUM_ALGORITHM_STRICT_NONE);
+    ut_a(srv_checksum_algorithm <= SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32);
 
     ADD_PRINT_PARAM_OPT(innodb_checksum_algorithm_names[srv_checksum_algorithm]);
     break;
@@ -1863,15 +1864,18 @@ static bool innodb_init_param()
 	msg("innodb_data_file_path = %s",
 	    innobase_data_file_path);
 
-	/* This is the first time univ_page_size is used.
-	It was initialized to 16k pages before srv_page_size was set */
-	univ_page_size.copy_from(
-		page_size_t(srv_page_size, srv_page_size, false));
-
 	srv_sys_space.set_space_id(TRX_SYS_SPACE);
 	srv_sys_space.set_name("innodb_system");
 	srv_sys_space.set_path(srv_data_home);
-	srv_sys_space.set_flags(FSP_FLAGS_PAGE_SSIZE());
+	switch (srv_checksum_algorithm) {
+	case SRV_CHECKSUM_ALGORITHM_FULL_CRC32:
+	case SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32:
+		srv_sys_space.set_flags(FSP_FLAGS_FCRC32_MASK_MARKER
+					| FSP_FLAGS_FCRC32_PAGE_SSIZE());
+		break;
+	default:
+		srv_sys_space.set_flags(FSP_FLAGS_PAGE_SSIZE());
+	}
 
 	if (!srv_sys_space.parse_params(innobase_data_file_path, true)) {
 		goto error;
@@ -2165,8 +2169,7 @@ xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info)
 		msg("page_size is required in %s", filepath);
 		r = FALSE;
 	} else {
-		info->page_size = page_size_t(zip_size ? zip_size : page_size,
-					      page_size, zip_size != 0);
+		info->page_size = zip_size ? zip_size : page_size;
 	}
 
 	if (info->space_id == ULINT_UNDEFINED) {
@@ -2194,9 +2197,8 @@ xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info)
 		 "page_size = " ULINTPF "\n"
 		 "zip_size = " ULINTPF " \n"
 		 "space_id = " ULINTPF "\n",
-		 info->page_size.logical(),
-		 info->page_size.is_compressed()
-		 ? info->page_size.physical() : 0,
+		 info->page_size,
+		 info->zip_size,
 		 info->space_id);
 	len = strlen(buf);
 
@@ -2379,6 +2381,18 @@ check_if_skip_table(
 	const char *ptr;
 	char *eptr;
 
+
+	dbname = NULL;
+	tbname = name;
+	while ((ptr = strchr(tbname, '/')) != NULL) {
+		dbname = tbname;
+		tbname = ptr + 1;
+	}
+
+	if (strncmp(tbname, tmp_file_prefix, tmp_file_prefix_length) == 0) {
+		return TRUE;
+	}
+
 	if (regex_exclude_list.empty() &&
 		regex_include_list.empty() &&
 		tables_include_hash == NULL &&
@@ -2386,13 +2400,6 @@ check_if_skip_table(
 		databases_include_hash == NULL &&
 		databases_exclude_hash == NULL) {
 		return(FALSE);
-	}
-
-	dbname = NULL;
-	tbname = name;
-	while ((ptr = strchr(tbname, '/')) != NULL) {
-		dbname = tbname;
-		tbname = ptr + 1;
 	}
 
 	if (dbname == NULL) {
@@ -2666,13 +2673,12 @@ static lsn_t xtrabackup_copy_log(lsn_t start_lsn, lsn_t end_lsn, bool last)
 				log_block,
 				scanned_lsn + data_len);
 
-		recv_sys->scanned_lsn = scanned_lsn + data_len;
+		recv_sys.scanned_lsn = scanned_lsn + data_len;
 
 		if (data_len == OS_FILE_LOG_BLOCK_SIZE) {
 			/* We got a full log block. */
 			scanned_lsn += data_len;
-		} else if (data_len
-			   >= OS_FILE_LOG_BLOCK_SIZE - LOG_BLOCK_TRL_SIZE
+		} else if (data_len >= log_sys.trailer_offset()
 			   || data_len <= LOG_BLOCK_HDR_SIZE) {
 			/* We got a garbage block (abrupt end of the log). */
 			msg(0,"garbage block: " LSN_PF ",%zu",scanned_lsn, data_len);
@@ -2721,13 +2727,13 @@ static lsn_t xtrabackup_copy_log(lsn_t start_lsn, lsn_t end_lsn, bool last)
 static bool xtrabackup_copy_logfile(bool last = false)
 {
 	ut_a(dst_log_file != NULL);
-	ut_ad(recv_sys != NULL);
+	ut_ad(recv_sys.is_initialised());
 
 	lsn_t	start_lsn;
 	lsn_t	end_lsn;
 
-	recv_sys->parse_start_lsn = log_copy_scanned_lsn;
-	recv_sys->scanned_lsn = log_copy_scanned_lsn;
+	recv_sys.parse_start_lsn = log_copy_scanned_lsn;
+	recv_sys.scanned_lsn = log_copy_scanned_lsn;
 
 	start_lsn = ut_uint64_align_down(log_copy_scanned_lsn,
 					 OS_FILE_LOG_BLOCK_SIZE);
@@ -2750,15 +2756,15 @@ static bool xtrabackup_copy_logfile(bool last = false)
 		if (lsn == start_lsn) {
 			start_lsn = 0;
 		} else {
-			mutex_enter(&recv_sys->mutex);
+			mutex_enter(&recv_sys.mutex);
 			start_lsn = xtrabackup_copy_log(start_lsn, lsn, last);
-			mutex_exit(&recv_sys->mutex);
+			mutex_exit(&recv_sys.mutex);
 		}
 
 		log_mutex_exit();
 
 		if (!start_lsn) {
-			die(recv_sys->found_corrupt_log
+			die(recv_sys.found_corrupt_log
 			    ? "xtrabackup_copy_logfile() failed: corrupt log."
 			    : "xtrabackup_copy_logfile() failed.");
 			return true;
@@ -3107,7 +3113,7 @@ xb_load_single_table_tablespace(
 
 		ut_a(node_size != (os_offset_t) -1);
 
-		n_pages = node_size / page_size_t(file->flags()).physical();
+		n_pages = node_size / fil_space_t::physical_size(file->flags());
 
 		space = fil_space_create(
 			name, file->space_id(), file->flags(),
@@ -3285,7 +3291,8 @@ static dberr_t xb_assign_undo_space_start()
 	bool		ret;
 	dberr_t		error = DB_SUCCESS;
 	ulint		space;
-	int n_retries = 5;
+	int		n_retries = 5;
+	ulint		fsp_flags;
 
 	if (srv_undo_tablespaces == 0) {
 		return error;
@@ -3302,6 +3309,15 @@ static dberr_t xb_assign_undo_space_start()
 	buf = static_cast<byte*>(ut_malloc_nokey(2U << srv_page_size_shift));
 	page = static_cast<byte*>(ut_align(buf, srv_page_size));
 
+	if (os_file_read(IORequestRead, file, page, 0, srv_page_size)
+	    != DB_SUCCESS) {
+		msg("Reading first page failed.\n");
+		error = DB_ERROR;
+		goto func_exit;
+	}
+
+	fsp_flags = mach_read_from_4(
+			page + FSP_HEADER_OFFSET + FSP_SPACE_FLAGS);
 retry:
 	if (os_file_read(IORequestRead, file, page,
 			 TRX_SYS_PAGE_NO << srv_page_size_shift,
@@ -3312,7 +3328,7 @@ retry:
 	}
 
 	/* TRX_SYS page can't be compressed or encrypted. */
-	if (buf_page_is_corrupted(false, page, univ_page_size)) {
+	if (buf_page_is_corrupted(false, page, fsp_flags)) {
 		if (n_retries--) {
 			os_thread_sleep(1000);
 			goto retry;
@@ -3331,9 +3347,9 @@ retry:
 			       + TRX_SYS_RSEG_PAGE_NO + page)
 	      != FIL_NULL);
 
-	space = mach_read_ulint(TRX_SYS + TRX_SYS_RSEGS
-				+ TRX_SYS_RSEG_SLOT_SIZE
-				+ TRX_SYS_RSEG_SPACE + page, MLOG_4BYTES);
+	space = mach_read_from_4(TRX_SYS + TRX_SYS_RSEGS
+				 + TRX_SYS_RSEG_SLOT_SIZE
+				 + TRX_SYS_RSEG_SPACE + page);
 
 	srv_undo_space_id_start = space;
 
@@ -4063,7 +4079,7 @@ fail:
 
 	ut_crc32_init();
 	crc_init();
-	recv_sys_init();
+	recv_sys.create();
 
 #ifdef WITH_INNODB_DISALLOW_WRITES
 	srv_allow_writes_event = os_event_create(0);
@@ -4223,9 +4239,8 @@ fail_before_log_copying_thread_start:
 
 	/* copy log file by current position */
 	log_copy_scanned_lsn = checkpoint_lsn_start;
-	recv_sys->recovered_lsn = log_copy_scanned_lsn;
+	recv_sys.recovered_lsn = log_copy_scanned_lsn;
 	log_optimized_ddl_op = backup_optimized_ddl_op;
-	log_truncate = backup_truncate_fail;
 
 	if (xtrabackup_copy_logfile())
 		goto fail_before_log_copying_thread_start;
@@ -4255,7 +4270,7 @@ fail_before_log_copying_thread_start:
 		DBUG_EXECUTE_IF("check_mdl_lock_works",
 			dbug_alter_thread_done =
 			dbug_start_query_thread("ALTER TABLE test.t ADD COLUMN mdl_lock_column int",
-				"Waiting for table metadata lock", 1, ER_QUERY_INTERRUPTED););
+				"Waiting for table metadata lock", 0, 0););
 	}
 
 	datafiles_iter_t *it = datafiles_iter_new();
@@ -4473,6 +4488,7 @@ void backup_fix_ddl(void)
 	}
 	datafiles_iter_free(it);
 
+	DBUG_EXECUTE_IF("check_mdl_lock_works", DBUG_ASSERT(new_tables.size() == 0););
 	for (std::set<std::string>::iterator iter = new_tables.begin();
 		iter != new_tables.end(); iter++) {
 		const char *space_name = iter->c_str();
@@ -4584,16 +4600,17 @@ xb_space_create_file(
 	fsp_header_init_fields(page, space_id, flags);
 	mach_write_to_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID, space_id);
 
-	const page_size_t page_size(flags);
+	const ulint zip_size = fil_space_t::zip_size(flags);
 
-	if (!page_size.is_compressed()) {
-		buf_flush_init_for_writing(NULL, page, NULL, 0);
+	if (!zip_size) {
+		buf_flush_init_for_writing(
+			NULL, page, NULL, 0,
+			fil_space_t::full_crc32(flags));
 
 		ret = os_file_write(IORequestWrite, path, *file, page, 0,
 				    srv_page_size);
 	} else {
 		page_zip_des_t	page_zip;
-		ulint zip_size = page_size.physical();
 		page_zip_set_size(&page_zip, zip_size);
 		page_zip.data = page + srv_page_size;
 		fprintf(stderr, "zip_size = " ULINTPF "\n", zip_size);
@@ -4604,7 +4621,7 @@ xb_space_create_file(
 			page_zip.m_end = page_zip.m_nonempty =
 			page_zip.n_blobs = 0;
 
-		buf_flush_init_for_writing(NULL, page, &page_zip, 0);
+		buf_flush_init_for_writing(NULL, page, &page_zip, 0, false);
 
 		ret = os_file_write(IORequestWrite, path, *file,
 				    page_zip.data, 0, zip_size);
@@ -4770,19 +4787,20 @@ exit:
 	}
 
 	/* No matching space found. create the new one.  */
-	const ulint flags = info.page_size.is_compressed()
-		? get_bit_shift(info.page_size.physical()
+	const ulint flags = info.zip_size
+		? get_bit_shift(info.page_size
 				>> (UNIV_ZIP_SIZE_SHIFT_MIN - 1))
 		<< FSP_FLAGS_POS_ZIP_SSIZE
 		| FSP_FLAGS_MASK_POST_ANTELOPE
 		| FSP_FLAGS_MASK_ATOMIC_BLOBS
-		| (info.page_size.logical() == UNIV_PAGE_SIZE_ORIG
+		| (srv_page_size == UNIV_PAGE_SIZE_ORIG
 		   ? 0
-		   : get_bit_shift(info.page_size.logical()
+		   : get_bit_shift(srv_page_size
 				   >> (UNIV_ZIP_SIZE_SHIFT_MIN - 1))
 		   << FSP_FLAGS_POS_PAGE_SSIZE)
 		: FSP_FLAGS_PAGE_SSIZE();
-	ut_ad(page_size_t(flags).equals_to(info.page_size));
+	ut_ad(fil_space_t::zip_size(flags) == info.zip_size);
+	ut_ad(fil_space_t::physical_size(flags) == info.page_size);
 
 	if (fil_space_create(dest_space_name, info.space_id, flags,
 			      FIL_TYPE_TABLESPACE, 0)) {
@@ -4819,7 +4837,7 @@ xtrabackup_apply_delta(
 	ulint	page_in_buffer;
 	ulint	incremental_buffers = 0;
 
-	xb_delta_info_t info(univ_page_size, SRV_TMP_SPACE_ID);
+	xb_delta_info_t info(srv_page_size, 0, SRV_TMP_SPACE_ID);
 	ulint		page_size;
 	ulint		page_size_shift;
 	byte*		incremental_buffer_base = NULL;
@@ -4858,7 +4876,7 @@ xtrabackup_apply_delta(
 		goto error;
 	}
 
-	page_size = info.page_size.physical();
+	page_size = info.page_size;
 	page_size_shift = get_bit_shift(page_size);
 	msg("page size for %s is %zu bytes",
 	    src_path, page_size);
@@ -4906,9 +4924,9 @@ xtrabackup_apply_delta(
 		/* first block of block cluster */
 		offset = ((incremental_buffers * (page_size / 4))
 			 << page_size_shift);
-		success = os_file_read(IORequestRead, src_file,
-				       incremental_buffer, offset, page_size);
-		if (success != DB_SUCCESS) {
+		if (os_file_read(IORequestRead, src_file,
+				 incremental_buffer, offset, page_size)
+		    != DB_SUCCESS) {
 			goto error;
 		}
 
@@ -4938,10 +4956,10 @@ xtrabackup_apply_delta(
 		ut_a(last_buffer || page_in_buffer == page_size / 4);
 
 		/* read whole of the cluster */
-		success = os_file_read(IORequestRead, src_file,
-				       incremental_buffer,
-				       offset, page_in_buffer * page_size);
-		if (success != DB_SUCCESS) {
+		if (os_file_read(IORequestRead, src_file,
+				 incremental_buffer,
+				 offset, page_in_buffer * page_size)
+		    != DB_SUCCESS) {
 			goto error;
 		}
 
@@ -4987,9 +5005,9 @@ xtrabackup_apply_delta(
 				}
 			}
 
-			success = os_file_write(IORequestWrite,
-						dst_path, dst_file, buf, off, page_size);
-			if (success != DB_SUCCESS) {
+			if (os_file_write(IORequestWrite,
+					  dst_path, dst_file, buf, off,
+					  page_size) != DB_SUCCESS) {
 				goto error;
 			}
 		}
@@ -5132,7 +5150,7 @@ xb_process_datadir(
 	handle_datadir_entry_func_t	func)	/*!<in: callback */
 {
 	ulint		ret;
-	char		dbpath[OS_FILE_MAX_PATH+1];
+	char		dbpath[OS_FILE_MAX_PATH+2];
 	os_file_dir_t	dir;
 	os_file_dir_t	dbdir;
 	os_file_stat_t	dbinfo;
@@ -5467,7 +5485,7 @@ static bool xtrabackup_prepare_func(char** argv)
 		sync_check_init();
 		ut_d(sync_check_enable());
 		ut_crc32_init();
-		recv_sys_init();
+		recv_sys.create();
 		log_sys.create();
 		recv_recovery_on = true;
 
@@ -5704,26 +5722,24 @@ int check_privilege(
 }
 
 
-/******************************************************************//**
+/**
 Check DB user privileges according to the intended actions.
 
 Fetches DB user privileges, determines intended actions based on
 command-line arguments and prints missing privileges.
-May terminate application with EXIT_FAILURE exit code.*/
-static void
-check_all_privileges()
+@return whether all the necessary privileges are granted */
+static bool check_all_privileges()
 {
 	if (!mysql_connection) {
 		/* Not connected, no queries is going to be executed. */
-		return;
+		return true;
 	}
 
 	/* Fetch effective privileges. */
 	std::list<std::string> granted_privileges;
-	MYSQL_ROW row = 0;
 	MYSQL_RES* result = xb_mysql_query(mysql_connection, "SHOW GRANTS",
-		true);
-	while ((row = mysql_fetch_row(result))) {
+					   true);
+	while (MYSQL_ROW row = mysql_fetch_row(result)) {
 		granted_privileges.push_back(*row);
 	}
 	mysql_free_result(result);
@@ -5736,13 +5752,9 @@ check_all_privileges()
 		check_result |= check_privilege(
 			granted_privileges,
 			"RELOAD", "*", "*");
-	}
-
-	if (!opt_no_lock)
-	{
 		check_result |= check_privilege(
 			granted_privileges,
-		"PROCESS", "*", "*");
+			"PROCESS", "*", "*");
 	}
 
 	/* KILL ... */
@@ -5766,7 +5778,6 @@ check_all_privileges()
 	}
 
 	if (check_result & PRIVILEGE_ERROR) {
-		mysql_close(mysql_connection);
 		msg("Current privileges, as reported by 'SHOW GRANTS': ");
 		int n=1;
 		for (std::list<std::string>::const_iterator it = granted_privileges.begin();
@@ -5774,8 +5785,10 @@ check_all_privileges()
 			it++,n++) {
 				msg("  %d.%s", n, it->c_str());
 		}
-		die("Insufficient privileges");
+		return false;
 	}
+
+	return true;
 }
 
 bool
@@ -5842,8 +5855,8 @@ xb_init()
 		if (!get_mysql_vars(mysql_connection)) {
 			return(false);
 		}
-		if (opt_check_privileges) {
-			check_all_privileges();
+		if (opt_check_privileges && !check_all_privileges()) {
+			return(false);
 		}
 		history_start_time = time(NULL);
 

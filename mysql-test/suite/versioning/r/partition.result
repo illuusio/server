@@ -149,6 +149,8 @@ x	C	D
 1	1	1
 set @str= concat('select row_start from t1 partition (pn) into @ts0');
 prepare stmt from @str;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 execute stmt;
 drop prepare stmt;
 set @now= now(6);
@@ -160,6 +162,8 @@ execute select_pn;
 x	C	D
 set @str= concat('select row_start from t1 partition (p0) into @ts1');
 prepare stmt from @str;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 execute stmt;
 drop prepare stmt;
 select @ts0 = @ts1;
@@ -175,6 +179,8 @@ x	C	D
 2	1	1
 set @str= concat('select row_start from t1 partition (pn) into @ts0');
 prepare stmt from @str;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 execute stmt;
 drop prepare stmt;
 set @now= now(6);
@@ -190,14 +196,20 @@ drop prepare select_p0;
 drop prepare select_pn;
 set @str= concat('select row_start from t1 partition (p0) where x = 2 into @ts1');
 prepare stmt from @str;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 execute stmt;
 drop prepare stmt;
 set @str= concat('select row_end from t1 partition (p0) where x = 2 into @ts2');
 prepare stmt from @str;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 execute stmt;
 drop prepare stmt;
 set @str= concat('select row_start from t1 partition (pn) into @ts3');
 prepare stmt from @str;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 execute stmt;
 drop prepare stmt;
 select @ts0 = @ts1;
@@ -370,6 +382,8 @@ create or replace table t2 (f int);
 create or replace trigger tr before insert on t2
 for each row select table_rows from information_schema.tables
 where table_name = 't1' into @a;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 insert into t2 values (1);
 # MDEV-14740 Locking assertion for system_time partitioning
 create or replace table t1 (i int) with system versioning
@@ -379,15 +393,9 @@ partition pn current);
 create or replace table t2 (f int);
 create or replace trigger tr before insert on t2
 for each row select count(*) from t1 into @a;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 insert into t2 values (1);
-# MDEV-14741 Assertion `(trx)->start_file == 0' failed in row_truncate_table_for_mysql()
-create or replace table t1 (i int) with system versioning
-partition by system_time interval 1 hour (
-partition p1 history,
-partition pn current);
-set autocommit= off;
-truncate table t1;
-set autocommit= on;
 # MDEV-14747 ALTER PARTITION BY SYSTEM_TIME after LOCK TABLES
 create or replace table t1 (x int) with system versioning;
 lock table t1 write;
@@ -440,7 +448,7 @@ partition_name	partition_ordinal_position	partition_method	timediff(partition_de
 p0	1	SYSTEM_TIME	00:00:00.000000
 pn	2	SYSTEM_TIME	NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: 'CURRENT'
+Warning	1292	Incorrect time value: 'CURRENT'
 alter table t1 add partition (partition p1 history, partition p2 history);
 select partition_name,partition_ordinal_position,partition_method,timediff(partition_description, @ts) from information_schema.partitions where table_schema='test' and table_name='t1';
 partition_name	partition_ordinal_position	partition_method	timediff(partition_description, @ts)
@@ -449,7 +457,7 @@ p1	2	SYSTEM_TIME	01:00:00.000000
 p2	3	SYSTEM_TIME	02:00:00.000000
 pn	4	SYSTEM_TIME	NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: 'CURRENT'
+Warning	1292	Incorrect time value: 'CURRENT'
 alter table t1 drop partition p0;
 select partition_name,partition_ordinal_position,partition_method,timediff(partition_description, @ts) from information_schema.partitions where table_schema='test' and table_name='t1';
 partition_name	partition_ordinal_position	partition_method	timediff(partition_description, @ts)
@@ -457,7 +465,7 @@ p1	1	SYSTEM_TIME	01:00:00.000000
 p2	2	SYSTEM_TIME	02:00:00.000000
 pn	3	SYSTEM_TIME	NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: 'CURRENT'
+Warning	1292	Incorrect time value: 'CURRENT'
 alter table t1 drop partition p2;
 ERROR HY000: Can only drop oldest partitions when rotating by INTERVAL
 select partition_name,partition_ordinal_position,partition_method,timediff(partition_description, @ts) from information_schema.partitions where table_schema='test' and table_name='t1';
@@ -466,7 +474,7 @@ p1	1	SYSTEM_TIME	01:00:00.000000
 p2	2	SYSTEM_TIME	02:00:00.000000
 pn	3	SYSTEM_TIME	NULL
 Warnings:
-Warning	1292	Truncated incorrect time value: 'CURRENT'
+Warning	1292	Incorrect time value: 'CURRENT'
 #
 # MDEV-15103 Assertion in ha_partition::part_records() for updating VIEW
 #

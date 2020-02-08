@@ -37,6 +37,8 @@ create index Language on CountryLanguage(Language);
 create index CityName on City(Name);
 alter table City change population population int(11) null default 0;
 select max(id) from City into @max_city_id;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 insert into City values (@max_city_id + 1,'Kilifarevo','BGR',NULL);
 SELECT COUNT(*) FROM Country;
 COUNT(*)
@@ -63,7 +65,7 @@ Name LIKE 'L%') AND
 surfacearea > 1000000;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	Country	ALL	Name,SurfaceArea	NULL	NULL	NULL	239	Using where
-2	MATERIALIZED	City	ALL	Population,Country	NULL	NULL	NULL	4080	Using where
+2	MATERIALIZED	City	ALL	Population,Country	NULL	NULL	NULL	4079	Using where
 SELECT Name FROM Country
 WHERE (EXISTS (select 1 from City where City.Population > 100000 and
 Code = Country) OR

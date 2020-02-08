@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2016, 2019, MariaDB Corporation.
+Copyright (c) 2016, 2018, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -44,11 +44,8 @@ Created 4/20/1996 Heikki Tuuri
 #include "buf0lru.h"
 #include "fts0fts.h"
 #include "fts0types.h"
-
 #ifdef WITH_WSREP
-#include <mysql/service_wsrep.h>
-#include "../../../wsrep/wsrep_api.h"
-#include "wsrep_mysqld_c.h"
+#include "wsrep_mysqld.h"
 #endif /* WITH_WSREP */
 
 /*************************************************************************
@@ -1047,11 +1044,11 @@ func_exit:
 
 #ifdef WITH_WSREP
 dberr_t wsrep_append_foreign_key(trx_t *trx,
-				dict_foreign_t*	foreign,
-				const rec_t*	clust_rec,
-				dict_index_t*	clust_index,
-				ibool		referenced,
-				enum wsrep_key_type key_type);
+			       dict_foreign_t*	foreign,
+			       const rec_t*	clust_rec,
+			       dict_index_t*	clust_index,
+			       ibool		referenced,
+			       Wsrep_service_key_type	key_type);
 #endif /* WITH_WSREP */
 
 /*********************************************************************//**
@@ -1274,8 +1271,10 @@ row_ins_foreign_check_on_constraint(
 	}
 
 	if (table->fts) {
-		doc_id = fts_get_doc_id_from_rec(table, clust_rec,
-						 clust_index, tmp_heap);
+		doc_id = fts_get_doc_id_from_rec(
+			clust_rec, clust_index,
+			rec_get_offsets(clust_rec, clust_index, NULL, true,
+					ULINT_UNDEFINED, &tmp_heap));
 	}
 
 	if (node->is_delete
@@ -1431,8 +1430,9 @@ row_ins_foreign_check_on_constraint(
 	cascade->state = UPD_NODE_UPDATE_CLUSTERED;
 
 #ifdef WITH_WSREP
-	err = wsrep_append_foreign_key(trx, foreign, cascade->pcur->old_rec, clust_index,
-				       FALSE, WSREP_KEY_EXCLUSIVE);
+	err = wsrep_append_foreign_key(trx, foreign, cascade->pcur->old_rec,
+				       clust_index,
+				       FALSE, WSREP_SERVICE_KEY_EXCLUSIVE);
 	if (err != DB_SUCCESS) {
 		fprintf(stderr,
 			"WSREP: foreign key append failed: %d\n", err);
@@ -1544,7 +1544,7 @@ row_ins_set_exclusive_rec_lock(
 /***************************************************************//**
 Checks if foreign key constraint fails for an index entry. Sets shared locks
 which lock either the success or the failure of the constraint. NOTE that
-the caller must have a shared latch on dict_operation_lock.
+the caller must have a shared latch on dict_sys.latch.
 @return DB_SUCCESS, DB_NO_REFERENCED_ROW, or DB_ROW_IS_REFERENCED */
 dberr_t
 row_ins_check_foreign_constraint(
@@ -1585,7 +1585,7 @@ row_ins_check_foreign_constraint(
 	upd_node= NULL;
 #endif /* WITH_WSREP */
 
-	ut_ad(rw_lock_own(&dict_operation_lock, RW_LOCK_S));
+	ut_ad(rw_lock_own(&dict_sys.latch, RW_LOCK_S));
 
 	err = DB_SUCCESS;
 
@@ -1824,32 +1824,16 @@ row_ins_check_foreign_constraint(
 				if (check_ref) {
 					err = DB_SUCCESS;
 #ifdef WITH_WSREP
-					if (!wsrep_on(trx->mysql_thd)) {
-						goto end_scan;
-					}
-					enum wsrep_key_type key_type;
-					if (upd_node != NULL) {
-						key_type = WSREP_KEY_SHARED;
-					} else {
-						switch (wsrep_certification_rules) {
-						default:
-						case WSREP_CERTIFICATION_RULES_STRICT:
-							key_type = WSREP_KEY_EXCLUSIVE;
-							break;
-						case WSREP_CERTIFICATION_RULES_OPTIMIZED:
-							key_type = WSREP_KEY_SEMI;
-							break;
-						}
-					}
-
 					err = wsrep_append_foreign_key(
-						trx,
+						thr_get_trx(thr),
 						foreign,
 						rec,
 						check_index,
 						check_ref,
-						key_type);
-
+						(upd_node != NULL
+						 && wsrep_protocol_version < 4)
+						? WSREP_SERVICE_KEY_SHARED
+						: WSREP_SERVICE_KEY_REFERENCE);
 					if (err != DB_SUCCESS) {
 						fprintf(stderr,
 							"WSREP: foreign key append failed: %d\n", err);
@@ -2032,7 +2016,7 @@ row_ins_check_foreign_constraints(
 			}
 
 			/* NOTE that if the thread ends up waiting for a lock
-			we will release dict_operation_lock temporarily!
+			we will release dict_sys.latch temporarily!
 			But the counter on the table protects the referenced
 			table from being dropped while the check is running. */
 
@@ -2632,25 +2616,32 @@ row_ins_clust_index_entry_low(
 	} else {
 		index->set_modified(mtr);
 
-		if (mode == BTR_MODIFY_LEAF
-		    && dict_index_is_online_ddl(index)) {
-			mode = BTR_MODIFY_LEAF_ALREADY_S_LATCHED;
-			mtr_s_lock_index(index, &mtr);
-		}
+		if (UNIV_UNLIKELY(entry->is_metadata())) {
+			ut_ad(index->is_instant());
+			ut_ad(!dict_index_is_online_ddl(index));
+			ut_ad(mode == BTR_MODIFY_TREE);
+		} else {
+			if (mode == BTR_MODIFY_LEAF
+			    && dict_index_is_online_ddl(index)) {
+				mode = BTR_MODIFY_LEAF_ALREADY_S_LATCHED;
+				mtr_s_lock_index(index, &mtr);
+			}
 
-		if (unsigned ai = index->table->persistent_autoinc) {
-			/* Prepare to persist the AUTO_INCREMENT value
-			from the index entry to PAGE_ROOT_AUTO_INC. */
-			const dfield_t* dfield = dtuple_get_nth_field(
-				entry, ai - 1);
-			auto_inc = dfield_is_null(dfield)
-				? 0
-				: row_parse_int(static_cast<const byte*>(
+			if (unsigned ai = index->table->persistent_autoinc) {
+				/* Prepare to persist the AUTO_INCREMENT value
+				from the index entry to PAGE_ROOT_AUTO_INC. */
+				const dfield_t* dfield = dtuple_get_nth_field(
+					entry, ai - 1);
+				if (!dfield_is_null(dfield)) {
+					auto_inc = row_parse_int(
+						static_cast<const byte*>(
 							dfield->data),
 						dfield->len,
 						dfield->type.mtype,
 						dfield->type.prtype
 						& DATA_UNSIGNED);
+				}
+			}
 		}
 	}
 
@@ -2680,35 +2671,25 @@ row_ins_clust_index_entry_low(
 #endif /* UNIV_DEBUG */
 
 	if (UNIV_UNLIKELY(entry->info_bits != 0)) {
-		ut_ad(entry->info_bits == REC_INFO_METADATA);
+		ut_ad(entry->is_metadata());
 		ut_ad(flags == BTR_NO_LOCKING_FLAG);
 		ut_ad(index->is_instant());
 		ut_ad(!dict_index_is_online_ddl(index));
 
 		const rec_t* rec = btr_cur_get_rec(cursor);
 
-		switch (rec_get_info_bits(rec, page_rec_is_comp(rec))
-			& (REC_INFO_MIN_REC_FLAG | REC_INFO_DELETED_FLAG)) {
-		case REC_INFO_MIN_REC_FLAG:
+		if (rec_get_info_bits(rec, page_rec_is_comp(rec))
+		    & REC_INFO_MIN_REC_FLAG) {
 			thr_get_trx(thr)->error_info = index;
 			err = DB_DUPLICATE_KEY;
 			goto err_exit;
-		case REC_INFO_MIN_REC_FLAG | REC_INFO_DELETED_FLAG:
-			/* The metadata record never carries the delete-mark
-			in MariaDB Server 10.3.
-			If a table loses its 'instantness', it happens
-			by the rollback of this first-time insert, or
-			by a call to btr_page_empty() on the root page
-			when the table becomes empty. */
-			err = DB_CORRUPTION;
-			goto err_exit;
-		default:
-			ut_ad(!row_ins_must_modify_rec(cursor));
-			goto do_insert;
 		}
+
+		ut_ad(!row_ins_must_modify_rec(cursor));
+		goto do_insert;
 	}
 
-	if (rec_is_metadata(btr_cur_get_rec(cursor), index)) {
+	if (rec_is_metadata(btr_cur_get_rec(cursor), *index)) {
 		goto do_insert;
 	}
 
@@ -3068,9 +3049,9 @@ row_ins_sec_index_entry_low(
 			if (!index->is_committed()) {
 				ut_ad(!thr_get_trx(thr)
 				      ->dict_operation_lock_mode);
-				mutex_enter(&dict_sys->mutex);
+				mutex_enter(&dict_sys.mutex);
 				dict_set_corrupted_index_cache_only(index);
-				mutex_exit(&dict_sys->mutex);
+				mutex_exit(&dict_sys.mutex);
 				/* Do not return any error to the
 				caller. The duplicate will be reported
 				by ALTER TABLE or CREATE UNIQUE INDEX.
@@ -3213,9 +3194,27 @@ row_ins_clust_index_entry(
 
 	n_uniq = dict_index_is_unique(index) ? index->n_uniq : 0;
 
+#ifdef WITH_WSREP
+	const bool skip_locking
+		= wsrep_thd_skip_locking(thr_get_trx(thr)->mysql_thd);
+	ulint	flags = index->table->no_rollback() ? BTR_NO_ROLLBACK
+		: (index->table->is_temporary() || skip_locking)
+		? BTR_NO_LOCKING_FLAG : 0;
+#ifdef UNIV_DEBUG
+	if (skip_locking && strcmp(wsrep_get_sr_table_name(),
+                                   index->table->name.m_name)) {
+		WSREP_ERROR("Record locking is disabled in this thread, "
+			    "but the table being modified is not "
+			    "`%s`: `%s`.", wsrep_get_sr_table_name(),
+			    index->table->name.m_name);
+		ut_error;
+	}
+#endif /* UNIV_DEBUG */
+#else
 	ulint	flags = index->table->no_rollback() ? BTR_NO_ROLLBACK
 		: index->table->is_temporary()
 		? BTR_NO_LOCKING_FLAG : 0;
+#endif /* WITH_WSREP */
 	const ulint	orig_n_fields = entry->n_fields;
 
 	/* Try first optimistic descent to the B-tree */
@@ -3436,6 +3435,24 @@ row_ins_index_entry_set_vals(
 			ut_ad(dtuple_get_n_fields(row)
 			      == dict_table_get_n_cols(index->table));
 			row_field = dtuple_get_nth_v_field(row, v_col->v_pos);
+		} else if (col->is_dropped()) {
+			ut_ad(index->is_primary());
+
+			if (!(col->prtype & DATA_NOT_NULL)) {
+				field->data = NULL;
+				field->len = UNIV_SQL_NULL;
+				field->type.prtype = DATA_BINARY_TYPE;
+			} else {
+				ut_ad(col->len <= sizeof field_ref_zero);
+				ut_ad(ind_field->fixed_len <= col->len);
+				dfield_set_data(field, field_ref_zero,
+						ind_field->fixed_len);
+				field->type.prtype = DATA_NOT_NULL;
+			}
+
+			field->type.mtype = col->len
+				? DATA_FIXBINARY : DATA_BINARY;
+			continue;
 		} else {
 			row_field = dtuple_get_nth_field(
 				row, ind_field->col->ind);
@@ -3445,7 +3462,7 @@ row_ins_index_entry_set_vals(
 
 		/* Check column prefix indexes */
 		if (ind_field != NULL && ind_field->prefix_len > 0
-		    && dfield_get_len(row_field) != UNIV_SQL_NULL) {
+		    && len != UNIV_SQL_NULL) {
 
 			const	dict_col_t*	col
 				= dict_field_get_col(ind_field);
@@ -3499,7 +3516,8 @@ row_ins_index_entry_step(
 
 	ut_ad(dtuple_check_typed(node->row));
 
-	err = row_ins_index_entry_set_vals(node->index, node->entry, node->row);
+	err = row_ins_index_entry_set_vals(node->index, node->entry,
+					   node->row);
 
 	if (err != DB_SUCCESS) {
 		DBUG_RETURN(err);

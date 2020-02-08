@@ -1248,3 +1248,33 @@ CREATE TABLE t1 AS SELECT 18446744073709551615 AS c1, name_const('a',18446744073
 SHOW CREATE TABLE t1;
 SELECT * FROM t1;
 DROP TABLE t1;
+--echo #
+--echo # End of 10.3 tests
+--echo #
+
+--echo #
+--echo # Start of 10.4 tests
+--echo #
+
+--echo #
+--echo # MDEV-16309 Split ::create_tmp_field() into virtual methods in Item
+--echo #
+
+CREATE TABLE t1 (a INT);
+INSERT INTO t1 VALUES (1),(2),(3);
+DELIMITER $$;
+BEGIN NOT ATOMIC
+  DECLARE a TEXT;
+  DECLARE c CURSOR FOR SELECT NAME_CONST('x','y') FROM t1;
+  OPEN c;
+  FETCH c INTO a;
+  CLOSE c;
+  SELECT a;
+END;
+$$
+DELIMITER ;$$
+DROP TABLE t1;
+
+--echo #
+--echo # End of 10.4 tests
+--echo #

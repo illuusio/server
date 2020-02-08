@@ -323,7 +323,7 @@ public:
 	/** Whether the ADDED table record sync-ed after
 	crash recovery; protected by bg_threads_mutex */
 	unsigned	added_synced:1;
-	/** Whether the table holds dict_sys->mutex;
+	/** Whether the table holds dict_sys.mutex;
 	protected by bg_threads_mutex */
 	unsigned	dict_locked:1;
 
@@ -384,9 +384,9 @@ extern bool		fts_need_sync;
 
 #define	fts_que_graph_free(graph)			\
 do {							\
-	mutex_enter(&dict_sys->mutex);			\
+	mutex_enter(&dict_sys.mutex);			\
 	que_graph_free(graph);				\
-	mutex_exit(&dict_sys->mutex);			\
+	mutex_exit(&dict_sys.mutex);			\
 } while (0)
 
 /******************************************************************//**
@@ -584,17 +584,15 @@ fts_get_doc_id_from_row(
 						want to extract.*/
 
 /** Extract the doc id from the record that belongs to index.
-@param[in]	table	table
-@param[in]	rec	record contains FTS_DOC_ID
+@param[in]	rec	record containing FTS_DOC_ID
 @param[in]	index	index of rec
-@param[in]	heap	heap memory
+@param[in]	offsets	rec_get_offsets(rec,index)
 @return doc id that was extracted from rec */
 doc_id_t
 fts_get_doc_id_from_rec(
-        dict_table_t*           table,
-        const rec_t*            rec,
-        const dict_index_t*     index,
-        mem_heap_t*             heap);
+	const rec_t*		rec,
+	const dict_index_t*	index,
+	const offset_t*		offsets);
 
 /** Add new fts doc id to the update vector.
 @param[in]	table		the table that contains the FTS index.
@@ -751,7 +749,7 @@ FTS auxiliary INDEX table and clear the cache at the end.
 dberr_t fts_sync_table(dict_table_t* table, bool wait = true);
 
 /****************************************************************//**
-Free the query graph but check whether dict_sys->mutex is already
+Free the query graph but check whether dict_sys.mutex is already
 held */
 void
 fts_que_graph_free_check_lock(

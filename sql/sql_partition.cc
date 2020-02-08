@@ -533,15 +533,10 @@ static bool create_full_part_field_array(THD *thd, TABLE *table,
     full_part_field_array may be NULL if storage engine supports native
     partitioning.
   */
-  table->vcol_set= table->read_set= &part_info->full_part_field_set;
+  table->read_set= &part_info->full_part_field_set;
   if ((ptr= part_info->full_part_field_array))
     for (; *ptr; ptr++)
-    {
-      if ((*ptr)->vcol_info)
-        table->mark_virtual_col(*ptr);
-      else
-        bitmap_fast_test_and_set(table->read_set, (*ptr)->field_index);
-    }
+      table->mark_column_with_deps(*ptr);
   table->default_column_bitmaps();
 
 end:
@@ -843,7 +838,8 @@ static bool fix_fields_part_func(THD *thd, Item* func_expr, TABLE *table,
     goto end;
   table->get_fields_in_item_tree= true;
 
-  func_expr->walk(&Item::change_context_processor, 0, &lex.select_lex.context);
+  func_expr->walk(&Item::change_context_processor, 0,
+                  &lex.first_select_lex()->context);
   thd->where= "partition function";
   /*
     In execution we must avoid the use of thd->change_item_tree since
@@ -1571,7 +1567,7 @@ static bool check_vers_constants(THD *thd, partition_info *part_info)
   my_tz_OFFSET0->gmt_sec_to_TIME(&ltime, vers_info->interval.start);
   while ((el= it++)->id < hist_parts)
   {
-    if (date_add_interval(&ltime, vers_info->interval.type,
+    if (date_add_interval(thd, &ltime, vers_info->interval.type,
                           vers_info->interval.step))
       goto err;
     uint error= 0;
@@ -2667,7 +2663,7 @@ char *generate_partition_syntax(THD *thd, partition_info *part_info,
     default:
       DBUG_ASSERT(0);
       /* We really shouldn't get here, no use in continuing from here */
-      my_error(ER_OUT_OF_RESOURCES, MYF(ME_FATALERROR));
+      my_error(ER_OUT_OF_RESOURCES, MYF(ME_FATAL));
       DBUG_RETURN(NULL);
   }
   if (part_info->part_type == VERSIONING_PARTITION)
@@ -6079,7 +6075,7 @@ static bool mysql_change_partitions(ALTER_PARTITION_PARAM_TYPE *lpt)
                                                   lpt->pack_frm_data,
                                                   lpt->pack_frm_len))))
   {
-    file->print_error(error, MYF(error != ER_OUTOFMEMORY ? 0 : ME_FATALERROR));
+    file->print_error(error, MYF(error != ER_OUTOFMEMORY ? 0 : ME_FATAL));
   }
 
   if (mysql_trans_commit_alter_copy_data(thd))
@@ -8302,7 +8298,8 @@ static int get_part_iter_for_interval_via_mapping(partition_info *part_info,
              field->type() == MYSQL_TYPE_DATETIME))
         {
           /* Monotonic, but return NULL for dates with zeros in month/day. */
-          zero_in_start_date= field->get_date(&start_date, 0);
+          DBUG_ASSERT(field->cmp_type() == TIME_RESULT); // No rounding/truncation
+          zero_in_start_date= field->get_date(&start_date, date_mode_t(0));
           DBUG_PRINT("info", ("zero start %u %04d-%02d-%02d",
                               zero_in_start_date, start_date.year,
                               start_date.month, start_date.day));
@@ -8326,7 +8323,8 @@ static int get_part_iter_for_interval_via_mapping(partition_info *part_info,
         !part_info->part_expr->null_value)
     {
       MYSQL_TIME end_date;
-      bool zero_in_end_date= field->get_date(&end_date, 0);
+      DBUG_ASSERT(field->cmp_type() == TIME_RESULT); // No rounding/truncation
+      bool zero_in_end_date= field->get_date(&end_date, date_mode_t(0));
       /*
         This is an optimization for TO_DAYS()/TO_SECONDS() to avoid scanning
         the NULL partition for ranges that cannot include a date with 0 as

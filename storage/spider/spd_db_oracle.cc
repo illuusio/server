@@ -927,30 +927,22 @@ SPIDER_DB_ROW *spider_db_oracle_result::fetch_row_from_tmp_table(
 
 int spider_db_oracle_result::fetch_table_status(
   int mode,
-  ha_rows &records,
-  ulong &mean_rec_length,
-  ulonglong &data_file_length,
-  ulonglong &max_data_file_length,
-  ulonglong &index_file_length,
-  ulonglong &auto_increment_value,
-  time_t &create_time,
-  time_t &update_time,
-  time_t &check_time
+  ha_statistics &stat
 ) {
   DBUG_ENTER("spider_db_oracle_result::fetch_table_status");
   DBUG_PRINT("info",("spider this=%p", this));
   /* TODO: develop later */
-  records = 2;
-  mean_rec_length = 65535;
-  data_file_length = 65535;
-  max_data_file_length = 65535;
-  index_file_length = 65535;
+  stat.records = 2;
+  stat.mean_rec_length = 65535;
+  stat.data_file_length = 65535;
+  stat.max_data_file_length = 65535;
+  stat.index_file_length = 65535;
 /*
   auto_increment_value = 0;
 */
-  create_time = (time_t) 0;
-  update_time = (time_t) 0;
-  check_time = (time_t) 0;
+  stat.create_time = (time_t) 0;
+  stat.update_time = (time_t) 0;
+  stat.check_time = (time_t) 0;
   DBUG_RETURN(0);
 }
 
@@ -1349,7 +1341,7 @@ int spider_db_oracle::connect(
   this->connect_retry_interval = connect_retry_interval;
   if ((error_num = spider_create_conn_thread(conn)))
     DBUG_RETURN(error_num);
-  spider_bg_conn_simple_action(conn, SPIDER_BG_SIMPLE_CONNECT, TRUE, NULL,
+  spider_bg_conn_simple_action(conn, SPIDER_SIMPLE_CONNECT, TRUE, NULL,
     0, NULL);
 
   if (stored_error_num)
@@ -1440,7 +1432,7 @@ void spider_db_oracle::disconnect()
   DBUG_PRINT("info",("spider this=%p", this));
   if (!conn->bg_init)
     DBUG_VOID_RETURN;
-  spider_bg_conn_simple_action(conn, SPIDER_BG_SIMPLE_DISCONNECT, TRUE, NULL,
+  spider_bg_conn_simple_action(conn, SPIDER_SIMPLE_DISCONNECT, TRUE, NULL,
     0, NULL);
   DBUG_VOID_RETURN;
 }
@@ -1737,6 +1729,22 @@ uint spider_db_oracle::affected_rows()
   DBUG_ENTER("spider_db_oracle::affected_rows");
   DBUG_PRINT("info",("spider this=%p", this));
   DBUG_RETURN(update_rows);
+}
+
+uint spider_db_oracle::matched_rows()
+{
+  DBUG_ENTER("spider_db_oracle::matched_rows");
+  DBUG_PRINT("info",("spider this=%p", this));
+  DBUG_RETURN(0);
+}
+
+bool spider_db_oracle::inserted_info(
+  spider_db_handler *handler,
+  ha_copy_info *copy_info
+) {
+  DBUG_ENTER("spider_db_oracle::inserted_info");
+  DBUG_PRINT("info",("spider this=%p", this));
+  DBUG_RETURN(FALSE);
 }
 
 ulonglong spider_db_oracle::last_insert_id()
@@ -2099,6 +2107,40 @@ int spider_db_oracle::set_sql_log_off(
   int *need_mon
 ) {
   DBUG_ENTER("spider_db_oracle::set_sql_log_off");
+  DBUG_PRINT("info",("spider this=%p", this));
+  /* nothing to do */
+  DBUG_RETURN(0);
+}
+
+bool spider_db_oracle::set_wait_timeout_in_bulk_sql()
+{
+  DBUG_ENTER("spider_db_oracle::set_wait_timeout_in_bulk_sql");
+  DBUG_PRINT("info",("spider this=%p", this));
+  DBUG_RETURN(FALSE);
+}
+
+int spider_db_oracle::set_wait_timeout(
+  int wait_timeout,
+  int *need_mon
+) {
+  DBUG_ENTER("spider_db_oracle::set_wait_timeout");
+  DBUG_PRINT("info",("spider this=%p", this));
+  /* nothing to do */
+  DBUG_RETURN(0);
+}
+
+bool spider_db_oracle::set_sql_mode_in_bulk_sql()
+{
+  DBUG_ENTER("spider_db_oracle::set_sql_mode_in_bulk_sql");
+  DBUG_PRINT("info",("spider this=%p", this));
+  DBUG_RETURN(FALSE);
+}
+
+int spider_db_oracle::set_sql_mode(
+  sql_mode_t sql_mode,
+  int *need_mon
+) {
+  DBUG_ENTER("spider_db_oracle::set_sql_mode");
   DBUG_PRINT("info",("spider this=%p", this));
   /* nothing to do */
   DBUG_RETURN(0);
@@ -2519,6 +2561,57 @@ int spider_db_oracle_util::append_name_with_charset(
   DBUG_RETURN(0);
 }
 
+int spider_db_oracle_util::append_escaped_name(
+  spider_string *str,
+  const char *name,
+  uint name_length
+) {
+  int error_num;
+  DBUG_ENTER("spider_db_oracle_util::append_name");
+  if (str->reserve(SPIDER_SQL_NAME_QUOTE_LEN * 2 + name_length * 2))
+  {
+    DBUG_RETURN(HA_ERR_OUT_OF_MEM);
+  }
+  str->q_append(SPIDER_SQL_NAME_QUOTE_STR, SPIDER_SQL_NAME_QUOTE_LEN);
+  if ((error_num = spider_db_append_name_with_quote_str_internal(
+    str, name, name_length, dbton_id)))
+  {
+    DBUG_RETURN(error_num);
+  }
+  if (str->reserve(SPIDER_SQL_NAME_QUOTE_LEN))
+  {
+    DBUG_RETURN(HA_ERR_OUT_OF_MEM);
+  }
+  str->q_append(SPIDER_SQL_NAME_QUOTE_STR, SPIDER_SQL_NAME_QUOTE_LEN);
+  DBUG_RETURN(0);
+}
+
+int spider_db_oracle_util::append_escaped_name_with_charset(
+  spider_string *str,
+  const char *name,
+  uint name_length,
+  CHARSET_INFO *name_charset
+) {
+  int error_num;
+  DBUG_ENTER("spider_db_oracle_util::append_name_with_charset");
+  if (str->reserve(SPIDER_SQL_NAME_QUOTE_LEN * 2 + name_length * 2))
+  {
+    DBUG_RETURN(HA_ERR_OUT_OF_MEM);
+  }
+  str->q_append(SPIDER_SQL_NAME_QUOTE_STR, SPIDER_SQL_NAME_QUOTE_LEN);
+  if ((error_num = spider_db_append_name_with_quote_str_internal(
+    str, name, name_length, name_charset, dbton_id)))
+  {
+    DBUG_RETURN(error_num);
+  }
+  if (str->reserve(SPIDER_SQL_NAME_QUOTE_LEN))
+  {
+    DBUG_RETURN(HA_ERR_OUT_OF_MEM);
+  }
+  str->q_append(SPIDER_SQL_NAME_QUOTE_STR, SPIDER_SQL_NAME_QUOTE_LEN);
+  DBUG_RETURN(0);
+}
+
 bool spider_db_oracle_util::is_name_quote(
   const char head_code
 ) {
@@ -2805,6 +2898,26 @@ int spider_db_oracle_util::append_sql_log_off(
   bool sql_log_off
 ) {
   DBUG_ENTER("spider_db_oracle_util::append_sql_log_off");
+  DBUG_PRINT("info",("spider this=%p", this));
+  /* nothing to do */
+  DBUG_RETURN(0);
+}
+
+int spider_db_oracle_util::append_wait_timeout(
+  spider_string *str,
+  int wait_timeout
+) {
+  DBUG_ENTER("spider_db_oracle_util::append_wait_timeout");
+  DBUG_PRINT("info",("spider this=%p", this));
+  /* nothing to do */
+  DBUG_RETURN(0);
+}
+
+int spider_db_oracle_util::append_sql_mode(
+  spider_string *str,
+  sql_mode_t sql_mode
+) {
+  DBUG_ENTER("spider_db_oracle_util::append_sql_mode");
   DBUG_PRINT("info",("spider this=%p", this));
   /* nothing to do */
   DBUG_RETURN(0);
@@ -4016,13 +4129,31 @@ int spider_db_oracle_util::open_item_func(
     case Item_func::LE_FUNC:
     case Item_func::GE_FUNC:
     case Item_func::GT_FUNC:
-    case Item_func::LIKE_FUNC:
       if (str)
       {
         func_name = (char*) item_func->func_name();
         func_name_length = strlen(func_name);
       }
       break;
+    case Item_func::LIKE_FUNC:
+#ifdef SPIDER_LIKE_FUNC_HAS_GET_NEGATED
+      if (str)
+      {
+         if (((Item_func_like *)item_func)->get_negated())
+         {
+            func_name = SPIDER_SQL_NOT_LIKE_STR;
+            func_name_length = SPIDER_SQL_NOT_LIKE_LEN;
+         }
+         else
+         {
+            func_name = (char*)item_func->func_name();
+            func_name_length = strlen(func_name);
+         }
+      }
+      break;
+#else
+      DBUG_RETURN(ER_SPIDER_COND_SKIP_NUM);
+#endif
     default:
       THD *thd = spider->trx->thd;
       SPIDER_SHARE *share = spider->share;
@@ -5380,10 +5511,12 @@ int spider_oracle_handler::init()
   }
   sql.set_charset(share->access_charset);
   sql_part.set_charset(share->access_charset);
+  sql_part2.set_charset(share->access_charset);
   ha_sql.set_charset(share->access_charset);
   insert_sql.set_charset(share->access_charset);
   update_sql.set_charset(share->access_charset);
   tmp_sql.set_charset(share->access_charset);
+  dup_update_sql.set_charset(share->access_charset);
   upd_tmp_tbl_prm.init();
   upd_tmp_tbl_prm.field_count = 1;
   if (!(link_for_hash = (SPIDER_LINK_FOR_HASH *)
@@ -11096,15 +11229,15 @@ int spider_oracle_handler::show_table_status(
     if (error_num)
       DBUG_RETURN(error_num);
 */
-    if (!share->records)
-      share->records = 10000;
-    share->mean_rec_length = 65535;
-    share->data_file_length = 65535;
-    share->max_data_file_length = 65535;
-    share->index_file_length = 65535;
-    share->create_time = (time_t) 0;
-    share->update_time = (time_t) 0;
-    share->check_time = (time_t) 0;
+    if (!share->stat.records)
+      share->stat.records = 10000;
+    share->stat.mean_rec_length = 65535;
+    share->stat.data_file_length = 65535;
+    share->stat.max_data_file_length = 65535;
+    share->stat.index_file_length = 65535;
+    share->stat.create_time = (time_t) 0;
+    share->stat.update_time = (time_t) 0;
+    share->stat.check_time = (time_t) 0;
   } else {
     pthread_mutex_lock(&conn->mta_conn_mutex);
     SPIDER_SET_FILE_POS(&conn->mta_conn_mutex_file_pos);
@@ -11188,16 +11321,9 @@ int spider_oracle_handler::show_table_status(
     pthread_mutex_unlock(&conn->mta_conn_mutex);
     error_num = res->fetch_table_status(
       sts_mode,
-      share->records,
-      share->mean_rec_length,
-      share->data_file_length,
-      share->max_data_file_length,
-      share->index_file_length,
-      auto_increment_value,
-      share->create_time,
-      share->update_time,
-      share->check_time
+      share->stat
     );
+    auto_increment_value = share->stat.auto_increment_value;
     res->free_result();
     delete res;
     if (error_num)
@@ -12725,7 +12851,7 @@ int spider_oracle_handler::append_list_item_select(
     ))
       DBUG_RETURN(HA_ERR_OUT_OF_MEM);
     str->q_append(SPIDER_SQL_SPACE_STR, SPIDER_SQL_SPACE_LEN);
-    if ((error_num = spider_db_oracle_utility.append_name(str,
+    if ((error_num = spider_db_oracle_utility.append_escaped_name(str,
       item_name, length)))
     {
       DBUG_RETURN(error_num);

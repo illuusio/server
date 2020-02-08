@@ -47,7 +47,8 @@ int maria_lock_database(MARIA_HA *info, int lock_type)
   }
 
   error=0;
-  mysql_mutex_lock(&share->intern_lock);
+  if (!info->intern_lock_locked)
+    mysql_mutex_lock(&share->intern_lock);
   if (share->kfile.file >= 0)		/* May only be false on windows */
   {
     switch (lock_type) {
@@ -234,7 +235,8 @@ int maria_lock_database(MARIA_HA *info, int lock_type)
     }
   }
 #endif
-  mysql_mutex_unlock(&share->intern_lock);
+  if (!info->intern_lock_locked)
+    mysql_mutex_unlock(&share->intern_lock);
   DBUG_RETURN(error);
 } /* maria_lock_database */
 
@@ -454,7 +456,7 @@ int _ma_mark_file_changed_now(register MARIA_SHARE *share)
     }
     /* Set uuid of file if not yet set (zerofilled file) */
     if (share->base.born_transactional &&
-        !(share->state.changed & STATE_NOT_MOVABLE))
+        !(share->state.org_changed & STATE_NOT_MOVABLE))
     {
       /* Lock table to current installation */
       if (_ma_set_uuid(share, 0) ||
@@ -464,6 +466,7 @@ int _ma_mark_file_changed_now(register MARIA_SHARE *share)
                                      TRUE, TRUE)))
         goto err;
       share->state.changed|= STATE_NOT_MOVABLE;
+      share->state.org_changed|= STATE_NOT_MOVABLE;
     }
   }
   error= 0;

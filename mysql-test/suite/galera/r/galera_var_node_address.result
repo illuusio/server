@@ -1,3 +1,5 @@
+connection node_2;
+connection node_1;
 call  mtr.add_suppression("WSREP: Stray state UUID msg: .*");
 call  mtr.add_suppression("WSREP: Protocol violation. JOIN message sender .*");
 call  mtr.add_suppression("WSREP: Sending JOIN failed: .*");

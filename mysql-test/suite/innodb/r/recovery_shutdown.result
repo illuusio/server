@@ -66,7 +66,10 @@ connection default;
 SET GLOBAL innodb_flush_log_at_trx_commit=1;
 CREATE TABLE u(a SERIAL) ENGINE=INNODB;
 FLUSH TABLES;
+# restart
+# restart
 XA RECOVER;
 formatID	gtrid_length	bqual_length	data
 1	1	0	x
+# restart
 DROP TABLE t,u;

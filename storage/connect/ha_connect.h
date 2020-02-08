@@ -388,7 +388,7 @@ virtual int check(THD* thd, HA_CHECK_OPT* check_opt);
     We implement this in ha_connect.cc. It's not an obligatory method;
     skip it and and MySQL will treat it as not implemented.
   */
-  int write_row(uchar *buf);
+  int write_row(const uchar *buf);
 
   /** @brief
     We implement this in ha_connect.cc. It's not an obligatory method;
@@ -549,3 +549,7 @@ public:
   uint    int_table_flags;            // Inherited from MyISAM
   bool    enable_activate_all_index;  // Inherited from MyISAM
 };  // end of ha_connect class definition
+
+#if defined(JAVA_SUPPORT) || defined(CMGO_SUPPORT)
+bool MongoEnabled(void);
+#endif   // JAVA_SUPPORT || CMGO_SUPPORT

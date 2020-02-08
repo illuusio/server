@@ -1,3 +1,5 @@
+connection node_2;
+connection node_1;
 
 # Execute FLUSH/RESET commands.
 # On node-1
@@ -1336,9 +1338,13 @@ show status like "Qcache_hits";
 Variable_name	Value
 Qcache_hits	12
 select * from t1 into outfile "query_cache.out.file";
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 select * from t1 into outfile "query_cache.out.file";
 ERROR HY000: File 'query_cache.out.file' already exists
 select * from t1 limit 1 into dumpfile "query_cache.dump.file";
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 show status like "Qcache_queries_in_cache";
 Variable_name	Value
 Qcache_queries_in_cache	0

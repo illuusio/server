@@ -34,16 +34,7 @@
 #include "sql_handler.h"                        // mysql_ha_rm_tables
 #include "sp_cache.h"                     // sp_invalidate_cache
 #include <mysys_err.h>
-
-LEX_CSTRING *make_lex_string(LEX_CSTRING *lex_str,
-                             const char* str, size_t length,
-                             MEM_ROOT *mem_root)
-{
-  if (!(lex_str->str= strmake_root(mem_root, str, length)))
-    return 0;
-  lex_str->length= length;
-  return lex_str;
-}
+#include "debug_sync.h"
 
 /*************************************************************************/
 
@@ -517,8 +508,7 @@ bool mysql_create_or_drop_trigger(THD *thd, TABLE_LIST *tables, bool create)
   }
 
 #ifdef WITH_WSREP
-  if (thd->wsrep_exec_mode == LOCAL_STATE)
-    WSREP_TO_ISOLATION_BEGIN(WSREP_MYSQL_DB, NULL, NULL);
+  WSREP_TO_ISOLATION_BEGIN(WSREP_MYSQL_DB, NULL, tables);
 #endif
 
   /* We should have only one table in table list. */
@@ -580,6 +570,17 @@ bool mysql_create_or_drop_trigger(THD *thd, TABLE_LIST *tables, bool create)
       goto end;
   }
 
+#ifdef WITH_WSREP
+  DBUG_EXECUTE_IF("sync.mdev_20225",
+                  {
+                    const char act[]=
+                      "now "
+                      "wait_for signal.mdev_20225_continue";
+                    DBUG_ASSERT(!debug_sync_set_action(thd,
+                                                       STRING_WITH_LEN(act)));
+                  };);
+#endif /* WITH_WSREP */
+
   result= (create ?
            table->triggers->create_trigger(thd, tables, &stmt_query):
            table->triggers->drop_trigger(thd, tables, &stmt_query));
@@ -622,9 +623,10 @@ end:
     my_ok(thd);
 
   DBUG_RETURN(result);
-
-WSREP_ERROR_LABEL:
+#ifdef WITH_WSREP
+wsrep_error_label:
   DBUG_RETURN(true);
+#endif
 }
 
 
@@ -1502,8 +1504,8 @@ bool Table_triggers_list::check_n_load(THD *thd, const LEX_CSTRING *db,
 
           if (likely((name= error_handler.get_trigger_name())))
           {
-            if (unlikely(!(make_lex_string(&trigger->name, name->str,
-                                           name->length, &table->mem_root))))
+            trigger->name= safe_lexcstrdup_root(&table->mem_root, *name);
+            if (unlikely(!trigger->name.str))
               goto err_with_lex_cleanup;
           }
           trigger->definer= ((!trg_definer || !trg_definer->length) ?
@@ -2312,12 +2314,10 @@ void Table_triggers_list::mark_fields_used(trg_event_type event)
         if (trg_field->field_idx != (uint)-1)
         {
           DBUG_PRINT("info", ("marking field: %d", trg_field->field_idx));
-          bitmap_set_bit(trigger_table->read_set, trg_field->field_idx);
           if (trg_field->get_settable_routine_parameter())
             bitmap_set_bit(trigger_table->write_set, trg_field->field_idx);
-          if (trigger_table->field[trg_field->field_idx]->vcol_info)
-            trigger_table->mark_virtual_col(trigger_table->
-                                            field[trg_field->field_idx]);
+          trigger_table->mark_column_with_deps(
+                                  trigger_table->field[trg_field->field_idx]);
         }
       }
     }

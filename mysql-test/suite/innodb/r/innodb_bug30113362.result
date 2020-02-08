@@ -33,6 +33,7 @@ call data_load_t1();
 DROP PROCEDURE data_load_t1;
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 SELECT CLUST_INDEX_SIZE FROM information_schema.INNODB_SYS_TABLESTATS WHERE NAME = 'test/t1';
 CLUST_INDEX_SIZE
@@ -75,6 +76,7 @@ connection con2;
 connection default;
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 SELECT CLUST_INDEX_SIZE FROM information_schema.INNODB_SYS_TABLESTATS WHERE NAME = 'test/t1';
 CLUST_INDEX_SIZE
@@ -111,6 +113,7 @@ disconnect con2;
 connection default;
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 SELECT CLUST_INDEX_SIZE FROM information_schema.INNODB_SYS_TABLESTATS WHERE NAME = 'test/t1';
 CLUST_INDEX_SIZE

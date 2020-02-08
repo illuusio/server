@@ -9,7 +9,7 @@ set @@optimizer_switch=ifnull(@optimizer_switch_for_subselect_test,
 "semijoin=on,firstmatch=on,loosescan=on,semijoin_with_cache=on,partial_match_rowid_merge=off,partial_match_table_scan=off");
 set join_cache_level=@join_cache_level_for_subselect_test;
 SET optimizer_switch='mrr=on,mrr_sort_keys=on,index_condition_pushdown=on';
-SET optimizer_use_condition_selectivity=1;
+SET optimizer_use_condition_selectivity=4;
 select (select 2);
 (select 2)
 2
@@ -86,7 +86,7 @@ SELECT 1 FROM (SELECT 1 as a) b WHERE 1 IN (SELECT (SELECT a));
 select (SELECT 1 FROM (SELECT 1) a PROCEDURE ANALYSE(1));
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'PROCEDURE ANALYSE(1))' at line 1
 SELECT 1 FROM (SELECT 1) a PROCEDURE ANALYSE((SELECT 1));
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'SELECT 1))' at line 1
+ERROR 42000: PROCEDURE does not support subqueries or stored functions
 SELECT (SELECT 1) as a FROM (SELECT 1) b WHERE (SELECT a) IS NULL;
 ERROR 42S22: Unknown column 'a' in 'field list'
 SELECT (SELECT 1) as a FROM (SELECT 1) b WHERE (SELECT a) IS NOT NULL;
@@ -183,7 +183,8 @@ select * from t2 where t2.b=(select a from t3 order by 1 desc limit 1);
 a	b
 1	7
 2	7
-(select * from t2 where t2.b=(select a from t3 order by 1 desc limit 1)) union (select * from t4 order by a limit 2) limit 3;
+(select * from t2 where t2.b=(select a from t3 order by 1 desc limit 1))
+union (select * from t4 order by a limit 2) order by a limit 3;
 a	b
 1	7
 2	7
@@ -1135,7 +1136,7 @@ ERROR 42S02: Table 'test.t1' doesn't exist
 CREATE TABLE t1 (a int, KEY(a));
 HANDLER t1 OPEN;
 HANDLER t1 READ a=((SELECT 1));
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'SELECT 1))' at line 1
+ERROR 42000: HANDLER..READ does not support subqueries or stored functions
 HANDLER t1 CLOSE;
 drop table t1;
 create table t1 (a int);
@@ -1633,7 +1634,7 @@ Note	1003	/* select#1 */ select `test`.`t1`.`s1` AS `s1`,!<in_optimizer>(`test`.
 explain extended select s1, s1 NOT IN (SELECT s1 FROM t2 WHERE s1 < 'a2') from t1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	t1	index	NULL	s1	6	NULL	3	100.00	Using index
-2	SUBQUERY	t2	index_subquery	s1	s1	6	func	2	100.00	Using index; Using where; Full scan on NULL key
+2	SUBQUERY	t2	index_subquery	s1	s1	6	func	2	50.00	Using index; Using where; Full scan on NULL key
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`s1` AS `s1`,!<in_optimizer>(`test`.`t1`.`s1`,<exists>(<index_lookup>(<cache>(`test`.`t1`.`s1`) in t2 on s1 checking NULL where `test`.`t2`.`s1` < 'a2' having trigcond(`test`.`t2`.`s1` is null)))) AS `s1 NOT IN (SELECT s1 FROM t2 WHERE s1 < 'a2')` from `test`.`t1`
 drop table t1,t2;
@@ -3104,13 +3105,18 @@ create table t1(a int, primary key (a));
 insert into t1 values (10);
 create table t2 (a int primary key, b varchar(32), c int, unique key b(c, b));
 insert into t2(a, c, b) values (1,10,'359'), (2,10,'35988'), (3,10,'35989');
+insert into t2(a, c, b) values (4,10,'360'), (5,10,'35998'), (6,10,'35999');
+analyze table t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
+test.t1	analyze	status	OK
 explain SELECT sql_no_cache t1.a, r.a, r.b FROM t1 LEFT JOIN t2 r
 ON r.a = (SELECT t2.a FROM t2 WHERE t2.c = t1.a AND t2.b <= '359899'
              ORDER BY t2.c DESC, t2.b DESC LIMIT 1) WHERE t1.a = 10;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	system	PRIMARY	NULL	NULL	NULL	1	
 1	PRIMARY	r	const	PRIMARY	PRIMARY	4	const	1	
-2	SUBQUERY	t2	range	b	b	40	NULL	2	Using where
+2	SUBQUERY	t2	range	b	b	40	NULL	3	Using where
 SELECT sql_no_cache t1.a, r.a, r.b FROM t1 LEFT JOIN t2 r
 ON r.a = (SELECT t2.a FROM t2 WHERE t2.c = t1.a AND t2.b <= '359899'
             ORDER BY t2.c DESC, t2.b DESC LIMIT 1) WHERE t1.a = 10;
@@ -3122,7 +3128,7 @@ ON r.a = (SELECT t2.a FROM t2 WHERE t2.c = t1.a AND t2.b <= '359899'
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	system	PRIMARY	NULL	NULL	NULL	1	
 1	PRIMARY	r	const	PRIMARY	PRIMARY	4	const	1	
-2	SUBQUERY	t2	range	b	b	40	NULL	2	Using index condition
+2	SUBQUERY	t2	range	b	b	40	NULL	3	Using index condition
 SELECT sql_no_cache t1.a, r.a, r.b FROM t1 LEFT JOIN t2 r
 ON r.a = (SELECT t2.a FROM t2 WHERE t2.c = t1.a AND t2.b <= '359899'
             ORDER BY t2.c, t2.b LIMIT 1) WHERE t1.a = 10;
@@ -3707,7 +3713,7 @@ ORDER BY t1.t DESC LIMIT 1);
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t2	system	NULL	NULL	NULL	NULL	1	
 1	PRIMARY	t1	index	NULL	PRIMARY	13	NULL	11	Using where; Using index
-2	SUBQUERY	t1	range	PRIMARY	PRIMARY	13	NULL	5	Using where; Using index
+2	SUBQUERY	t1	range	PRIMARY	PRIMARY	13	NULL	6	Using where; Using index
 SELECT * FROM t1,t2
 WHERE t1.t = (SELECT t1.t FROM t1
 WHERE t1.t < t2.t  AND t1.i2=1 AND t2.i1=t1.i1
@@ -3726,11 +3732,14 @@ SELECT sql_no_cache * FROM t1 WHERE NOT EXISTS
 i
 SELECT * FROM t1
 WHERE NOT EXISTS (((SELECT i FROM t1) UNION (SELECT i FROM t1)));
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION (SELECT i FROM t1)))' at line 2
+i
 explain select ((select t11.i from t1 t11) union (select t12.i from t1 t12))
 from t1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'union (select t12.i from t1 t12))
-from t1' at line 1
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	PRIMARY	t1	system	NULL	NULL	NULL	NULL	0	Const row not found
+2	SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
+3	UNION	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
+NULL	UNION RESULT	<union2,3>	ALL	NULL	NULL	NULL	NULL	NULL	
 explain select * from t1 where not exists
 ((select t11.i from t1 t11) union (select t12.i from t1 t12));
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -4973,7 +4982,7 @@ UNIQUE KEY b (b,c),
 KEY c (c),
 KEY b_2 (b)
 );
-INSERT INTO t3 VALUES (1,1,1), (2,32,1);
+INSERT INTO t3 VALUES (1,1,1), (2,32,1), (3,33,1), (4,34,2);
 explain
 SELECT t1.a, (SELECT 1 FROM t2 WHERE t2.b=t3.c AND t2.c=t1.a ORDER BY t2.d LIMIT 1) AS incorrect FROM t1, t3 WHERE t3.b=t1.a;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -5183,11 +5192,11 @@ a	1
 1	1
 2	1
 SELECT * FROM t1 JOIN ((SELECT 1 UNION SELECT 1)) ON 1;
-ERROR 42000: Every derived table must have its own alias
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'ON 1' at line 1
 SELECT * FROM t1 JOIN  (t1 t1a UNION SELECT 1)  ON 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'SELECT 1)  ON 1' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1)  ON 1' at line 1
 SELECT * FROM t1 JOIN ((t1 t1a UNION SELECT 1)) ON 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'SELECT 1)) ON 1' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1)) ON 1' at line 1
 SELECT * FROM t1 JOIN  (t1 t1a)  t1a ON 1;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 't1a ON 1' at line 1
 SELECT * FROM t1 JOIN ((t1 t1a)) t1a ON 1;
@@ -5286,13 +5295,16 @@ SELECT ( SELECT a FROM t1 WHERE a = 1 UNION SELECT 1 ), a FROM t1;
 SELECT * FROM t2 WHERE (a, b) IN (SELECT a, b FROM t2);
 a	b
 SELECT 1 UNION ( SELECT 1 UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 )' at line 1
+1
+1
 ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 ) UNION SELECT 1' at line 1
+1
+1
 SELECT ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) )
+1
 SELECT ( ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '' at line 1
 SELECT ( SELECT 1 UNION SELECT 1 UNION SELECT 1 );
 ( SELECT 1 UNION SELECT 1 UNION SELECT 1 )
 1
@@ -5300,9 +5312,9 @@ SELECT ((SELECT 1 UNION SELECT 1 UNION SELECT 1));
 ((SELECT 1 UNION SELECT 1 UNION SELECT 1))
 1
 SELECT * FROM ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '' at line 1
 SELECT * FROM ( ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1 );
-ERROR 42000: Every derived table must have its own alias
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '' at line 1
 SELECT * FROM ( ( SELECT 1 UNION SELECT 1 ) UNION SELECT 1 ) a;
 1
 1
@@ -5310,21 +5322,29 @@ SELECT * FROM ( SELECT 1 UNION SELECT 1 UNION SELECT 1 ) a;
 1
 1
 SELECT * FROM t1 WHERE a =     ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a = ALL ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a = ANY ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a IN    ( SELECT 1 UNION ( SELECT 1 UNION SELECT 1 ) );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 ) )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a =     ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a = ALL ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 )  UNION SELECT 1 )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a = ANY ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 )  UNION SELECT 1 )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a IN    ( ( SELECT 1 UNION SELECT 1 )  UNION SELECT 1 );
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 )' at line 1
+a
+1
 SELECT * FROM t1 WHERE a =     ( SELECT 1 UNION SELECT 1 UNION SELECT 1 );
 a
 1
@@ -7013,8 +7033,8 @@ SELECT * FROM t1
 WHERE a = (SELECT MAX(b) FROM t2 WHERE c IN (SELECT MAX(d) FROM t3)) OR a = 10;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	PRIMARY	t1	index	a	a	5	NULL	2	Using where; Using index
-2	SUBQUERY	<subquery3>	ALL	distinct_key	NULL	NULL	NULL	1	
-2	SUBQUERY	t2	ALL	NULL	NULL	NULL	NULL	2	Using where; Using join buffer (flat, BNL join)
+2	SUBQUERY	t2	ALL	NULL	NULL	NULL	NULL	2	Using where
+2	SUBQUERY	<subquery3>	eq_ref	distinct_key	distinct_key	4	test.t2.c	1	
 3	MATERIALIZED	t3	ALL	NULL	NULL	NULL	NULL	2	
 SELECT * FROM t1
 WHERE a = (SELECT MAX(b) FROM t2 WHERE c IN (SELECT MAX(d) FROM t3)) OR a = 10;
@@ -7073,12 +7093,6 @@ call procedure2();
 ControlRev
 NULL
 drop procedure procedure2;
-SELECT
-(SELECT user FROM mysql.user
-WHERE h.host in (SELECT host FROM mysql.user)
-) AS sq
-FROM mysql.host h GROUP BY h.host;
-sq
 #
 # MDEV-7846:Server crashes in Item_subselect::fix
 #_fields or fails with Thread stack overrun
@@ -7322,4 +7336,19 @@ pk	i	c	pk	i	c
 1	10	foo	1	10	foo
 DROP TABLE t;
 # End of 10.2 tests
+#
+# Start of 10.4 tests
+#
+#
+# MDEV-16861 Split Item::update_null_value() into a new virtual method in Type_handler
+#
+SELECT ROW(1,2) = EXISTS (SELECT 1);
+ERROR HY000: Illegal parameter data types row and boolean for operation '='
+SELECT ROW(1,2) = 1 IN (SELECT 1 UNION SELECT 2);
+ERROR HY000: Illegal parameter data types row and boolean for operation '='
+SELECT ROW(1,2) = (1 = ANY (SELECT 1 UNION SELECT 2));
+ERROR HY000: Illegal parameter data types row and boolean for operation '='
+#
+# End of 10.4 tests
+#
 set @optimizer_switch_for_subselect_test=null;

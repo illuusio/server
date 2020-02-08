@@ -710,7 +710,7 @@ drop table t1;
 --echo # Bug#15328 Segmentation fault occurred if my.cnf is invalid for escape sequence
 --echo #
 
---exec $MYSQL_MY_PRINT_DEFAULTS --config-file=$MYSQL_TEST_DIR/std_data/bug15328.cnf mysqldump
+--exec $MYSQL_MY_PRINT_DEFAULTS --defaults-file=$MYSQL_TEST_DIR/std_data/bug15328.cnf mysqldump
 
 --echo #
 --echo # Bug#19025 mysqldump doesn't correctly dump "auto_increment = [int]"
@@ -2365,7 +2365,7 @@ USE BUG52792;
 SET NAMES utf8;
 CREATE FUNCTION `straße` ( c1 CHAR(20))
   RETURNS CHAR(50) DETERMINISTIC
-RETURN CONCAT(']]>, ', s, '!');
+RETURN CONCAT(']]>, ', c1, '!');
 
 --exec $MYSQL_DUMP --default-character-set=utf8mb4 --character-sets-dir=$CHARSETSDIR --skip-comments --default-character-set=utf8 --compatible=mysql323 -R -X BUG52792
 

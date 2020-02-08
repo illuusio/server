@@ -65,7 +65,7 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
   File file= -1;
 
   DBUG_ENTER("create_temp_file");
-  DBUG_PRINT("enter", ("dir: %s, prefix: %s", dir, prefix));
+  DBUG_PRINT("enter", ("dir: %s, prefix: %s", dir ? dir : "(null)", prefix));
   DBUG_ASSERT((mode & (O_EXCL | O_TRUNC | O_CREAT | O_RDWR)) == 0);
 
   mode|= O_TRUNC | O_CREAT | O_RDWR; /* not O_EXCL, see Windows code below */
@@ -110,6 +110,35 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
     }
   }
 #elif defined(HAVE_MKSTEMP)
+  if (!dir && ! (dir =getenv("TMPDIR")))
+    dir= DEFAULT_TMPDIR;
+#ifdef O_TMPFILE
+  {
+    static int O_TMPFILE_works= 1;
+
+    if ((MyFlags & MY_TEMPORARY) && O_TMPFILE_works)
+    {
+      /* explictly don't use O_EXCL here has it has a different
+         meaning with O_TMPFILE
+      */
+      if ((file= open(dir, mode | O_TMPFILE | O_CLOEXEC,
+                      S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)) >= 0)
+      {
+        my_snprintf(to, FN_REFLEN, "%s/#sql/fd=%d", dir, file);
+        file=my_register_filename(file, to, FILE_BY_O_TMPFILE,
+                                  EE_CANTCREATEFILE, MyFlags);
+      }
+      else if (errno == EOPNOTSUPP || errno == EINVAL)
+      {
+        my_printf_error(EE_CANTCREATEFILE, "O_TMPFILE is not supported on %s "
+                        "(disabling future attempts)",
+                        MYF(ME_NOTE | ME_ERROR_LOG_ONLY), dir);
+        O_TMPFILE_works= 0;
+      }
+    }
+  }
+  if (file == -1)
+#endif /* O_TMPFILE */
   {
     char prefix_buff[30];
     uint pfx_len;
@@ -119,8 +148,6 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
 				    prefix ? prefix : "tmp.",
 				    sizeof(prefix_buff)-7),"XXXXXX") -
 		     prefix_buff);
-    if (!dir && ! (dir =getenv("TMPDIR")))
-      dir= DEFAULT_TMPDIR;
     if (strlen(dir)+ pfx_len > FN_REFLEN-2)
     {
       errno=my_errno= ENAMETOOLONG;
@@ -137,7 +164,7 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
     {
       int tmp=my_errno;
       close(org_file);
-      (void) my_delete(to, MYF(MY_WME | ME_NOINPUT));
+      (void) my_delete(to, MYF(MY_WME));
       my_errno=tmp;
     }
   }

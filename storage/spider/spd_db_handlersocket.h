@@ -34,6 +34,17 @@ public:
     uint name_length,
     CHARSET_INFO *name_charset
   );
+  int append_escaped_name(
+    spider_string *str,
+    const char *name,
+    uint name_length
+  );
+  int append_escaped_name_with_charset(
+    spider_string *str,
+    const char *name,
+    uint name_length,
+    CHARSET_INFO *name_charset
+  );
   bool is_name_quote(
     const char head_code
   );
@@ -58,6 +69,14 @@ public:
   int append_sql_log_off(
     spider_string *str,
     bool sql_log_off
+  );
+  int append_wait_timeout(
+    spider_string *str,
+    int wait_timeout
+  );
+  int append_sql_mode(
+    spider_string *str,
+    sql_mode_t sql_mode
   );
   int append_time_zone(
     spider_string *str,
@@ -211,15 +230,7 @@ public:
   );
   int fetch_table_status(
     int mode,
-    ha_rows &records,
-    ulong &mean_rec_length,
-    ulonglong &data_file_length,
-    ulonglong &max_data_file_length,
-    ulonglong &index_file_length,
-    ulonglong &auto_increment_value,
-    time_t &create_time,
-    time_t &update_time,
-    time_t &check_time
+    ha_statistics &stat
   );
   int fetch_table_records(
     int mode,
@@ -324,6 +335,11 @@ public:
   );
   int next_result();
   uint affected_rows();
+  uint matched_rows();
+  bool inserted_info(
+    spider_db_handler *handler,
+    spider_copy_info *copy_info
+  );
   ulonglong last_insert_id();
   int set_character_set(
     const char *csname
@@ -378,6 +394,16 @@ public:
   bool set_sql_log_off_in_bulk_sql();
   int set_sql_log_off(
     bool sql_log_off,
+    int *need_mon
+  );
+  bool set_wait_timeout_in_bulk_sql();
+  int set_wait_timeout(
+    int wait_timeout,
+    int *need_mon
+  );
+  bool set_sql_mode_in_bulk_sql();
+  int set_sql_mode(
+    sql_mode_t sql_mode,
     int *need_mon
   );
   bool set_time_zone_in_bulk_sql();

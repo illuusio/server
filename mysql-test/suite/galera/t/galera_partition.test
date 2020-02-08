@@ -1,5 +1,6 @@
 --source include/galera_cluster.inc
 --source include/have_partition.inc
+--source include/big_test.inc
 
 --connection node_1
 
@@ -406,16 +407,16 @@ insert into t1 (id, dt) values (350, '2010-12-17 00:00:00');
 SELECT COUNT(*) FROM t1;
 
 --connection node_2
-call mtr.add_suppression("WSREP: Sending JOIN failed:.*");
---send call p1(100);
+call mtr.add_suppression("WSREP: Sending JOIN failed:");
+send call p1(10);
 
 --connection node_3
-call mtr.add_suppression("WSREP: Sending JOIN failed:.*");
---send call p1(100);
+call mtr.add_suppression("WSREP: Sending JOIN failed:");
+send call p1(10);
 
 --connection node_4
-call mtr.add_suppression("WSREP: Sending JOIN failed:.*");
---send call p1(100);
+call mtr.add_suppression("WSREP: Sending JOIN failed:");
+send call p1(10);
 
 --connection node_1
 SET SESSION wsrep_OSU_method='RSU';

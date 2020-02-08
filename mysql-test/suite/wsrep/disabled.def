@@ -10,4 +10,4 @@
 #
 ##############################################################################
 
-variables : MDEV-17585 wsrep.variables
+variables : MDEV-17585,MDEV-20581 Crash on wsrep.variables test case

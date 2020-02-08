@@ -20,4 +20,3 @@ WHERE variable_name = 'innodb_encryption_n_temp_blocks_encrypted';
 
 SELECT variable_value > @old_decrypted FROM information_schema.global_status
 WHERE variable_name = 'innodb_encryption_n_temp_blocks_decrypted';
---source include/restart_mysqld.inc
