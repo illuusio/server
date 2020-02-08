@@ -1,8 +1,8 @@
-mariadb-10.4 (1:10.4.1-1) UNRELEASED; urgency=medium
+mariadb-10.4 (1:10.4.12-1) UNRELEASED; urgency=medium
 
-  * Introduce MariaDB 10.4 to Debian
+  * New upstream version 10.4.12
 
- -- Otto Kekäläinen <otto@debian.org>  Sat, 08 Feb 2020 18:52:34 +0200
+ -- Otto Kekäläinen <otto@debian.org>  Sat, 08 Feb 2020 19:57:32 +0200
 
 mariadb-10.3 (1:10.3.22-1) unstable; urgency=medium
 
