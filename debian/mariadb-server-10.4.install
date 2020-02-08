@@ -11,6 +11,8 @@ debian/additions/mariadb.conf.d/50-server.cnf etc/mysql/mariadb.conf.d
 debian/additions/source_mariadb-10.4.py usr/share/apport/package-hooks
 debian/mariadb-server-10.4.insserv.conf => etc/insserv.conf.d/mariadb
 etc/apparmor.d/usr.sbin.mysqld
+etc/security/user_map.conf
+lib/*/security/pam_user_map.so
 [linux-any] lib/systemd/system/mariadb@.service
 [linux-any] lib/systemd/system/mariadb.service
 usr/bin/aria_chk

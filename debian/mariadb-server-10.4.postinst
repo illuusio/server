@@ -94,6 +94,12 @@ EOF
     chmod 2750 $mysql_logdir
     set -e
 
+    # Set the correct filesystem ownership for the PAM v2 plugin
+    # eg. /usr/lib/x86_64-linux-gnu/mariadb19/plugin/auth_pam_tool_dir/
+    chown mysql /usr/lib/*/*/plugin/auth_pam_tool_dir
+    chmod 0700 /usr/lib/*/*/plugin/auth_pam_tool_dir/auth_pam_tool
+    chmod 04755 /usr/lib/*/*/plugin/auth_pam_tool_dir/auth_pam_tool
+
     # This is important to avoid dataloss when there is a removed
     # mysql-server version from Woody lying around which used the same
     # data directory and then somewhen gets purged by the admin.
