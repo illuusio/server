@@ -44,8 +44,8 @@ Vcs-Git: https://salsa.debian.org/mariadb-team/mariadb-10.4.git
 Package: libmariadb-dev
 Architecture: any
 Section: libdevel
-Depends: libmariadb3 (= ${binary:Version}),
-         libgnutls28-dev,
+Depends: libgnutls28-dev,
+         libmariadb3 (= ${binary:Version}),
          zlib1g-dev,
          ${misc:Depends},
          ${shlibs:Depends}
