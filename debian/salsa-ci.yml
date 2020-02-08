@@ -41,8 +41,7 @@ build:
     - du -shc ${WORKING_DIR}/* # Show total file size of artifacts. Must stay are under 100 MB.
     - mv ${CCACHE_TMP_DIR} ${CCACHE_WORK_DIR}
 
-# Backports build not here as we cannot build MariaDB 10.3 backport for Stretch
-# due to unmet build dependencies.
+# @TODO: Add 10.4 for buster backports build here
 
 piuparts:
   extends: .test-piuparts
@@ -89,7 +88,7 @@ fresh install:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mariadb-10.3.x to mariadb-10.3.y upgrade:
+mariadb-10.4.x to mariadb-10.4.y upgrade:
   stage: upgrade in Sid
   dependencies:
     - build
@@ -129,7 +128,7 @@ mariadb-10.3.x to mariadb-10.3.y upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mariadb-10.3.x buster to mariadb-10.3 upgrade:
+mariadb-10.3.x buster to mariadb-10.4 upgrade:
   stage: upgrade from Buster/Stretch/Jessie
   dependencies:
     - build
@@ -173,7 +172,7 @@ mariadb-10.3.x buster to mariadb-10.3 upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mariadb-10.1 to mariadb-10.3 upgrade:
+mariadb-10.1 to mariadb-10.4 upgrade:
   stage: upgrade from Buster/Stretch/Jessie
   dependencies:
     - build
@@ -388,11 +387,11 @@ default-libmysqlclient-dev on buster upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-default-libmysqlclient-dev on stretch upgrade:
+default-libmysqlclient-dev on buster upgrade:
   stage: upgrade from Buster/Stretch/Jessie
   dependencies:
     - build
-  image: debian:stretch
+  image: debian:buster
   artifacts:
     when: always
     name: "$CI_BUILD_NAME"
@@ -416,11 +415,11 @@ default-libmysqlclient-dev on stretch upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mariadb-connector-c on stretch upgrade:
+mariadb-connector-c on buster upgrade:
   stage: upgrade from Buster/Stretch/Jessie
   dependencies:
     - build
-  image: debian:stretch
+  image: debian:buster
   artifacts:
     when: always
     name: "$CI_BUILD_NAME"
@@ -444,7 +443,7 @@ mariadb-connector-c on stretch upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mysql-5.5 to mariadb-10.3 upgrade:
+mysql-5.5 to mariadb-10.4 upgrade:
   stage: upgrade from Buster/Stretch/Jessie
   dependencies:
     - build
@@ -490,7 +489,7 @@ mysql-5.5 to mariadb-10.3 upgrade:
 
 # Upgrading from MySQL 5.7 involves automatic renaming of auth_socket plugin
 # to unix_socket and automaticly re-adding Password column in user table.
-mysql-5.7 to mariadb-10.3 upgrade:
+mysql-5.7 to mariadb-10.4 upgrade:
   stage: test extras
   dependencies:
     - build
