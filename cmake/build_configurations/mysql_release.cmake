@@ -1,5 +1,5 @@
 # Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
-# Copyright (c) 2011, 2018, MariaDB Corporation
+# Copyright (c) 2011, 2019, MariaDB Corporation.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -97,15 +97,18 @@ ELSEIF(RPM)
   SET(WITH_ZLIB system CACHE STRING "")
   SET(CHECKMODULE /usr/bin/checkmodule CACHE FILEPATH "")
   SET(SEMODULE_PACKAGE /usr/bin/semodule_package CACHE FILEPATH "")
+  SET(PLUGIN_AUTH_SOCKET YES CACHE STRING "")
 ELSEIF(DEB)
   SET(WITH_SSL system CACHE STRING "")
   SET(WITH_ZLIB system CACHE STRING "")
   SET(WITH_LIBWRAP ON)
   SET(HAVE_EMBEDDED_PRIVILEGE_CONTROL ON)
+  SET(PLUGIN_AUTH_SOCKET YES CACHE STRING "")
 ELSE()
   SET(WITH_SSL bundled CACHE STRING "")
   SET(WITH_ZLIB bundled CACHE STRING "")
   SET(WITH_JEMALLOC static CACHE STRING "")
+  SET(PLUGIN_AUTH_SOCKET STATIC CACHE STRING "")
 ENDIF()
 
 IF(NOT COMPILATION_COMMENT)
@@ -205,7 +208,7 @@ IF(UNIX)
   IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
     IF(CMAKE_C_COMPILER_ID MATCHES "Intel")
       SET(COMMON_C_FLAGS                 "-static-intel -static-libgcc -g -mp -restrict")
-      SET(COMMON_CXX_FLAGS               "-static-intel -static-libgcc -g -mp -restrict -fno-exceptions -fno-rtti")
+      SET(COMMON_CXX_FLAGS               "-static-intel -static-libgcc -g -mp -restrict -fno-exceptions")
       IF(CMAKE_SYSTEM_PROCESSOR MATCHES "ia64")
         SET(COMMON_C_FLAGS               "${COMMON_C_FLAGS} -no-ftz -no-prefetch")
         SET(COMMON_CXX_FLAGS             "${COMMON_CXX_FLAGS} -no-ftz -no-prefetch")

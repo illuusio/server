@@ -61,15 +61,24 @@ open(FILE, "+<$file") || die "Unable to open $file";
 binmode FILE;
 my $ps= $ENV{PAGE_SIZE};
 my $page;
-sysseek(FILE, $ps, 0) || die "Unable to seek $file\n";
+die "Unable to read $file" unless sysread(FILE, $page, $ps) == $ps;
+my $full_crc32 = unpack("N",substr($page,54,4)) & 0x10; # FIL_SPACE_FLAGS
 die "Unable to read $file" unless sysread(FILE, $page, $ps) == $ps;
 # Clean the change buffer bitmap.
 substr($page,38,$ps - 38 - 8) = chr(0) x ($ps - 38 - 8);
 my $polynomial = 0x82f63b78; # CRC-32C
-my $ck= pack("N",mycrc32(substr($page, 4, 22), 0, $polynomial) ^
-		 mycrc32(substr($page, 38, $ps - 38 - 8), 0, $polynomial));
-substr($page,0,4)=$ck;
-substr($page,$ps-8,4)=$ck;
+if ($full_crc32)
+{
+    my $ck = mycrc32(substr($page, 0, $ps-4), 0, $polynomial);
+    substr($page, $ps-4, 4) = pack("N", $ck);
+}
+else
+{
+    my $ck= pack("N",mycrc32(substr($page, 4, 22), 0, $polynomial) ^
+                 mycrc32(substr($page, 38, $ps - 38 - 8), 0, $polynomial));
+    substr($page,0,4)=$ck;
+    substr($page,$ps-8,4)=$ck;
+}
 sysseek(FILE, $ps, 0) || die "Unable to rewind $file\n";
 syswrite(FILE, $page, $ps)==$ps || die "Unable to write $file\n";
 close(FILE) || die "Unable to close $file";
@@ -93,12 +102,21 @@ my $ps= $ENV{PAGE_SIZE};
 my $pages=5;
 my $page;
 die "Unable to read $file" unless sysread(FILE, $page, $ps) == $ps;
+my $full_crc32 = unpack("N",substr($page,54,4)) & 0x10; # FIL_SPACE_FLAGS
 substr($page,46,4)=pack("N", $pages);
 my $polynomial = 0x82f63b78; # CRC-32C
-my $ck= pack("N",mycrc32(substr($page, 4, 22), 0, $polynomial) ^
-		 mycrc32(substr($page, 38, $ps - 38 - 8), 0, $polynomial));
-substr($page,0,4)=$ck;
-substr($page,$ps-8,4)=$ck;
+if ($full_crc32)
+{
+    my $ck = mycrc32(substr($page, 0, $ps-4), 0, $polynomial);
+    substr($page, $ps-4, 4) = pack("N", $ck);
+}
+else
+{
+    my $ck= pack("N",mycrc32(substr($page, 4, 22), 0, $polynomial) ^
+                 mycrc32(substr($page, 38, $ps - 38 - 8), 0, $polynomial));
+    substr($page,0,4)=$ck;
+    substr($page,$ps-8,4)=$ck;
+}
 sysseek(FILE, 0, 0) || die "Unable to rewind $file\n";
 syswrite(FILE, $page, $ps)==$ps || die "Unable to write $file\n";
 truncate(FILE, $ps * $pages);

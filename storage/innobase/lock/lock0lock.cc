@@ -328,7 +328,7 @@ lock_report_trx_id_insanity(
 	trx_id_t	max_trx_id)	/*!< in: trx_sys.get_max_trx_id() */
 {
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 
 	ib::error()
 		<< "Transaction id " << trx_id
@@ -351,7 +351,7 @@ lock_check_trx_id_sanity(
 	const offset_t*	offsets)	/*!< in: rec_get_offsets(rec, index) */
 {
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 
 	trx_id_t	max_trx_id = trx_sys.get_max_trx_id();
 	ut_ad(max_trx_id || srv_force_recovery >= SRV_FORCE_NO_UNDO_LOG_SCAN);
@@ -380,7 +380,7 @@ lock_clust_rec_cons_read_sees(
 	ut_ad(dict_index_is_clust(index));
 	ut_ad(page_rec_is_user_rec(rec));
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 
 	/* Temp-tables are not shared across connections and multiple
 	transactions from different connections cannot simultaneously
@@ -419,7 +419,7 @@ lock_sec_rec_cons_read_sees(
 {
 	ut_ad(page_rec_is_user_rec(rec));
 	ut_ad(!index->is_primary());
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 
 	/* NOTE that we might call this function while holding the search
 	system latch. */
@@ -758,9 +758,7 @@ lock_rec_has_to_wait(
 				<< wsrep_thd_query(lock2->trx->mysql_thd);
 		}
 
-		if (wsrep_trx_order_before(trx->mysql_thd,
-					   lock2->trx->mysql_thd)
-		    && (type_mode & LOCK_MODE_MASK) == LOCK_X
+		if ((type_mode & LOCK_MODE_MASK) == LOCK_X
 		    && (lock2->type_mode & LOCK_MODE_MASK) == LOCK_X) {
 			if (for_locking || wsrep_debug) {
 				/* exclusive lock conflicts are not
@@ -770,12 +768,11 @@ lock_rec_has_to_wait(
 					<< type_mode
 					<< " supremum: " << lock_is_on_supremum
 					<< "conflicts states: my "
-					<< wsrep_thd_conflict_state(
-						   trx->mysql_thd, FALSE)
+					<< wsrep_thd_transaction_state_str(
+						   trx->mysql_thd)
 					<< " locked "
-					<< wsrep_thd_conflict_state(
-						   lock2->trx->mysql_thd,
-						   FALSE);
+					<< wsrep_thd_transaction_state_str(
+						   lock2->trx->mysql_thd);
 				lock_rec_print(stderr, lock2, mtr);
 				ib::info() << " SQL1: "
 					   << wsrep_thd_query(trx->mysql_thd)
@@ -1094,12 +1091,15 @@ wsrep_kill_victim(
 		return;
 	}
 
-	my_bool bf_this  = wsrep_thd_is_BF(trx->mysql_thd, FALSE);
+	if (!wsrep_thd_is_BF(trx->mysql_thd, FALSE)) {
+		return;
+	}
+
 	my_bool bf_other = wsrep_thd_is_BF(lock->trx->mysql_thd, TRUE);
 	mtr_t mtr;
 
-	if ((bf_this && !bf_other) ||
-		(bf_this && bf_other && wsrep_trx_order_before(
+	if ((!bf_other) ||
+		(wsrep_thd_order_before(
 			trx->mysql_thd, lock->trx->mysql_thd))) {
 
 		if (lock->trx->lock.que_state == TRX_QUE_LOCK_WAIT) {
@@ -1110,11 +1110,7 @@ wsrep_kill_victim(
 			is in the queue*/
 		} else if (lock->trx != trx) {
 			if (wsrep_log_conflicts) {
-				if (bf_this) {
-					ib::info() << "*** Priority TRANSACTION:";
-				} else {
-					ib::info() << "*** Victim TRANSACTION:";
-				}
+				ib::info() << "*** Priority TRANSACTION:";
 
 				trx_print_latched(stderr, trx, 3000);
 
@@ -1215,7 +1211,7 @@ lock_sec_rec_some_has_impl(
 	ut_ad(!dict_index_is_clust(index));
 	ut_ad(page_rec_is_user_rec(rec));
 	ut_ad(rec_offs_validate(rec, index, offsets));
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 
 	max_trx_id = page_get_max_trx_id(page);
 
@@ -1423,7 +1419,7 @@ lock_rec_create_low(
 		lock_t *prev	= NULL;
 
 		while (hash && wsrep_thd_is_BF(hash->trx->mysql_thd, TRUE)
-		       && wsrep_trx_order_before(hash->trx->mysql_thd,
+		       && wsrep_thd_order_before(hash->trx->mysql_thd,
 						 trx->mysql_thd)) {
 			prev = hash;
 			hash = (lock_t *)hash->hash;
@@ -1830,15 +1826,15 @@ lock_rec_add_to_queue(
 
 			ib::info() << "WSREP BF lock conflict for my lock:\n BF:" <<
 				((wsrep_thd_is_BF(trx->mysql_thd, FALSE)) ? "BF" : "normal") << " exec: " <<
-				wsrep_thd_exec_mode(trx->mysql_thd) << " conflict: " <<
-				wsrep_thd_conflict_state(trx->mysql_thd, false) << " seqno: " <<
+				wsrep_thd_client_state_str(trx->mysql_thd) << " conflict: " <<
+				wsrep_thd_transaction_state_str(trx->mysql_thd) << " seqno: " <<
 				wsrep_thd_trx_seqno(trx->mysql_thd) << " SQL: " <<
 				wsrep_thd_query(trx->mysql_thd);
 			trx_t* otrx = other_lock->trx;
 			ib::info() << "WSREP other lock:\n BF:" <<
 				((wsrep_thd_is_BF(otrx->mysql_thd, FALSE)) ? "BF" : "normal") << " exec: " <<
-				wsrep_thd_exec_mode(otrx->mysql_thd) << " conflict: " <<
-				wsrep_thd_conflict_state(otrx->mysql_thd, false) << " seqno: " <<
+				wsrep_thd_client_state_str(otrx->mysql_thd) << " conflict: " <<
+				wsrep_thd_transaction_state_str(otrx->mysql_thd) << " seqno: " <<
 				wsrep_thd_trx_seqno(otrx->mysql_thd) << " SQL: " <<
 				wsrep_thd_query(otrx->mysql_thd);
 		}
@@ -4244,6 +4240,7 @@ lock_check_dict_lock(
 	const lock_t*	lock)	/*!< in: lock to check */
 {
 	if (lock_get_type_low(lock) == LOCK_REC) {
+		ut_ad(!lock->index->table->is_temporary());
 
 		/* Check if the transcation locked a record
 		in a system table in X mode. It should have set
@@ -4257,9 +4254,8 @@ lock_check_dict_lock(
 	} else {
 		ut_ad(lock_get_type_low(lock) & LOCK_TABLE);
 
-		const dict_table_t*	table;
-
-		table = lock->un_member.tab_lock.table;
+		const dict_table_t* table = lock->un_member.tab_lock.table;
+		ut_ad(!table->is_temporary());
 
 		/* Check if the transcation locked a system table
 		in IX mode. It should have set the dict_op code
@@ -4591,14 +4587,14 @@ lock_print_info_summary(
 	fprintf(file,
 		"Purge done for trx's n:o < " TRX_ID_FMT
 		" undo n:o < " TRX_ID_FMT " state: %s\n"
-		"History list length " ULINTPF "\n",
+		"History list length %u\n",
 		purge_sys.tail.trx_no(),
 		purge_sys.tail.undo_no,
 		purge_sys.enabled()
 		? (purge_sys.running() ? "running"
 		   : purge_sys.paused() ? "stopped" : "running but idle")
 		: "disabled",
-		trx_sys.history_size());
+		uint32_t{trx_sys.rseg_history_len});
 
 #ifdef PRINT_NUM_OF_LOCK_STRUCTS
 	fprintf(file,
@@ -4896,8 +4892,8 @@ func_exit:
 				if (!lock_get_wait(other_lock) ) {
 					ib::info() << "WSREP impl BF lock conflict for my impl lock:\n BF:" <<
 						((wsrep_thd_is_BF(impl_trx->mysql_thd, FALSE)) ? "BF" : "normal") << " exec: " <<
-						wsrep_thd_exec_mode(impl_trx->mysql_thd) << " conflict: " <<
-						wsrep_thd_conflict_state(impl_trx->mysql_thd, false) << " seqno: " <<
+						wsrep_thd_client_state_str(impl_trx->mysql_thd) << " conflict: " <<
+						wsrep_thd_transaction_state_str(impl_trx->mysql_thd) << " seqno: " <<
 						wsrep_thd_trx_seqno(impl_trx->mysql_thd) << " SQL: " <<
 						wsrep_thd_query(impl_trx->mysql_thd);
 
@@ -4905,8 +4901,8 @@ func_exit:
 
 					ib::info() << "WSREP other lock:\n BF:" <<
 						((wsrep_thd_is_BF(otrx->mysql_thd, FALSE)) ? "BF" : "normal")  << " exec: " <<
-						wsrep_thd_exec_mode(otrx->mysql_thd) << " conflict: " <<
-						wsrep_thd_conflict_state(otrx->mysql_thd, false) << " seqno: " <<
+						wsrep_thd_client_state_str(otrx->mysql_thd) << " conflict: " <<
+						wsrep_thd_transaction_state_str(otrx->mysql_thd) << " seqno: " <<
 						wsrep_thd_trx_seqno(otrx->mysql_thd) << " SQL: " <<
 						wsrep_thd_query(otrx->mysql_thd);
 				}
@@ -5124,7 +5120,7 @@ lock_rec_block_validate(
 
 		block = buf_page_get_gen(
 			page_id_t(space_id, page_no),
-			page_size_t(space->flags),
+			space->zip_size(),
 			RW_X_LATCH, NULL,
 			BUF_GET_POSSIBLY_FREED,
 			__FILE__, __LINE__, &mtr, &err);
@@ -5264,7 +5260,7 @@ lock_rec_insert_check_and_lock(
 	trx_t*		trx = thr_get_trx(thr);
 	const rec_t*	next_rec = page_rec_get_next_const(rec);
 	ulint		heap_no = page_rec_get_heap_no(next_rec);
-	ut_ad(!rec_is_metadata(next_rec, index));
+	ut_ad(!rec_is_metadata(next_rec, *index));
 
 	lock_mutex_enter();
 	/* Because this code is invoked for a running transaction by
@@ -5392,7 +5388,7 @@ lock_rec_convert_impl_to_expl_for_trx(
 {
 	ut_ad(trx->is_referenced());
 	ut_ad(page_rec_is_leaf(rec));
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 
 	DEBUG_SYNC_C("before_lock_rec_convert_impl_to_expl_for_trx");
 	lock_mutex_enter();
@@ -5525,7 +5521,7 @@ lock_rec_convert_impl_to_expl(
 	ut_ad(rec_offs_validate(rec, index, offsets));
 	ut_ad(!page_rec_is_comp(rec) == !rec_offs_comp(offsets));
 	ut_ad(page_rec_is_leaf(rec));
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 
 	if (dict_index_is_clust(index)) {
 		trx_id_t	trx_id;
@@ -5602,7 +5598,7 @@ lock_clust_rec_modify_check_and_lock(
 
 		return(DB_SUCCESS);
 	}
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 	ut_ad(!index->table->is_temporary());
 
 	heap_no = rec_offs_comp(offsets)
@@ -5658,7 +5654,7 @@ lock_sec_rec_modify_check_and_lock(
 	ut_ad(block->frame == page_align(rec));
 	ut_ad(mtr->is_named_space(index->table->space));
 	ut_ad(page_rec_is_leaf(rec));
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 
 	if (flags & BTR_NO_LOCKING_FLAG) {
 
@@ -5752,7 +5748,7 @@ lock_sec_rec_read_check_and_lock(
 		return(DB_SUCCESS);
 	}
 
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 	heap_no = page_rec_get_heap_no(rec);
 
 	/* Some transaction may have an implicit x-lock on the record only
@@ -5814,7 +5810,7 @@ lock_clust_rec_read_check_and_lock(
 	      || gap_mode == LOCK_REC_NOT_GAP);
 	ut_ad(rec_offs_validate(rec, index, offsets));
 	ut_ad(page_rec_is_leaf(rec));
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 
 	if ((flags & BTR_NO_LOCKING_FLAG)
 	    || srv_read_only_mode
@@ -6085,10 +6081,8 @@ lock_get_table_id(
 /*==============*/
 	const lock_t*	lock)	/*!< in: lock */
 {
-	dict_table_t*	table;
-
-	table = lock_get_table(lock);
-
+	dict_table_t* table = lock_get_table(lock);
+	ut_ad(!table->is_temporary());
 	return(table->id);
 }
 
@@ -6264,6 +6258,12 @@ lock_trx_handle_wait(
 /*=================*/
 	trx_t*	trx)	/*!< in/out: trx lock state */
 {
+#ifdef WITH_WSREP
+	/* We already own mutexes */
+	if (trx->lock.was_chosen_as_wsrep_victim) {
+		return lock_trx_handle_wait_low(trx);
+	}
+#endif /* WITH_WSREP */
 	lock_mutex_enter();
 	trx_mutex_enter(trx);
 	dberr_t err = lock_trx_handle_wait_low(trx);
@@ -6867,6 +6867,11 @@ DeadlockChecker::trx_rollback()
 	trx_t*	trx = m_wait_lock->trx;
 
 	print("*** WE ROLL BACK TRANSACTION (1)\n");
+#ifdef WITH_WSREP
+	if (wsrep_on(trx->mysql_thd)) {
+		wsrep_handle_SR_rollback(m_start->mysql_thd, trx->mysql_thd);
+	}
+#endif
 
 	trx_mutex_enter(trx);
 
@@ -6953,6 +6958,12 @@ DeadlockChecker::check_and_resolve(const lock_t* lock, trx_t* trx)
 	if (victim_trx != NULL) {
 
 		print("*** WE ROLL BACK TRANSACTION (2)\n");
+#ifdef WITH_WSREP
+		if (wsrep_on(trx->mysql_thd)) {
+			wsrep_handle_SR_rollback(trx->mysql_thd,
+						 victim_trx->mysql_thd);
+		}
+#endif
 
 		lock_deadlock_found = true;
 	}

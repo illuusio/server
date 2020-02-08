@@ -134,7 +134,7 @@ void Item_func::sync_with_sum_func_and_with_field(List<Item> &list)
   Item *item;
   while ((item= li++))
   {
-    with_sum_func|= item->with_sum_func;
+    join_with_sum_func(item);
     with_window_func|= item->with_window_func;
     with_field|= item->with_field;
     with_param|= item->with_param;
@@ -356,7 +356,7 @@ Item_func::fix_fields(THD *thd, Item **ref)
       if (item->maybe_null)
 	maybe_null=1;
 
-      with_sum_func= with_sum_func || item->with_sum_func;
+      join_with_sum_func(item);
       with_param= with_param || item->with_param;
       with_window_func= with_window_func || item->with_window_func;
       with_field= with_field || item->with_field;
@@ -381,7 +381,7 @@ Item_func::quick_fix_field()
   {
     for (arg=args, arg_end=args+arg_count; arg != arg_end ; arg++)
     {
-      if (!(*arg)->fixed)
+      if (!(*arg)->is_fixed())
         (*arg)->quick_fix_field();
     }
   }
@@ -733,7 +733,7 @@ void Item_func::signal_divide_by_null()
 
 Item *Item_func::get_tmp_table_item(THD *thd)
 {
-  if (!with_sum_func && !const_item())
+  if (!Item_func::with_sum_func() && !const_item())
     return new (thd->mem_root) Item_temptable_field(thd, result_field);
   return copy_or_same(thd);
 }
@@ -805,51 +805,6 @@ bool Item_func_plus::fix_length_and_dec(void)
 }
 
 
-String *Item_func_hybrid_field_type::val_str_from_decimal_op(String *str)
-{
-  my_decimal decimal_value, *val;
-  if (!(val= decimal_op_with_null_check(&decimal_value)))
-    return 0;                                 // null is set
-  DBUG_ASSERT(!null_value);
-  my_decimal_round(E_DEC_FATAL_ERROR, val, decimals, FALSE, val);
-  str->set_charset(collation.collation);
-  my_decimal2string(E_DEC_FATAL_ERROR, val, 0, 0, 0, str);
-  return str;
-}
-
-double Item_func_hybrid_field_type::val_real_from_decimal_op()
-{
-  my_decimal decimal_value, *val;
-  if (!(val= decimal_op_with_null_check(&decimal_value)))
-    return 0.0;                               // null is set
-  double result;
-  my_decimal2double(E_DEC_FATAL_ERROR, val, &result);
-  return result;
-}
-
-longlong Item_func_hybrid_field_type::val_int_from_decimal_op()
-{
-  my_decimal decimal_value, *val;
-  if (!(val= decimal_op_with_null_check(&decimal_value)))
-    return 0;                                 // null is set
-  longlong result;
-  my_decimal2int(E_DEC_FATAL_ERROR, val, unsigned_flag, &result);
-  return result;
-}
-
-bool Item_func_hybrid_field_type::get_date_from_decimal_op(MYSQL_TIME *ltime,
-                                                           ulonglong fuzzydate)
-{
-  my_decimal value, *res;
-  if (!(res= decimal_op_with_null_check(&value)) ||
-      decimal_to_datetime_with_warn(res, ltime, fuzzydate,
-                                    field_table_or_null(),
-                                    field_name_or_null()))
-    return make_zero_mysql_time(ltime, fuzzydate);
-  return (null_value= 0);
-}
-
-
 String *Item_func_hybrid_field_type::val_str_from_int_op(String *str)
 {
   longlong nr= int_op();
@@ -873,19 +828,6 @@ Item_func_hybrid_field_type::val_decimal_from_int_op(my_decimal *dec)
     return NULL;
   int2my_decimal(E_DEC_FATAL_ERROR, result, unsigned_flag, dec);
   return dec;
-}
-
-bool Item_func_hybrid_field_type::get_date_from_int_op(MYSQL_TIME *ltime,
-                                                       ulonglong fuzzydate)
-{
-  longlong value= int_op();
-  bool neg= !unsigned_flag && value < 0;
-  if (null_value || int_to_datetime_with_warn(neg, neg ? -value : value,
-                                              ltime, fuzzydate,
-                                              field_table_or_null(),
-                                              field_name_or_null()))
-    return make_zero_mysql_time(ltime, fuzzydate);
-  return (null_value= 0);
 }
 
 
@@ -913,22 +855,11 @@ Item_func_hybrid_field_type::val_decimal_from_real_op(my_decimal *dec)
   return dec;
 }
 
-bool Item_func_hybrid_field_type::get_date_from_real_op(MYSQL_TIME *ltime,
-                                                        ulonglong fuzzydate)
-{
-  double value= real_op();
-  if (null_value || double_to_datetime_with_warn(value, ltime, fuzzydate,
-                                                 field_table_or_null(),
-                                                 field_name_or_null()))
-    return make_zero_mysql_time(ltime, fuzzydate);
-  return (null_value= 0);
-}
-
 
 String *Item_func_hybrid_field_type::val_str_from_date_op(String *str)
 {
   MYSQL_TIME ltime;
-  if (date_op_with_null_check(&ltime) ||
+  if (date_op_with_null_check(current_thd, &ltime) ||
       (null_value= str->alloc(MAX_DATE_STRING_REP_LENGTH)))
     return (String *) 0;
   str->length(my_TIME_to_str(&ltime, const_cast<char*>(str->ptr()), decimals));
@@ -940,7 +871,7 @@ String *Item_func_hybrid_field_type::val_str_from_date_op(String *str)
 double Item_func_hybrid_field_type::val_real_from_date_op()
 {
   MYSQL_TIME ltime;
-  if (date_op_with_null_check(&ltime))
+  if (date_op_with_null_check(current_thd, &ltime))
     return 0;
   return TIME_to_double(&ltime);
 }
@@ -948,7 +879,7 @@ double Item_func_hybrid_field_type::val_real_from_date_op()
 longlong Item_func_hybrid_field_type::val_int_from_date_op()
 {
   MYSQL_TIME ltime;
-  if (date_op_with_null_check(&ltime))
+  if (date_op_with_null_check(current_thd, &ltime))
     return 0;
   return TIME_to_ulonglong(&ltime);
 }
@@ -957,7 +888,7 @@ my_decimal *
 Item_func_hybrid_field_type::val_decimal_from_date_op(my_decimal *dec)
 {
   MYSQL_TIME ltime;
-  if (date_op_with_null_check(&ltime))
+  if (date_op_with_null_check(current_thd, &ltime))
   {
     my_decimal_set_zero(dec);
     return 0;
@@ -969,7 +900,7 @@ Item_func_hybrid_field_type::val_decimal_from_date_op(my_decimal *dec)
 String *Item_func_hybrid_field_type::val_str_from_time_op(String *str)
 {
   MYSQL_TIME ltime;
-  if (time_op_with_null_check(&ltime) ||
+  if (time_op_with_null_check(current_thd, &ltime) ||
       (null_value= my_TIME_to_str(&ltime, str, decimals)))
     return NULL;
   return str;
@@ -978,20 +909,22 @@ String *Item_func_hybrid_field_type::val_str_from_time_op(String *str)
 double Item_func_hybrid_field_type::val_real_from_time_op()
 {
   MYSQL_TIME ltime;
-  return time_op_with_null_check(&ltime) ? 0 : TIME_to_double(&ltime);
+  return time_op_with_null_check(current_thd, &ltime) ? 0 :
+         TIME_to_double(&ltime);
 }
 
 longlong Item_func_hybrid_field_type::val_int_from_time_op()
 {
   MYSQL_TIME ltime;
-  return time_op_with_null_check(&ltime) ? 0 : TIME_to_ulonglong(&ltime);
+  return time_op_with_null_check(current_thd, &ltime) ? 0 :
+         TIME_to_ulonglong(&ltime);
 }
 
 my_decimal *
 Item_func_hybrid_field_type::val_decimal_from_time_op(my_decimal *dec)
 {
   MYSQL_TIME ltime;
-  if (time_op_with_null_check(&ltime))
+  if (time_op_with_null_check(current_thd, &ltime))
   {
     my_decimal_set_zero(dec);
     return 0;
@@ -1019,18 +952,6 @@ Item_func_hybrid_field_type::val_decimal_from_str_op(my_decimal *decimal_value)
   return res ? decimal_from_string_with_check(decimal_value, res) : 0;
 }
 
-bool Item_func_hybrid_field_type::get_date_from_str_op(MYSQL_TIME *ltime,
-                                                       ulonglong fuzzydate)
-{
-  StringBuffer<40> tmp;
-  String *res;
-  if (!(res= str_op_with_null_check(&tmp)) ||
-      str_to_datetime_with_warn(res->charset(), res->ptr(), res->length(),
-                                ltime, fuzzydate))
-    return make_zero_mysql_time(ltime, fuzzydate);
-  return (null_value= 0);
-}
-
 
 void Item_func_signed::print(String *str, enum_query_type query_type)
 {
@@ -1050,47 +971,15 @@ void Item_func_unsigned::print(String *str, enum_query_type query_type)
 }
 
 
-String *Item_decimal_typecast::val_str(String *str)
-{
-  my_decimal tmp_buf, *tmp= val_decimal(&tmp_buf);
-  if (null_value)
-    return NULL;
-  my_decimal2string(E_DEC_FATAL_ERROR, tmp, 0, 0, 0, str);
-  return str;
-}
-
-
-double Item_decimal_typecast::val_real()
-{
-  my_decimal tmp_buf, *tmp= val_decimal(&tmp_buf);
-  double res;
-  if (null_value)
-    return 0.0;
-  my_decimal2double(E_DEC_FATAL_ERROR, tmp, &res);
-  return res;
-}
-
-
-longlong Item_decimal_typecast::val_int()
-{
-  my_decimal tmp_buf, *tmp= val_decimal(&tmp_buf);
-  longlong res;
-  if (null_value)
-    return 0;
-  my_decimal2int(E_DEC_FATAL_ERROR, tmp, unsigned_flag, &res);
-  return res;
-}
-
-
 my_decimal *Item_decimal_typecast::val_decimal(my_decimal *dec)
 {
-  my_decimal tmp_buf, *tmp= args[0]->val_decimal(&tmp_buf);
+  VDec tmp(args[0]);
   bool sign;
   uint precision;
 
-  if ((null_value= args[0]->null_value))
+  if ((null_value= tmp.is_null()))
     return NULL;
-  my_decimal_round(E_DEC_FATAL_ERROR, tmp, decimals, FALSE, dec);
+  tmp.round_to(dec, decimals, HALF_UP);
   sign= dec->sign();
   if (unsigned_flag)
   {
@@ -1282,17 +1171,13 @@ err:
 
 my_decimal *Item_func_plus::decimal_op(my_decimal *decimal_value)
 {
-  my_decimal value1, *val1;
-  my_decimal value2, *val2;
-  val1= args[0]->val_decimal(&value1);
-  if ((null_value= args[0]->null_value))
-    return 0;
-  val2= args[1]->val_decimal(&value2);
-  if (!(null_value= (args[1]->null_value ||
+  VDec2_lazy val(args[0], args[1]);
+  if (!(null_value= (val.has_null() ||
                      check_decimal_overflow(my_decimal_add(E_DEC_FATAL_ERROR &
                                                            ~E_DEC_OVERFLOW,
                                                            decimal_value,
-                                                           val1, val2)) > 3)))
+                                                           val.m_a.ptr(),
+                                                           val.m_b.ptr())) > 3)))
     return decimal_value;
   return 0;
 }
@@ -1434,18 +1319,13 @@ err:
 
 my_decimal *Item_func_minus::decimal_op(my_decimal *decimal_value)
 {
-  my_decimal value1, *val1;
-  my_decimal value2, *val2= 
-
-  val1= args[0]->val_decimal(&value1);
-  if ((null_value= args[0]->null_value))
-    return 0;
-  val2= args[1]->val_decimal(&value2);
-  if (!(null_value= (args[1]->null_value ||
-                     (check_decimal_overflow(my_decimal_sub(E_DEC_FATAL_ERROR &
-                                                            ~E_DEC_OVERFLOW,
-                                                            decimal_value, val1,
-                                                            val2)) > 3))))
+  VDec2_lazy val(args[0], args[1]);
+  if (!(null_value= (val.has_null() ||
+                     check_decimal_overflow(my_decimal_sub(E_DEC_FATAL_ERROR &
+                                                           ~E_DEC_OVERFLOW,
+                                                           decimal_value,
+                                                           val.m_a.ptr(),
+                                                           val.m_b.ptr())) > 3)))
     return decimal_value;
   return 0;
 }
@@ -1544,17 +1424,13 @@ err:
 
 my_decimal *Item_func_mul::decimal_op(my_decimal *decimal_value)
 {
-  my_decimal value1, *val1;
-  my_decimal value2, *val2;
-  val1= args[0]->val_decimal(&value1);
-  if ((null_value= args[0]->null_value))
-    return 0;
-  val2= args[1]->val_decimal(&value2);
-  if (!(null_value= (args[1]->null_value ||
-                     (check_decimal_overflow(my_decimal_mul(E_DEC_FATAL_ERROR &
-                                                            ~E_DEC_OVERFLOW,
-                                                            decimal_value, val1,
-                                                            val2)) > 3))))
+  VDec2_lazy val(args[0], args[1]);
+  if (!(null_value= (val.has_null() ||
+                     check_decimal_overflow(my_decimal_mul(E_DEC_FATAL_ERROR &
+                                                           ~E_DEC_OVERFLOW,
+                                                           decimal_value,
+                                                           val.m_a.ptr(),
+                                                           val.m_b.ptr())) > 3)))
     return decimal_value;
   return 0;
 }
@@ -1605,21 +1481,15 @@ double Item_func_div::real_op()
 
 my_decimal *Item_func_div::decimal_op(my_decimal *decimal_value)
 {
-  my_decimal value1, *val1;
-  my_decimal value2, *val2;
   int err;
-
-  val1= args[0]->val_decimal(&value1);
-  if ((null_value= args[0]->null_value))
-    return 0;
-  val2= args[1]->val_decimal(&value2);
-  if ((null_value= args[1]->null_value))
+  VDec2_lazy val(args[0], args[1]);
+  if ((null_value= val.has_null()))
     return 0;
   if ((err= check_decimal_overflow(my_decimal_div(E_DEC_FATAL_ERROR &
                                                   ~E_DEC_OVERFLOW &
                                                   ~E_DEC_DIV_ZERO,
                                                   decimal_value,
-                                                  val1, val2,
+                                                  val.m_a.ptr(), val.m_b.ptr(),
                                                   prec_increment))) > 3)
   {
     if (err == E_DEC_DIV_ZERO)
@@ -1709,20 +1579,14 @@ longlong Item_func_int_div::val_int()
   if (args[0]->result_type() != INT_RESULT ||
       args[1]->result_type() != INT_RESULT)
   {
-    my_decimal tmp;
-    my_decimal *val0p= args[0]->val_decimal(&tmp);
-    if ((null_value= args[0]->null_value))
+    VDec2_lazy val(args[0], args[1]);
+    if ((null_value= val.has_null()))
       return 0;
-    my_decimal val0= *val0p;
-
-    my_decimal *val1p= args[1]->val_decimal(&tmp);
-    if ((null_value= args[1]->null_value))
-      return 0;
-    my_decimal val1= *val1p;
 
     int err;
+    my_decimal tmp;
     if ((err= my_decimal_div(E_DEC_FATAL_ERROR & ~E_DEC_DIV_ZERO, &tmp,
-                             &val0, &val1, 0)) > 3)
+                             val.m_a.ptr(), val.m_b.ptr(), 0)) > 3)
     {
       if (err == E_DEC_DIV_ZERO)
         signal_divide_by_null();
@@ -1730,8 +1594,7 @@ longlong Item_func_int_div::val_int()
     }
 
     my_decimal truncated;
-    const bool do_truncate= true;
-    if (my_decimal_round(E_DEC_FATAL_ERROR, &tmp, 0, do_truncate, &truncated))
+    if (tmp.round_to(&truncated, 0, TRUNCATE))
       DBUG_ASSERT(false);
 
     longlong res;
@@ -1829,17 +1692,11 @@ double Item_func_mod::real_op()
 
 my_decimal *Item_func_mod::decimal_op(my_decimal *decimal_value)
 {
-  my_decimal value1, *val1;
-  my_decimal value2, *val2;
-
-  val1= args[0]->val_decimal(&value1);
-  if ((null_value= args[0]->null_value))
-    return 0;
-  val2= args[1]->val_decimal(&value2);
-  if ((null_value= args[1]->null_value))
+  VDec2_lazy val(args[0], args[1]);
+  if ((null_value= val.has_null()))
     return 0;
   switch (my_decimal_mod(E_DEC_FATAL_ERROR & ~E_DEC_DIV_ZERO, decimal_value,
-                         val1, val2)) {
+                         val.m_a.ptr(), val.m_b.ptr())) {
   case E_DEC_TRUNCATED:
   case E_DEC_OK:
     return decimal_value;
@@ -1879,6 +1736,46 @@ bool Item_func_mod::fix_length_and_dec()
   DBUG_RETURN(FALSE);
 }
 
+static void calc_hash_for_unique(ulong &nr1, ulong &nr2, String *str)
+{
+  CHARSET_INFO *cs;
+  uchar l[4];
+  int4store(l, str->length());
+  cs= str->charset();
+  cs->coll->hash_sort(cs, l, sizeof(l), &nr1, &nr2);
+  cs= str->charset();
+  cs->coll->hash_sort(cs, (uchar *)str->ptr(), str->length(), &nr1, &nr2);
+}
+
+longlong  Item_func_hash::val_int()
+{
+  DBUG_EXECUTE_IF("same_long_unique_hash", return 9;);
+  unsigned_flag= true;
+  ulong nr1= 1,nr2= 4;
+  String * str;
+  for(uint i= 0;i<arg_count;i++)
+  {
+    str = args[i]->val_str();
+    if(args[i]->null_value)
+    {
+      null_value= 1;
+      return 0;
+    }
+   calc_hash_for_unique(nr1, nr2, str);
+  }
+  null_value= 0;
+  return   (longlong)nr1;
+}
+
+
+bool Item_func_hash::fix_length_and_dec()
+{
+  decimals= 0;
+  max_length= 8;
+  return false;
+}
+
+
 
 double Item_func_neg::real_op()
 {
@@ -1912,10 +1809,10 @@ longlong Item_func_neg::int_op()
 
 my_decimal *Item_func_neg::decimal_op(my_decimal *decimal_value)
 {
-  my_decimal val, *value= args[0]->val_decimal(&val);
-  if (!(null_value= args[0]->null_value))
+  VDec value(args[0]);
+  if (!(null_value= value.is_null()))
   {
-    my_decimal2decimal(value, decimal_value);
+    my_decimal2decimal(value.ptr(), decimal_value);
     my_decimal_neg(decimal_value);
     return decimal_value;
   }
@@ -1939,7 +1836,7 @@ void Item_func_neg::fix_length_and_dec_int()
     longlong val= args[0]->val_int();
     if ((ulonglong) val >= (ulonglong) LONGLONG_MIN &&
         ((ulonglong) val != (ulonglong) LONGLONG_MIN ||
-          args[0]->type() != INT_ITEM))        
+         !args[0]->is_of_type(CONST_ITEM, INT_RESULT)))
     {
       /*
         Ensure that result is converted to DECIMAL, as longlong can't hold
@@ -2010,10 +1907,10 @@ longlong Item_func_abs::int_op()
 
 my_decimal *Item_func_abs::decimal_op(my_decimal *decimal_value)
 {
-  my_decimal val, *value= args[0]->val_decimal(&val);
-  if (!(null_value= args[0]->null_value))
+  VDec value(args[0]);
+  if (!(null_value= value.is_null()))
   {
-    my_decimal2decimal(value, decimal_value);
+    my_decimal2decimal(value.ptr(), decimal_value);
     if (decimal_value->sign())
       my_decimal_neg(decimal_value);
     return decimal_value;
@@ -2335,25 +2232,15 @@ bool Item_func_int_val::fix_length_and_dec()
 
 longlong Item_func_ceiling::int_op()
 {
-  longlong result;
   switch (args[0]->result_type()) {
   case INT_RESULT:
-    result= args[0]->val_int();
-    null_value= args[0]->null_value;
-    break;
+    return val_int_from_item(args[0]);
   case DECIMAL_RESULT:
-  {
-    my_decimal dec_buf, *dec;
-    if ((dec= Item_func_ceiling::decimal_op(&dec_buf)))
-      my_decimal2int(E_DEC_FATAL_ERROR, dec, unsigned_flag, &result);
-    else
-      result= 0;
+    return VDec_op(this).to_longlong(unsigned_flag);
+  default:
     break;
   }
-  default:
-    result= (longlong)Item_func_ceiling::real_op();
-  };
-  return result;
+  return (longlong) Item_func_ceiling::real_op();
 }
 
 
@@ -2371,10 +2258,9 @@ double Item_func_ceiling::real_op()
 
 my_decimal *Item_func_ceiling::decimal_op(my_decimal *decimal_value)
 {
-  my_decimal val, *value= args[0]->val_decimal(&val);
-  if (!(null_value= (args[0]->null_value ||
-                     my_decimal_ceiling(E_DEC_FATAL_ERROR, value,
-                                        decimal_value) > 1)))
+  VDec value(args[0]);
+  if (!(null_value= (value.is_null() ||
+                     value.round_to(decimal_value, 0, CEILING) > 1)))
     return decimal_value;
   return 0;
 }
@@ -2382,25 +2268,19 @@ my_decimal *Item_func_ceiling::decimal_op(my_decimal *decimal_value)
 
 longlong Item_func_floor::int_op()
 {
-  longlong result;
   switch (args[0]->result_type()) {
   case INT_RESULT:
-    result= args[0]->val_int();
-    null_value= args[0]->null_value;
-    break;
+    return val_int_from_item(args[0]);
   case DECIMAL_RESULT:
   {
     my_decimal dec_buf, *dec;
-    if ((dec= Item_func_floor::decimal_op(&dec_buf)))
-      my_decimal2int(E_DEC_FATAL_ERROR, dec, unsigned_flag, &result);
-    else
-      result= 0;
-    break;
+    return (!(dec= Item_func_floor::decimal_op(&dec_buf))) ? 0 :
+           dec->to_longlong(unsigned_flag);
   }
   default:
-    result= (longlong)Item_func_floor::real_op();
-  };
-  return result;
+    break;
+  }
+  return (longlong) Item_func_floor::real_op();
 }
 
 
@@ -2418,10 +2298,9 @@ double Item_func_floor::real_op()
 
 my_decimal *Item_func_floor::decimal_op(my_decimal *decimal_value)
 {
-  my_decimal val, *value= args[0]->val_decimal(&val);
-  if (!(null_value= (args[0]->null_value ||
-                     my_decimal_floor(E_DEC_FATAL_ERROR, value,
-                                      decimal_value) > 1)))
+  VDec value(args[0]);
+  if (!(null_value= (value.is_null() ||
+                     value.round_to(decimal_value, 0, FLOOR) > 1)))
     return decimal_value;
   return 0;
 }
@@ -2481,6 +2360,42 @@ void Item_func_round::fix_arg_double()
   }
   else
     fix_length_and_dec_double(args[0]->decimals);
+}
+
+
+void Item_func_round::fix_arg_temporal(const Type_handler *h,
+                                       uint int_part_length)
+{
+  set_handler(h);
+  if (args[1]->const_item() && !args[1]->is_expensive())
+  {
+    Longlong_hybrid_null dec= args[1]->to_longlong_hybrid_null();
+    fix_attributes_temporal(int_part_length,
+                            dec.is_null() ? args[0]->decimals :
+                            dec.to_uint(TIME_SECOND_PART_DIGITS));
+  }
+  else
+    fix_attributes_temporal(int_part_length, args[0]->decimals);
+}
+
+
+void Item_func_round::fix_arg_time()
+{
+  fix_arg_temporal(&type_handler_time2, MIN_TIME_WIDTH);
+}
+
+
+void Item_func_round::fix_arg_datetime()
+{
+  /*
+    Day increment operations are not supported for '0000-00-00',
+    see get_date_from_daynr() for details. Therefore, expressions like
+      ROUND('0000-00-00 23:59:59.999999')
+    return NULL.
+  */
+  if (!truncate)
+    maybe_null= true;
+  fix_arg_temporal(&type_handler_datetime2, MAX_DATETIME_WIDTH);
 }
 
 
@@ -2608,18 +2523,48 @@ longlong Item_func_round::int_op()
 
 my_decimal *Item_func_round::decimal_op(my_decimal *decimal_value)
 {
-  my_decimal val, *value= args[0]->val_decimal(&val);
+  VDec value(args[0]);
   longlong dec= args[1]->val_int();
   if (dec >= 0 || args[1]->unsigned_flag)
     dec= MY_MIN((ulonglong) dec, decimals);
   else if (dec < INT_MIN)
     dec= INT_MIN;
     
-  if (!(null_value= (args[0]->null_value || args[1]->null_value ||
-                     my_decimal_round(E_DEC_FATAL_ERROR, value, (int) dec,
-                                      truncate, decimal_value) > 1))) 
+  if (!(null_value= (value.is_null() || args[1]->null_value ||
+                     value.round_to(decimal_value, (uint) dec,
+                                    truncate ? TRUNCATE : HALF_UP) > 1)))
     return decimal_value;
   return 0;
+}
+
+
+bool Item_func_round::time_op(THD *thd, MYSQL_TIME *to)
+{
+  DBUG_ASSERT(args[0]->type_handler()->mysql_timestamp_type() ==
+              MYSQL_TIMESTAMP_TIME);
+  Time::Options opt(Time::default_flags_for_get_date(),
+                    truncate ? TIME_FRAC_TRUNCATE : TIME_FRAC_ROUND,
+                    Time::DATETIME_TO_TIME_DISALLOW);
+  Longlong_hybrid_null dec= args[1]->to_longlong_hybrid_null();
+  Time *tm= new (to) Time(thd, args[0], opt,
+                          dec.to_uint(TIME_SECOND_PART_DIGITS));
+  null_value= !tm->is_valid_time() || dec.is_null();
+  DBUG_ASSERT(maybe_null || !null_value);
+  return null_value;
+}
+
+
+bool Item_func_round::date_op(THD *thd, MYSQL_TIME *to, date_mode_t fuzzydate)
+{
+  DBUG_ASSERT(args[0]->type_handler()->mysql_timestamp_type() ==
+              MYSQL_TIMESTAMP_DATETIME);
+  Datetime::Options opt(thd, truncate ? TIME_FRAC_TRUNCATE : TIME_FRAC_ROUND);
+  Longlong_hybrid_null dec= args[1]->to_longlong_hybrid_null();
+  Datetime *tm= new (to) Datetime(thd, args[0], opt,
+                                  dec.to_uint(TIME_SECOND_PART_DIGITS));
+  null_value= !tm->is_valid_datetime() || dec.is_null();
+  DBUG_ASSERT(maybe_null || !null_value);
+  return null_value;
 }
 
 
@@ -2634,7 +2579,7 @@ void Item_func_rand::seed_random(Item *arg)
   THD *thd= current_thd;
   if (WSREP(thd))
   {
-    if (thd->wsrep_exec_mode==REPL_RECV)
+    if (wsrep_thd_is_applying(thd))
       tmp= thd->wsrep_rand;
     else
       tmp= thd->wsrep_rand= (uint32) arg->val_int();
@@ -2755,14 +2700,15 @@ bool Item_func_min_max::fix_attributes(Item **items, uint nitems)
    0    Otherwise
 */
 
-bool Item_func_min_max::get_date_native(MYSQL_TIME *ltime, ulonglong fuzzy_date)
+bool Item_func_min_max::get_date_native(THD *thd, MYSQL_TIME *ltime,
+                                        date_mode_t fuzzydate)
 {
   longlong UNINIT_VAR(min_max);
   DBUG_ASSERT(fixed == 1);
 
   for (uint i=0; i < arg_count ; i++)
   {
-    longlong res= args[i]->val_datetime_packed();
+    longlong res= args[i]->val_datetime_packed(thd);
 
     /* Check if we need to stop (because of error or KILL) and stop the loop */
     if (unlikely(args[i]->null_value))
@@ -2773,8 +2719,8 @@ bool Item_func_min_max::get_date_native(MYSQL_TIME *ltime, ulonglong fuzzy_date)
   }
   unpack_time(min_max, ltime, mysql_timestamp_type());
 
-  if (!(fuzzy_date & TIME_TIME_ONLY) &&
-      unlikely((null_value= check_date_with_warn(ltime, fuzzy_date,
+  if (!(fuzzydate & TIME_TIME_ONLY) &&
+      unlikely((null_value= check_date_with_warn(thd, ltime, fuzzydate,
                                          MYSQL_TIMESTAMP_ERROR))))
     return true;
 
@@ -2782,17 +2728,17 @@ bool Item_func_min_max::get_date_native(MYSQL_TIME *ltime, ulonglong fuzzy_date)
 }
 
 
-bool Item_func_min_max::get_time_native(MYSQL_TIME *ltime)
+bool Item_func_min_max::get_time_native(THD *thd, MYSQL_TIME *ltime)
 {
   DBUG_ASSERT(fixed == 1);
 
-  Time value(args[0]);
+  Time value(thd, args[0], Time::Options(thd), decimals);
   if (!value.is_valid_time())
     return (null_value= true);
 
   for (uint i= 1; i < arg_count ; i++)
   {
-    Time tmp(args[i]);
+    Time tmp(thd, args[i], Time::Options(thd), decimals);
     if (!tmp.is_valid_time())
       return (null_value= true);
 
@@ -2903,6 +2849,28 @@ my_decimal *Item_func_min_max::val_decimal_native(my_decimal *dec)
     }
   }
   return res;
+}
+
+
+bool Item_func_min_max::val_native(THD *thd, Native *native)
+{
+  DBUG_ASSERT(fixed == 1);
+  const Type_handler *handler= Item_hybrid_func::type_handler();
+  NativeBuffer<STRING_BUFFER_USUAL_SIZE> cur;
+  for (uint i= 0; i < arg_count; i++)
+  {
+    if (val_native_with_conversion_from_item(thd, args[i],
+                                             i == 0 ? native : &cur,
+                                             handler))
+      return true;
+    if (i > 0)
+    {
+      int cmp= handler->cmp_native(*native, cur);
+      if ((cmp_sign < 0 ? cmp : -cmp) < 0 && native->copy(cur))
+        return null_value= true;
+    }
+  }
+  return null_value= false;
 }
 
 
@@ -3037,14 +3005,14 @@ longlong Item_func_field::val_int()
   }
   else if (cmp_type == DECIMAL_RESULT)
   {
-    my_decimal dec_arg_buf, *dec_arg,
-               dec_buf, *dec= args[0]->val_decimal(&dec_buf);
-    if (args[0]->null_value)
+    VDec dec(args[0]);
+    if (dec.is_null())
       return 0;
+    my_decimal dec_arg_buf;
     for (uint i=1; i < arg_count; i++)
     {
-      dec_arg= args[i]->val_decimal(&dec_arg_buf);
-      if (!args[i]->null_value && !my_decimal_cmp(dec_arg, dec))
+      my_decimal *dec_arg= args[i]->val_decimal(&dec_arg_buf);
+      if (!args[i]->null_value && !dec.cmp(dec_arg))
         return (longlong) (i);
     }
   }
@@ -3297,6 +3265,7 @@ udf_handler::fix_fields(THD *thd, Item_func_or_sum *func,
     }
     uint i;
     Item **arg,**arg_end;
+    With_sum_func_cache *with_sum_func_cache= func->get_with_sum_func_cache();
     for (i=0, arg=arguments, arg_end=arguments+arg_count;
 	 arg != arg_end ;
 	 arg++,i++)
@@ -3320,7 +3289,8 @@ udf_handler::fix_fields(THD *thd, Item_func_or_sum *func,
 	func->collation.set(&my_charset_bin);
       if (item->maybe_null)
 	func->maybe_null=1;
-      func->with_sum_func= func->with_sum_func || item->with_sum_func;
+      if (with_sum_func_cache)
+        with_sum_func_cache->join_with_sum_func(item);
       func->with_window_func= func->with_window_func ||
                               item->with_window_func;
       func->with_field= func->with_field || item->with_field;
@@ -3626,32 +3596,6 @@ String *Item_func_udf_int::val_str(String *str)
 }
 
 
-longlong Item_func_udf_decimal::val_int()
-{
-  my_bool tmp_null_value;
-  longlong result;
-  my_decimal dec_buf, *dec= udf.val_decimal(&tmp_null_value, &dec_buf);
-  null_value= tmp_null_value;
-  if (null_value)
-    return 0;
-  my_decimal2int(E_DEC_FATAL_ERROR, dec, unsigned_flag, &result);
-  return result;
-}
-
-
-double Item_func_udf_decimal::val_real()
-{
-  my_bool tmp_null_value;
-  double result;
-  my_decimal dec_buf, *dec= udf.val_decimal(&tmp_null_value, &dec_buf);
-  null_value= tmp_null_value;
-  if (null_value)
-    return 0.0;
-  my_decimal2double(E_DEC_FATAL_ERROR, dec, &result);
-  return result;
-}
-
-
 my_decimal *Item_func_udf_decimal::val_decimal(my_decimal *dec_buf)
 {
   my_decimal *res;
@@ -3664,21 +3608,6 @@ my_decimal *Item_func_udf_decimal::val_decimal(my_decimal *dec_buf)
   res= udf.val_decimal(&tmp_null_value, dec_buf);
   null_value= tmp_null_value;
   DBUG_RETURN(res);
-}
-
-
-String *Item_func_udf_decimal::val_str(String *str)
-{
-  my_bool tmp_null_value;
-  my_decimal dec_buf, *dec= udf.val_decimal(&tmp_null_value, &dec_buf);
-  null_value= tmp_null_value;
-  if (null_value)
-    return 0;
-  if (str->length() < DECIMAL_MAX_STR_LENGTH)
-    str->length(DECIMAL_MAX_STR_LENGTH);
-  my_decimal_round(E_DEC_FATAL_ERROR, dec, decimals, FALSE, &dec_buf);
-  my_decimal2string(E_DEC_FATAL_ERROR, &dec_buf, 0, 0, '0', str);
-  return str;
 }
 
 
@@ -3748,7 +3677,7 @@ longlong Item_master_pos_wait::val_int()
     connection_name.length= con->length();
     if (check_master_connection_name(&connection_name))
     {
-      my_error(ER_WRONG_ARGUMENTS, MYF(ME_JUST_WARNING),
+      my_error(ER_WRONG_ARGUMENTS, MYF(ME_WARNING),
                "MASTER_CONNECTION_NAME");
       goto err;
     }
@@ -4459,7 +4388,7 @@ user_var_entry *get_variable(HASH *hash, LEX_CSTRING *name,
     if (!my_hash_inited(hash))
       return 0;
     if (!(entry = (user_var_entry*) my_malloc(size,
-                                              MYF(MY_WME | ME_FATALERROR |
+                                              MYF(MY_WME | ME_FATAL |
                                                   MY_THREAD_SPECIFIC))))
       return 0;
     entry->name.str=(char*) entry+ ALIGN_SIZE(sizeof(user_var_entry))+
@@ -4714,7 +4643,7 @@ update_hash(user_var_entry *entry, bool set_null, void *ptr, size_t length,
 	  entry->value=0;
         entry->value= (char*) my_realloc(entry->value, length,
                                          MYF(MY_ALLOW_ZERO_PTR | MY_WME |
-                                             ME_FATALERROR |
+                                             ME_FATAL |
                                              MY_THREAD_SPECIFIC));
         if (!entry->value)
 	  return 1;
@@ -4779,11 +4708,7 @@ double user_var_entry::val_real(bool *null_value)
   case INT_RESULT:
     return (double) *(longlong*) value;
   case DECIMAL_RESULT:
-  {
-    double result;
-    my_decimal2double(E_DEC_FATAL_ERROR, (my_decimal *)value, &result);
-    return result;
-  }
+    return ((my_decimal *)value)->to_double();
   case STRING_RESULT:
     return my_atof(value);                      // This is null terminated
   case ROW_RESULT:
@@ -4808,11 +4733,7 @@ longlong user_var_entry::val_int(bool *null_value) const
   case INT_RESULT:
     return *(longlong*) value;
   case DECIMAL_RESULT:
-  {
-    longlong result;
-    my_decimal2int(E_DEC_FATAL_ERROR, (my_decimal *)value, 0, &result);
-    return result;
-  }
+    return ((my_decimal *)value)->to_longlong(false);
   case STRING_RESULT:
   {
     int error;
@@ -5549,10 +5470,9 @@ bool Item_func_get_user_var::set_value(THD *thd,
 
 bool Item_user_var_as_out_param::fix_fields(THD *thd, Item **ref)
 {
-  DBUG_ASSERT(fixed == 0);
+  DBUG_ASSERT(!is_fixed());
   DBUG_ASSERT(thd->lex->exchange);
-  if (Item::fix_fields(thd, ref) ||
-      !(entry= get_variable(&thd->user_vars, &org_name, 1)))
+  if (!(entry= get_variable(&thd->user_vars, &org_name, 1)))
     return TRUE;
   entry->type= STRING_RESULT;
   /*
@@ -5610,7 +5530,8 @@ my_decimal* Item_user_var_as_out_param::val_decimal(my_decimal *decimal_buffer)
 }
 
 
-bool Item_user_var_as_out_param::get_date(MYSQL_TIME *ltime, ulonglong fuzzy)
+bool Item_user_var_as_out_param::get_date(THD *thd, MYSQL_TIME *ltime,
+                                          date_mode_t fuzzydate)
 {
   DBUG_ASSERT(0);
   return true;
@@ -5649,7 +5570,7 @@ void Item_func_get_system_var::update_null_value()
   THD *thd= current_thd;
   int save_no_errors= thd->no_errors;
   thd->no_errors= TRUE;
-  Item::update_null_value();
+  type_handler()->Item_update_null_value(this);
   thd->no_errors= save_no_errors;
 }
 
@@ -6489,7 +6410,7 @@ Item_func_sp::fix_fields(THD *thd, Item **ref)
       (thd->lex->sql_command == SQLCOM_CREATE_VIEW))
   {
     Security_context *save_security_ctx= thd->security_ctx;
-    if (context->security_ctx)
+    if (context && context->security_ctx)
       thd->security_ctx= context->security_ctx;
 
     /*
@@ -6504,7 +6425,7 @@ Item_func_sp::fix_fields(THD *thd, Item **ref)
 
     if (res)
     {
-      context->process_error(thd);
+      process_error(thd);
       DBUG_RETURN(res);
     }
   }
@@ -6521,7 +6442,7 @@ Item_func_sp::fix_fields(THD *thd, Item **ref)
   if (!(m_sp= sp))
   {
     my_missing_function_error(m_name->m_name, ErrConvDQName(m_name).ptr());
-    context->process_error(thd);
+    process_error(thd);
     DBUG_RETURN(TRUE);
   }
 
@@ -6677,6 +6598,14 @@ String *Item_func_last_value::val_str(String *str)
   return tmp;
 }
 
+
+bool Item_func_last_value::val_native(THD *thd, Native *to)
+{
+  evaluate_sideeffects();
+  return val_native_from_item(thd, last_value, to);
+}
+
+
 longlong Item_func_last_value::val_int()
 {
   longlong tmp;
@@ -6705,10 +6634,10 @@ my_decimal *Item_func_last_value::val_decimal(my_decimal *decimal_value)
 }
 
 
-bool Item_func_last_value::get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+bool Item_func_last_value::get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate)
 {
   evaluate_sideeffects();
-  bool tmp= last_value->get_date(ltime, fuzzydate);
+  bool tmp= last_value->get_date(thd, ltime, fuzzydate);
   null_value= last_value->null_value;
   return tmp;
 }

@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 2012, 2016, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2017, 2018, MariaDB Corporation.
+Copyright (c) 2017, 2019, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -70,17 +70,16 @@ row_quiesce_write_index_fields(
 			return(DB_IO_ERROR);
 		}
 
+		const char* field_name = field->name ? field->name : "";
 		/* Include the NUL byte in the length. */
-		ib_uint32_t	len = static_cast<ib_uint32_t>(strlen(field->name) + 1);
-		ut_a(len > 1);
-
+		ib_uint32_t	len = static_cast<ib_uint32_t>(strlen(field_name) + 1);
 		mach_write_to_4(row, len);
 
 		DBUG_EXECUTE_IF("ib_export_io_write_failure_10",
 				close(fileno(file)););
 
 		if (fwrite(row, 1,  sizeof(len), file) != sizeof(len)
-		    || fwrite(field->name, 1, len, file) != len) {
+		    || fwrite(field_name, 1, len, file) != len) {
 
 			ib_senderrf(
 				thd, IB_LOG_LEVEL_WARN, ER_IO_WRITE_ERROR,
@@ -670,8 +669,11 @@ row_quiesce_set_state(
 	}
 
 	row_mysql_lock_data_dictionary(trx);
-
-	dict_table_x_lock_indexes(table);
+	for (dict_index_t* index = dict_table_get_first_index(table);
+	     index != NULL;
+	     index = dict_table_get_next_index(index)) {
+		rw_lock_x_lock(&index->lock);
+	}
 
 	switch (state) {
 	case QUIESCE_START:
@@ -688,7 +690,11 @@ row_quiesce_set_state(
 
 	table->quiesce = state;
 
-	dict_table_x_unlock_indexes(table);
+	for (dict_index_t* index = dict_table_get_first_index(table);
+	     index != NULL;
+	     index = dict_table_get_next_index(index)) {
+		rw_lock_x_unlock(&index->lock);
+	}
 
 	row_mysql_unlock_data_dictionary(trx);
 

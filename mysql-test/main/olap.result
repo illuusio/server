@@ -834,15 +834,15 @@ a
 1
 1
 Warnings:
+Warning	1292	Truncated incorrect datetime value: ''
 Warning	1292	Incorrect datetime value: ''
+Warning	1292	Truncated incorrect datetime value: ''
 Warning	1292	Incorrect datetime value: ''
+Warning	1292	Truncated incorrect datetime value: ''
 Warning	1292	Incorrect datetime value: ''
+Warning	1292	Truncated incorrect datetime value: ''
 Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: ''
-Warning	1292	Incorrect datetime value: ''
+Warning	1292	Truncated incorrect datetime value: ''
 Warning	1292	Incorrect datetime value: ''
 DROP TABLE t1;
 #

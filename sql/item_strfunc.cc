@@ -276,7 +276,7 @@ String *Item_func_sha2::val_str_ascii(String *str)
     Since we're subverting the usual String methods, we must make sure that
     the destination has space for the bytes we're about to write.
   */
-  str->realloc((uint) digest_length*2 + 1); /* Each byte as two nybbles */
+  str->alloc((uint) digest_length*2 + 1); /* Each byte as two nybbles */
 
   /* Convert the large number to a string-hex representation. */
   array_to_hex((char *) str->ptr(), digest_buf, (uint)digest_length);
@@ -783,7 +783,7 @@ String *Item_func_des_encrypt::val_str(String *str)
 
   tail= 8 - (res_length % 8);                   // 1..8 marking extra length
   res_length+=tail;
-  if (tmp_arg.realloc(res_length))
+  if (tmp_arg.alloc(res_length))
     goto error;
   tmp_arg.length(0);
   tmp_arg.append(res->ptr(), res->length());
@@ -791,7 +791,6 @@ String *Item_func_des_encrypt::val_str(String *str)
   if (tmp_arg.append(append_str, tail) || str->alloc(res_length+1))
     goto error;
   tmp_arg[res_length-1]=tail;                   // save extra length
-  str->realloc(res_length+1);
   str->length(res_length+1);
   str->set_charset(&my_charset_bin);
   (*str)[0]=(char) (128 | key_number);
@@ -1038,7 +1037,7 @@ String *Item_func_concat_ws::val_str(String *str)
         {
           uint new_len = MY_MAX(tmp_value.alloced_length() * 2, concat_len);
 
-          if (tmp_value.realloc(new_len))
+          if (tmp_value.alloc(new_len))
             goto null;
         }
       }
@@ -1093,8 +1092,7 @@ String *Item_func_reverse::val_str(String *str)
   /* An empty string is a special case as the string pointer may be null */
   if (!res->length())
     return make_empty_result();
-  if (str->alloced_length() < res->length() &&
-      str->realloc(res->length()))
+  if (str->alloc(res->length()))
   {
     null_value= 1;
     return 0;
@@ -2668,10 +2666,16 @@ const int FORMAT_MAX_DECIMALS= 30;
 
 bool Item_func_format::fix_length_and_dec()
 {
-  uint32 char_length= args[0]->max_char_length();
-  uint32 max_sep_count= (char_length / 3) + (decimals ? 1 : 0) + /*sign*/1;
+  uint32 char_length= args[0]->type_handler()->Item_decimal_notation_int_digits(args[0]);
+  uint dec= FORMAT_MAX_DECIMALS;
+  if (args[1]->const_item() && !args[1]->is_expensive() && !args[1]->null_value)
+  {
+    Longlong_hybrid tmp= args[1]->to_longlong_hybrid();
+    dec= tmp.to_uint(FORMAT_MAX_DECIMALS);
+  }
+  uint32 max_sep_count= (char_length / 3) + (dec ? 1 : 0) + /*sign*/1;
   collation.set(default_charset());
-  fix_char_length(char_length + max_sep_count + decimals);
+  fix_char_length(char_length + max_sep_count + dec);
   if (arg_count == 3)
     locale= args[2]->basic_const_item() ? args[2]->locale_from_val_str() : NULL;
   else
@@ -2712,12 +2716,10 @@ String *Item_func_format::val_str_ascii(String *str)
   if (args[0]->result_type() == DECIMAL_RESULT ||
       args[0]->result_type() == INT_RESULT)
   {
-    my_decimal dec_val, rnd_dec, *res;
-    res= args[0]->val_decimal(&dec_val);
-    if ((null_value=args[0]->null_value))
+    VDec res(args[0]);
+    if ((null_value= res.is_null()))
       return 0; /* purecov: inspected */
-    my_decimal_round(E_DEC_FATAL_ERROR, res, dec, false, &rnd_dec);
-    my_decimal2string(E_DEC_FATAL_ERROR, &rnd_dec, 0, 0, 0, str);
+    res.to_string_round(str, dec);
     str_length= str->length();
   }
   else
@@ -4236,7 +4238,7 @@ String *Item_func_compress::val_str(String *str)
 
   // Check new_size overflow: new_size <= res->length()
   if (((uint32) (new_size+5) <= res->length()) || 
-      str->realloc((uint32) new_size + 4 + 1))
+      str->alloc((uint32) new_size + 4 + 1))
   {
     null_value= 1;
     return 0;
@@ -4308,7 +4310,7 @@ String *Item_func_uncompress::val_str(String *str)
                                          max_allowed_packet));
     goto err;
   }
-  if (str->realloc((uint32)new_size))
+  if (str->alloc((uint32)new_size))
     goto err;
 
   if ((err= uncompress((Byte*)str->ptr(), &new_size,
@@ -4337,7 +4339,7 @@ String *Item_func_uuid::val_str(String *str)
   DBUG_ASSERT(fixed == 1);
   uchar guid[MY_UUID_SIZE];
 
-  str->realloc(MY_UUID_STRING_LENGTH+1);
+  str->alloc(MY_UUID_STRING_LENGTH+1);
   str->length(MY_UUID_STRING_LENGTH);
   str->set_charset(system_charset_info);
   my_uuid(guid);
@@ -4603,11 +4605,11 @@ bool Item_func_dyncol_create::prepare_arguments(THD *thd, bool force_names_arg)
       break;
     case DYN_COL_DATETIME:
     case DYN_COL_DATE:
-      args[valpos]->get_date(&vals[i].x.time_value,
-                             sql_mode_for_dates(thd));
+      args[valpos]->get_date(thd, &vals[i].x.time_value,
+                             Datetime::Options(thd));
       break;
     case DYN_COL_TIME:
-      args[valpos]->get_time(&vals[i].x.time_value);
+      args[valpos]->get_time(thd, &vals[i].x.time_value);
       break;
     default:
       DBUG_ASSERT(0);
@@ -5173,7 +5175,7 @@ null:
 }
 
 
-bool Item_dyncol_get::get_date(MYSQL_TIME *ltime, ulonglong fuzzy_date)
+bool Item_dyncol_get::get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate)
 {
   DYNAMIC_COLUMN_VALUE val;
   char buff[STRING_BUFFER_USUAL_SIZE];
@@ -5194,10 +5196,8 @@ bool Item_dyncol_get::get_date(MYSQL_TIME *ltime, ulonglong fuzzy_date)
     if (signed_value || val.x.ulong_value <= LONGLONG_MAX)
     {
       longlong llval = (longlong)val.x.ulong_value;
-      bool neg = llval < 0;
-      if (int_to_datetime_with_warn(neg, (ulonglong)(neg ? -llval :
-                                                llval),
-                                    ltime, fuzzy_date, 0, 0 /* TODO */))
+      if (int_to_datetime_with_warn(thd, Longlong_hybrid(llval, !signed_value),
+                                    ltime, fuzzydate, 0, 0 /* TODO */))
         goto null;
       return 0;
     }
@@ -5205,20 +5205,20 @@ bool Item_dyncol_get::get_date(MYSQL_TIME *ltime, ulonglong fuzzy_date)
     val.x.double_value= static_cast<double>(ULONGLONG_MAX);
     /* fall through */
   case DYN_COL_DOUBLE:
-    if (double_to_datetime_with_warn(val.x.double_value, ltime, fuzzy_date,
+    if (double_to_datetime_with_warn(thd, val.x.double_value, ltime, fuzzydate,
                                      0, 0 /* TODO */))
       goto null;
     return 0;
   case DYN_COL_DECIMAL:
-    if (decimal_to_datetime_with_warn((my_decimal*)&val.x.decimal.value, ltime,
-                                      fuzzy_date, 0, 0 /* TODO */))
+    if (decimal_to_datetime_with_warn(thd, (my_decimal*)&val.x.decimal.value,
+                                      ltime, fuzzydate, 0, 0 /* TODO */))
       goto null;
     return 0;
   case DYN_COL_STRING:
-    if (str_to_datetime_with_warn(&my_charset_numeric,
+    if (str_to_datetime_with_warn(thd, &my_charset_numeric,
                                   val.x.string.value.str,
                                   val.x.string.value.length,
-                                  ltime, fuzzy_date))
+                                  ltime, fuzzydate))
       goto null;
     return 0;
   case DYN_COL_DATETIME:
@@ -5326,3 +5326,102 @@ String *Item_temptable_rowid::val_str(String *str)
   str_value.set((char*)(table->file->ref), max_length, &my_charset_bin);
   return &str_value;
 }
+#ifdef WITH_WSREP
+
+#include "wsrep_mysqld.h"
+
+String *Item_func_wsrep_last_written_gtid::val_str_ascii(String *str)
+{
+  wsrep::gtid gtid= current_thd->wsrep_cs().last_written_gtid();
+  if (gtid_str.alloc(wsrep::gtid_c_str_len()))
+  {
+    my_error(ER_OUTOFMEMORY, wsrep::gtid_c_str_len());
+    null_value= true;
+    return NULL;
+  }
+
+  ssize_t gtid_len= gtid_print_to_c_str(gtid, (char*) gtid_str.ptr(),
+                                        wsrep::gtid_c_str_len());
+  if (gtid_len < 0)
+  {
+    my_error(ER_ERROR_WHEN_EXECUTING_COMMAND, MYF(0), func_name(),
+             "wsrep_gtid_print failed");
+    null_value= true;
+    return NULL;
+  }
+  gtid_str.length(gtid_len);
+  return &gtid_str;
+}
+
+String *Item_func_wsrep_last_seen_gtid::val_str_ascii(String *str)
+{
+  /* TODO: Should call Wsrep_server_state.instance().last_committed_gtid()
+     instead. */
+  wsrep::gtid gtid= Wsrep_server_state::instance().provider().last_committed_gtid();
+  if (gtid_str.alloc(wsrep::gtid_c_str_len()))
+  {
+    my_error(ER_OUTOFMEMORY, wsrep::gtid_c_str_len());
+    null_value= true;
+    return NULL;
+  }
+  ssize_t gtid_len= wsrep::gtid_print_to_c_str(gtid, (char*) gtid_str.ptr(),
+                                               wsrep::gtid_c_str_len());
+  if (gtid_len < 0)
+  {
+    my_error(ER_ERROR_WHEN_EXECUTING_COMMAND, MYF(0), func_name(),
+             "wsrep_gtid_print failed");
+    null_value= true;
+    return NULL;
+  }
+  gtid_str.length(gtid_len);
+  return &gtid_str;
+}
+
+longlong Item_func_wsrep_sync_wait_upto::val_int()
+{
+  int timeout= -1;
+  String* gtid_str= args[0]->val_str(&value);
+  if (gtid_str == NULL)
+  {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return 0LL;
+  }
+
+  if (arg_count == 2)
+  {
+    timeout= args[1]->val_int();
+  }
+
+  wsrep_gtid_t gtid;
+  int gtid_len= wsrep_gtid_scan(gtid_str->ptr(), gtid_str->length(), &gtid);
+  if (gtid_len < 0)
+  {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return 0LL;
+  }
+
+  if (gtid.seqno == WSREP_SEQNO_UNDEFINED &&
+      wsrep_uuid_compare(&gtid.uuid, &WSREP_UUID_UNDEFINED) == 0)
+  {
+    return 1LL;
+  }
+
+  enum wsrep::provider::status status=
+      wsrep_sync_wait_upto(current_thd, &gtid, timeout);
+
+  if (status)
+  {
+    int err;
+    switch (status) {
+    case wsrep::provider::error_transaction_missing:
+      err= ER_WRONG_ARGUMENTS;
+      break;
+    default:
+      err= ER_LOCK_WAIT_TIMEOUT;
+    }
+    my_error(err, MYF(0), func_name());
+    return 0LL;
+  }
+  return 1LL;
+}
+#endif /* WITH_WSREP */

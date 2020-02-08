@@ -192,7 +192,7 @@ void *alloc_root(MEM_ROOT *mem_root, size_t length)
 
   length+=ALIGN_SIZE(sizeof(USED_MEM));
   if (!(next = (USED_MEM*) my_malloc(length,
-                                     MYF(MY_WME | ME_FATALERROR |
+                                     MYF(MY_WME | ME_FATAL |
                                          MALLOC_FLAG(mem_root->block_size)))))
   {
     if (mem_root->error_handler)
@@ -248,7 +248,7 @@ void *alloc_root(MEM_ROOT *mem_root, size_t length)
     get_size= MY_MAX(get_size, block_size);
 
     if (!(next = (USED_MEM*) my_malloc(get_size,
-                                       MYF(MY_WME | ME_FATALERROR |
+                                       MYF(MY_WME | ME_FATAL |
                                            MALLOC_FLAG(mem_root->
                                                        block_size)))))
     {
@@ -492,4 +492,15 @@ void *memdup_root(MEM_ROOT *root, const void *str, size_t len)
   if ((pos=alloc_root(root,len)))
     memcpy(pos,str,len);
   return pos;
+}
+
+LEX_CSTRING safe_lexcstrdup_root(MEM_ROOT *root, const LEX_CSTRING str)
+{
+  LEX_CSTRING res;
+  if (str.length)
+    res.str= strmake_root(root, str.str, str.length);
+  else
+    res.str= (const char *)"";
+  res.length= str.length;
+  return res;
 }

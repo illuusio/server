@@ -85,7 +85,6 @@ BEGIN
     mysql.help_category,
     mysql.help_keyword,
     mysql.help_relation,
-    mysql.host,
     mysql.plugin,
     mysql.proc,
     mysql.procs_priv,
@@ -96,7 +95,7 @@ BEGIN
     mysql.time_zone_name,
     mysql.time_zone_transition,
     mysql.time_zone_transition_type,
-    mysql.user;
+    mysql.global_priv;
 
   -- verify that no plugin changed its disabled/enabled state
   SELECT * FROM INFORMATION_SCHEMA.PLUGINS;

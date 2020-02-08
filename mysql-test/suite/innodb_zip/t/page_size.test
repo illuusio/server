@@ -1,4 +1,5 @@
 --source include/innodb_page_size_small.inc
+--source include/innodb_checksum_algorithm.inc
 SET default_storage_engine=InnoDB;
 
 --disable_query_log
@@ -542,6 +543,7 @@ SELECT a,
 LENGTH(b), b=LEFT(REPEAT(d,100*a), 65535),LENGTH(c), c=REPEAT(d,20*a), d FROM t1;
 SHOW CREATE TABLE t1;
 CHECK TABLE t1;
+--replace_column 9 #
 EXPLAIN SELECT * FROM t1 WHERE b LIKE 'adfd%';
 
 # The following tests are disabled because of the introduced timeouts for

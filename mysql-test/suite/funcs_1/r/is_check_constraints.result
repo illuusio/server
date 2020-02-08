@@ -135,6 +135,7 @@ GRANT SELECT (a) ON `db`.`t1` TO 'foo'@'%'
 SELECT * FROM information_schema.check_constraints;
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	TABLE_NAME	CONSTRAINT_NAME	CHECK_CLAUSE
 def	db	t1	CONSTRAINT_1	`b` > 0
+def	mysql	global_priv	Priv	json_valid(`Priv`)
 CONNECT con1,localhost, foo,, db;
 SELECT a FROM t1;
 a

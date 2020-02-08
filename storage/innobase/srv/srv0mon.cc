@@ -298,12 +298,6 @@ static monitor_info_t	innodb_counter_info[] =
 	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
 	 MONITOR_DEFAULT_START, MONITOR_OVLD_PAGES_READ},
 
-	{"buffer_pages0_read", "buffer",
-	 "Number of page 0 read (innodb_pages0_read)",
-	 static_cast<monitor_type_t>(
-	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-	 MONITOR_DEFAULT_START, MONITOR_OVLD_PAGES0_READ},
-
 	{"buffer_index_sec_rec_cluster_reads", "buffer",
 	 "Number of secondary record reads triggered cluster read",
 	 static_cast<monitor_type_t>(
@@ -801,11 +795,6 @@ static monitor_info_t	innodb_counter_info[] =
 	 "Number of transactions rolled back to savepoint",
 	 MONITOR_NONE,
 	 MONITOR_DEFAULT_START, MONITOR_TRX_ROLLBACK_SAVEPOINT},
-
-	{"trx_rollback_active", "transaction",
-	 "Number of resurrected active transactions rolled back",
-	 MONITOR_NONE,
-	 MONITOR_DEFAULT_START, MONITOR_TRX_ROLLBACK_ACTIVE},
 
 	{"trx_active_transactions", "transaction",
 	 "Number of active transactions",
@@ -1748,11 +1737,6 @@ srv_mon_process_existing_counter(
 		value = stat.n_pages_read;
 		break;
 
-	/* innodb_pages0_read */
-	case MONITOR_OVLD_PAGES0_READ:
-		value = srv_stats.page0_read;
-		break;
-
 	/* Number of times secondary index lookup triggered cluster lookup */
 	case MONITOR_OVLD_INDEX_SEC_REC_CLUSTER_READS:
 		value = srv_stats.n_sec_rec_cluster_reads;
@@ -1955,7 +1939,7 @@ srv_mon_process_existing_counter(
 		break;
 
 	case MONITOR_RSEG_HISTORY_LEN:
-		value = trx_sys.history_size();
+		value = trx_sys.rseg_history_len;
 		break;
 
 	case MONITOR_RSEG_CUR_SIZE:
@@ -2052,7 +2036,7 @@ srv_mon_process_existing_counter(
 #endif /* BTR_CUR_HASH_ADAPT */
 
 	case MONITOR_OVLD_ADAPTIVE_HASH_SEARCH_BTREE:
-		value = my_atomic_loadlint(&btr_cur_n_non_sea);
+		value = btr_cur_n_non_sea;
 		break;
 
         case MONITOR_OVLD_PAGE_COMPRESS_SAVED:

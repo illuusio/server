@@ -104,13 +104,12 @@ typedef struct my_aio_result {
 #define MY_GIVE_INFO	2U	/* Give time info about process*/
 #define MY_DONT_FREE_DBUG 4U    /* Do not call DBUG_END() in my_end() */
 
-#define ME_BELL         4U      /* Ring bell then printing message */
-#define ME_WAITTANG     0       /* Wait for a user action  */
-#define ME_NOREFRESH    64U     /* Write the error message to error log */
-#define ME_NOINPUT      0       /* Don't use the input library */
-#define ME_JUST_INFO    1024U   /**< not error but just info */
-#define ME_JUST_WARNING 2048U   /**< not error but just warning */
-#define ME_FATALERROR   4096U   /* Fatal statement error */
+#define ME_BELL           4U    /* Ring bell then printing message */
+#define ME_ERROR_LOG      64    /**< write the error message to error log */
+#define ME_ERROR_LOG_ONLY 128   /**< write the error message to error log only */
+#define ME_NOTE           1024  /**< not error but just info */
+#define ME_WARNING        2048  /**< not error but just warning */
+#define ME_FATAL          4096  /**< fatal statement error */
 
 	/* Bits in last argument to fn_format */
 #define MY_REPLACE_DIR		1U	/* replace dir in name with 'dir' */
@@ -331,7 +330,7 @@ typedef struct st_record_cache	/* Used when caching records */
 enum file_type
 {
   UNOPEN = 0, FILE_BY_OPEN, FILE_BY_CREATE, STREAM_BY_FOPEN, STREAM_BY_FDOPEN,
-  FILE_BY_MKSTEMP, FILE_BY_DUP
+  FILE_BY_O_TMPFILE, FILE_BY_MKSTEMP, FILE_BY_DUP
 };
 
 struct st_my_file_info
@@ -909,6 +908,7 @@ static inline char *safe_strdup_root(MEM_ROOT *root, const char *str)
 }
 extern char *strmake_root(MEM_ROOT *root,const char *str,size_t len);
 extern void *memdup_root(MEM_ROOT *root,const void *str, size_t len);
+extern LEX_CSTRING safe_lexcstrdup_root(MEM_ROOT *root, const LEX_CSTRING str);
 extern my_bool my_compress(uchar *, size_t *, size_t *);
 extern my_bool my_uncompress(uchar *, size_t , size_t *);
 extern uchar *my_compress_alloc(const uchar *packet, size_t *len,
@@ -992,6 +992,16 @@ extern ulonglong my_getcputime(void);
 #define HAVE_MMAP
 void *my_mmap(void *, size_t, int, int, int, my_off_t);
 int my_munmap(void *, size_t);
+#endif
+
+#ifdef _WIN32
+extern FILE* my_win_popen(const char*, const char*);
+extern int my_win_pclose(FILE*);
+#define my_popen(A,B) my_win_popen(A,B)
+#define my_pclose(A) my_win_pclose(A)
+#else
+#define my_popen(A,B) popen(A,B)
+#define my_pclose(A) pclose(A)
 #endif
 
 /* my_getpagesize */

@@ -64,7 +64,7 @@ local_init(const char *root)
 	{
 		char errbuf[MYSYS_STRERROR_SIZE];
 		my_strerror(errbuf, sizeof(errbuf),my_errno);
-		my_error(EE_CANT_MKDIR, MYF(ME_BELL | ME_WAITTANG),
+		my_error(EE_CANT_MKDIR, MYF(ME_BELL),
 			 root, my_errno,errbuf, my_errno);
 		return NULL;
 	}
@@ -96,7 +96,7 @@ local_open(ds_ctxt_t *ctxt, const char *path,
 	if (my_mkdir(dirpath, 0777, MYF(0)) < 0 && my_errno != EEXIST) {
 		char errbuf[MYSYS_STRERROR_SIZE];
 		my_strerror(errbuf, sizeof(errbuf), my_errno);
-		my_error(EE_CANT_MKDIR, MYF(ME_BELL | ME_WAITTANG),
+		my_error(EE_CANT_MKDIR, MYF(ME_BELL),
 			 dirpath, my_errno, errbuf);
 		return NULL;
 	}
@@ -178,7 +178,9 @@ static void init_ibd_data(ds_local_file_t *local_file, const uchar *buf, size_t 
 	ulint flags = mach_read_from_4(&buf[FIL_PAGE_DATA + FSP_SPACE_FLAGS]);
 	ulint ssize = FSP_FLAGS_GET_PAGE_SSIZE(flags);
 	local_file->pagesize= ssize == 0 ? UNIV_PAGE_SIZE_ORIG : ((UNIV_ZIP_SIZE_MIN >> 1) << ssize);
-	local_file->compressed =  (my_bool)FSP_FLAGS_HAS_PAGE_COMPRESSION(flags);
+	local_file->compressed = fil_space_t::full_crc32(flags)
+		? fil_space_t::is_compressed(flags)
+		: bool(FSP_FLAGS_HAS_PAGE_COMPRESSION(flags));
 
 #if defined(_WIN32) && (MYSQL_VERSION_ID > 100200)
 	/* Make compressed file sparse, on Windows.

@@ -30,6 +30,7 @@
 
 #include "maria_def.h"
 #include "trnman.h"
+#include "ma_trnman.h"
 #include "ma_blockrec.h"
 
 /**
@@ -571,8 +572,6 @@ void _ma_remove_table_from_trnman(MARIA_HA *info)
   MARIA_SHARE *share= info->s;
   TRN *trn= info->trn;
   MARIA_USED_TABLES *tables, **prev;
-  MARIA_HA *handler, **prev_file;
-  uint unlinked= 0;
   DBUG_ENTER("_ma_remove_table_from_trnman");
   DBUG_PRINT("enter", ("trn: %p  used_tables: %p  share: %p  in_trans: %d",
                        trn, trn->used_tables, share, share->in_trans));
@@ -604,29 +603,9 @@ void _ma_remove_table_from_trnman(MARIA_HA *info)
     DBUG_PRINT("warning", ("share: %p where not in used_tables_list", share));
   }
 
-  /* unlink all instances of the table from used_instances */
-  prev_file= (MARIA_HA**) &trn->used_instances;
-  while ((handler= *prev_file))
-  {
-    if (handler->s == share)
-    {
-      unlinked++;
-      *prev_file= handler->trn_next;  /* Remove instance */
-    }
-    else
-      prev_file= &handler->trn_next;  /* Continue with next instance */
-  }
+  /* Reset trn and remove table from used_instances */
+  _ma_reset_trn_for_table(info);
 
-  DBUG_PRINT("note", ("unlinked tables: %u", unlinked));
-  if (!unlinked)
-  {
-    /*
-      This can only happens in case of rename of intermediate table as
-      part of alter table
-    */
-    DBUG_PRINT("warning", ("table: %p where not in used_instances", info));
-  }
-  info->trn= 0;                                 /* Not part of trans anymore */
   DBUG_VOID_RETURN;
 }
 

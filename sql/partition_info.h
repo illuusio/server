@@ -402,7 +402,7 @@ public:
     vers_info->interval.start= start;
     if (item->fix_fields_if_needed_for_scalar(thd, &item))
       return true;
-    bool error= get_interval_value(item, int_type, &vers_info->interval.step) ||
+    bool error= get_interval_value(thd, item, int_type, &vers_info->interval.step) ||
            vers_info->interval.step.neg || vers_info->interval.step.second_part ||
           !(vers_info->interval.step.year || vers_info->interval.step.month ||
             vers_info->interval.step.day || vers_info->interval.step.hour ||

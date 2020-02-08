@@ -276,8 +276,8 @@ functions:
        - Called before parsing and used to match a statement with the stored
          queries hash.
          If a match is found the cached result set is sent through repeated
-         calls to net_real_write. (note: calling thread doesn't have a regis-
-         tered result set writer: thd->net.query_cache_query=0)
+         calls to net_real_write. (note: calling thread does not have a
+         registered result set writer: thd->net.query_cache_query=0)
  2. Query_cache::store_query
        - Called just before handle_select() and is used to register a result
          set writer to the statement currently being processed
@@ -477,8 +477,7 @@ static void make_base_query(String *new_query,
   /* We do not support UCS2, UTF16, UTF32 as a client character set */
   DBUG_ASSERT(current_thd->variables.character_set_client->mbminlen == 1);
 
-  new_query->length(0);           // Don't copy anything from old buffer
-  if (new_query->realloc(query_length + additional_length))
+  if (new_query->alloc(query_length + additional_length))
   {
     /*
       We could not allocate the query.  Use original query for
@@ -4144,13 +4143,13 @@ Query_cache::is_cacheable(THD *thd, LEX *lex,
 
   if (thd->lex->safe_to_cache_query &&
       (thd->variables.query_cache_type == 1 ||
-       (thd->variables.query_cache_type == 2 && (lex->select_lex.options &
-						 OPTION_TO_QUERY_CACHE))) &&
+       (thd->variables.query_cache_type == 2 &&
+        (lex->first_select_lex()->options & OPTION_TO_QUERY_CACHE))) &&
       qc_is_able_to_intercept_result(thd))
   {
     DBUG_PRINT("qcache", ("options: %lx  %lx  type: %u",
                           (long) OPTION_TO_QUERY_CACHE,
-                          (long) lex->select_lex.options,
+                          (long) lex->first_select_lex()->options,
                           (int) thd->variables.query_cache_type));
 
     if (!(table_count= process_and_count_tables(thd, tables_used,
@@ -4171,7 +4170,7 @@ Query_cache::is_cacheable(THD *thd, LEX *lex,
 	     ("not interesting query: %d or not cacheable, options %lx %lx  type: %u  net->vio present: %u",
 	      (int) lex->sql_command,
 	      (long) OPTION_TO_QUERY_CACHE,
-	      (long) lex->select_lex.options,
+	      (long) lex->first_select_lex()->options,
 	      (int) thd->variables.query_cache_type,
               (uint) MY_TEST(qc_is_able_to_intercept_result(thd))));
   DBUG_RETURN(0);

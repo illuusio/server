@@ -1,3 +1,4 @@
+
 MACRO(MAKE_WIX_IDENTIFIER str varname)
   STRING(REPLACE "/" "." ${varname} "${str}")
   STRING(REGEX REPLACE "[^a-zA-Z_0-9.]" "_" ${varname} "${${varname}}")
@@ -59,6 +60,11 @@ IF(CMAKE_INSTALL_CONFIG_NAME)
   SET(CONFIG_PARAM "-DCMAKE_INSTALL_CONFIG_NAME=${CMAKE_INSTALL_CONFIG_NAME}")
 ENDIF()
 
+IF((MSVC_CRT_TYPE MATCHES "/MD") AND (NOT VCRedist_MSM))
+  # Something was wrong, we package VC runtime merge modules
+  # when compiled with dynamic C runtime.
+  MESSAGE(FATAL_ERROR "Redistributable merge module was not found")
+ENDIF()
 
 SET(COMPONENTS_ALL "${CPACK_COMPONENTS_ALL}")
 FOREACH(comp ${COMPONENTS_ALL})
@@ -382,9 +388,13 @@ EXECUTE_PROCESS(
  ${EXTRA_CANDLE_ARGS}
 )
 
+IF(VCRedist_MSM)
+  SET(SILENCE_VCREDIST_MSM_WARNINGS  -sice:ICE82 -sice:ICE03)
+ENDIF()
+
 EXECUTE_PROCESS(
  COMMAND ${LIGHT_EXECUTABLE} -v -ext WixUIExtension -ext WixUtilExtension
- -ext WixFirewallExtension -sice:ICE61
+  -ext WixFirewallExtension -sice:ICE61 ${SILENCE_VCREDIST_MSM_WARNINGS}
   mysql_server.wixobj  extra.wixobj -out  ${CPACK_PACKAGE_FILE_NAME}.msi
   ${EXTRA_LIGHT_ARGS}
 )

@@ -2227,28 +2227,24 @@ flush tables;
 --sorted_result
 show open tables from mysql;
 select Host, User from mysql.user limit 0;
-select Host, Db from mysql.host limit 0;
 --sorted_result
 show open tables from mysql;
 call proc_1();
 --sorted_result
 show open tables from mysql;
 select Host, User from mysql.user limit 0;
-select Host, Db from mysql.host limit 0;
 --sorted_result
 show open tables from mysql;
 call proc_1();
 --sorted_result
 show open tables from mysql;
 select Host, User from mysql.user limit 0;
-select Host, Db from mysql.host limit 0;
 --sorted_result
 show open tables from mysql;
 call proc_1();
 --sorted_result
 show open tables from mysql;
 select Host, User from mysql.user limit 0;
-select Host, Db from mysql.host limit 0;
 --sorted_result
 show open tables from mysql;
 flush tables;
@@ -2268,7 +2264,6 @@ drop procedure proc_1;
 --disable_ps_protocol
 flush tables;
 select Host, User from mysql.user limit 0;
-select Host, Db from mysql.host limit 0;
 --sorted_result
 show open tables from mysql;
 --enable_ps_protocol
@@ -2278,21 +2273,18 @@ execute abc;
 --sorted_result
 show open tables from mysql;
 select Host, User from mysql.user limit 0;
-select Host, Db from mysql.host limit 0;
 --sorted_result
 show open tables from mysql;
 execute abc;
 --sorted_result
 show open tables from mysql;
 select Host, User from mysql.user limit 0;
-select Host, Db from mysql.host limit 0;
 --sorted_result
 show open tables from mysql;
 execute abc;
 --sorted_result
 show open tables from mysql;
 select Host, User from mysql.user limit 0;
-select Host, Db from mysql.host limit 0;
 --sorted_result
 show open tables from mysql;
 flush tables;
@@ -4050,7 +4042,7 @@ DEALLOCATE PREPARE stmt;
 --echo #
 
 PREPARE stmt FROM 'SELECT ? FROM DUAL';
---error ER_PARSE_ERROR
+--error ER_SUBQUERIES_NOT_SUPPORTED
 EXECUTE stmt USING (SELECT 1);
 DEALLOCATE PREPARE stmt;
 
@@ -4229,7 +4221,7 @@ EXECUTE IMMEDIATE 'SELECT ?' USING ROW(1,2);
 --echo # Testing disallowed expressions in USING
 --echo #
 
---error ER_PARSE_ERROR
+--error ER_SUBQUERIES_NOT_SUPPORTED
 EXECUTE IMMEDIATE 'SELECT ? FROM DUAL' USING (SELECT 1);
 
 CREATE FUNCTION f1() RETURNS VARCHAR(10) RETURN 'test';
@@ -4402,9 +4394,9 @@ EXECUTE IMMEDIATE CONCAT(_latin1'SELECT 1 AS c FROM ', _latin2 'DUAL');
 --error ER_CANT_AGGREGATE_2COLLATIONS
 PREPARE stmt FROM CONCAT(_latin1'SELECT 1 AS c FROM ', _latin2 'DUAL');
 
---error ER_PARSE_ERROR
+--error ER_SUBQUERIES_NOT_SUPPORTED
 EXECUTE IMMEDIATE (SELECT 'SELECT 1');
---error ER_PARSE_ERROR
+--error ER_SUBQUERIES_NOT_SUPPORTED
 PREPARE stmt FROM (SELECT 'SELECT 1');
 
 --error ER_BAD_FIELD_ERROR
@@ -4924,4 +4916,28 @@ drop table t1;
 
 --echo #
 --echo # End of 10.2 tests
+--echo #
+
+--echo #
+--echo # MDEV-19263: Server crashes in mysql_handle_single_derived
+--echo # upon 2nd execution of PS
+--echo #
+
+CREATE TABLE t1 (f INT);
+CREATE VIEW v1 AS SELECT * FROM t1;
+CREATE TRIGGER tr BEFORE INSERT ON t1 FOR EACH ROW INSERT INTO v1 SELECT * FROM x;
+PREPARE stmt FROM "INSERT INTO v1 VALUES (1)";
+
+--error ER_NO_SUCH_TABLE
+EXECUTE stmt;
+--error ER_NO_SUCH_TABLE
+EXECUTE stmt;
+
+# Cleanup
+DEALLOCATE PREPARE stmt;
+DROP VIEW v1;
+DROP TABLE t1;
+
+--echo #
+--echo # End of 10.4 tests
 --echo #

@@ -701,7 +701,7 @@ up_slot_match:
 				  & REC_INFO_MIN_REC_FLAG)) {
 			ut_ad(!page_has_prev(page_align(mid_rec)));
 			ut_ad(!page_rec_is_leaf(mid_rec)
-			      || rec_is_metadata(mid_rec, index));
+			      || rec_is_metadata(mid_rec, *index));
 			cmp = 1;
 			goto low_rec_match;
 		}
@@ -1026,7 +1026,7 @@ page_cur_parse_insert_rec(
 
 		if (offset >= srv_page_size) {
 
-			recv_sys->found_corrupt_log = TRUE;
+			recv_sys.found_corrupt_log = TRUE;
 
 			return(NULL);
 		}
@@ -1040,7 +1040,7 @@ page_cur_parse_insert_rec(
 	}
 
 	if (end_seg_len >= srv_page_size << 1) {
-		recv_sys->found_corrupt_log = TRUE;
+		recv_sys.found_corrupt_log = TRUE;
 
 		return(NULL);
 	}
@@ -1330,7 +1330,7 @@ use_heap:
 			switch (rec_get_status(current_rec)) {
 			case REC_STATUS_ORDINARY:
 			case REC_STATUS_NODE_PTR:
-			case REC_STATUS_COLUMNS_ADDED:
+			case REC_STATUS_INSTANT:
 			case REC_STATUS_INFIMUM:
 				break;
 			case REC_STATUS_SUPREMUM:
@@ -1339,7 +1339,7 @@ use_heap:
 			switch (rec_get_status(insert_rec)) {
 			case REC_STATUS_ORDINARY:
 			case REC_STATUS_NODE_PTR:
-			case REC_STATUS_COLUMNS_ADDED:
+			case REC_STATUS_INSTANT:
 				break;
 			case REC_STATUS_INFIMUM:
 			case REC_STATUS_SUPREMUM:
@@ -1526,7 +1526,7 @@ page_cur_insert_rec_zip(
 			get rid of the modification log. */
 			page_create_zip(page_cur_get_block(cursor), index,
 					page_header_get_field(page, PAGE_LEVEL),
-					0, NULL, mtr);
+					0, mtr);
 			ut_ad(!page_header_get_ptr(page, PAGE_FREE));
 
 			if (page_zip_available(
@@ -1601,7 +1601,7 @@ page_cur_insert_rec_zip(
 			if (!log_compressed) {
 				if (page_zip_compress(
 					    page_zip, page, index,
-					    level, NULL, NULL)) {
+					    level, NULL)) {
 					page_cur_insert_rec_write_log(
 						insert_rec, rec_size,
 						cursor->rec, index, mtr);
@@ -1747,17 +1747,11 @@ too_small:
 			columns of free_rec, in case it will not be
 			overwritten by insert_rec. */
 
-			ulint	trx_id_col;
 			ulint	trx_id_offs;
 			ulint	len;
 
-			trx_id_col = dict_index_get_sys_col_pos(index,
-								DATA_TRX_ID);
-			ut_ad(trx_id_col > 0);
-			ut_ad(trx_id_col != ULINT_UNDEFINED);
-
-			trx_id_offs = rec_get_nth_field_offs(foffsets,
-							     trx_id_col, &len);
+			trx_id_offs = rec_get_nth_field_offs(
+				foffsets, index->db_trx_id(), &len);
 			ut_ad(len == DATA_TRX_ID_LEN);
 
 			if (DATA_TRX_ID_LEN + DATA_ROLL_PTR_LEN + trx_id_offs
@@ -1773,7 +1767,7 @@ too_small:
 
 			ut_ad(free_rec + trx_id_offs + DATA_TRX_ID_LEN
 			      == rec_get_nth_field(free_rec, foffsets,
-						   trx_id_col + 1, &len));
+						   index->db_roll_ptr(), &len));
 			ut_ad(len == DATA_ROLL_PTR_LEN);
 		}
 
@@ -2223,7 +2217,7 @@ page_cur_parse_delete_rec(
 	ptr += 2;
 
 	if (UNIV_UNLIKELY(offset >= srv_page_size)) {
-		recv_sys->found_corrupt_log = true;
+		recv_sys.found_corrupt_log = true;
 		return NULL;
 	}
 
@@ -2297,7 +2291,8 @@ page_cur_delete_rec(
 	/* The record must not be the supremum or infimum record. */
 	ut_ad(page_rec_is_user_rec(current_rec));
 
-	if (page_get_n_recs(page) == 1 && !recv_recovery_is_on()) {
+	if (page_get_n_recs(page) == 1 && !recv_recovery_is_on()
+	    && !rec_is_alter_metadata(current_rec, *index)) {
 		/* Empty the page, unless we are applying the redo log
 		during crash recovery. During normal operation, the
 		page_create_empty() gets logged as one of MLOG_PAGE_CREATE,

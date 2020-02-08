@@ -68,7 +68,7 @@ void select_unit::change_select()
   curr_sel= current_select_number;
   /* New SELECT processing starts */
   DBUG_ASSERT(table->file->inited == 0);
-  step= thd->lex->current_select->linkage;
+  step= thd->lex->current_select->get_linkage();
   switch (step)
   {
   case INTERSECT_TYPE:
@@ -248,7 +248,7 @@ bool select_unit::send_eof()
 {
   if (step != INTERSECT_TYPE ||
       (thd->lex->current_select->next_select() &&
-       thd->lex->current_select->next_select()->linkage == INTERSECT_TYPE))
+       thd->lex->current_select->next_select()->get_linkage() == INTERSECT_TYPE))
   {
     /*
       it is not INTESECT or next SELECT in the sequence is INTERSECT so no
@@ -753,11 +753,11 @@ bool st_select_lex_unit::join_union_type_attributes(THD *thd_arg,
         been fixed yet. An Item_type_holder must be created based on a fixed
         Item, so use the inner Item instead.
       */
-      DBUG_ASSERT(item_tmp->fixed ||
+      DBUG_ASSERT(item_tmp->is_fixed() ||
                   (item_tmp->type() == Item::REF_ITEM &&
                    ((Item_ref *)(item_tmp))->ref_type() ==
                    Item_ref::OUTER_REF));
-      if (!item_tmp->fixed)
+      if (!item_tmp->is_fixed())
         item_tmp= item_tmp->real_item();
       holders[holder_pos].add_argument(item_tmp);
     }
@@ -831,8 +831,8 @@ bool st_select_lex_unit::prepare(TABLE_LIST *derived_arg,
   bool is_union_select;
   bool have_except= FALSE, have_intersect= FALSE;
   bool instantiate_tmp_table= false;
-  bool single_tvc= !first_sl->next_select() && first_sl->tvc &&
-                   !fake_select_lex;
+  bool single_tvc= !first_sl->next_select() && first_sl->tvc;
+  bool single_tvc_wo_order= single_tvc && !first_sl->order_list.elements;
   DBUG_ENTER("st_select_lex_unit::prepare");
   DBUG_ASSERT(thd == current_thd);
 
@@ -924,8 +924,9 @@ bool st_select_lex_unit::prepare(TABLE_LIST *derived_arg,
 
   if (is_union_select || is_recursive)
   {
-    if ((is_unit_op() && !union_needs_tmp_table() &&
-        !have_except && !have_intersect) || single_tvc)
+    if ((single_tvc_wo_order && !fake_select_lex) ||
+        (is_unit_op() && !union_needs_tmp_table() &&
+	 !have_except && !have_intersect && !single_tvc))
     {
       SELECT_LEX *last= first_select();
       while (last->next_select())
@@ -940,7 +941,7 @@ bool st_select_lex_unit::prepare(TABLE_LIST *derived_arg,
     else
     {
       if (!is_recursive)
-	union_result= new (thd->mem_root) select_unit(thd);
+       union_result= new (thd->mem_root) select_unit(thd);
       else
       {
         with_element->rec_result=
@@ -994,7 +995,47 @@ bool st_select_lex_unit::prepare(TABLE_LIST *derived_arg,
     types= first_sl->item_list;
     goto cont;
   }
- 
+
+  if (sl->tvc && sl->order_list.elements &&
+      !sl->tvc->to_be_wrapped_as_with_tail())
+  {
+    SELECT_LEX_UNIT *unit= sl->master_unit();
+    if (thd->lex->context_analysis_only & CONTEXT_ANALYSIS_ONLY_VIEW)
+    {
+      unit->fake_select_lex= 0;
+      unit->saved_fake_select_lex= 0;
+    }
+    else
+    {
+      if (!unit->first_select()->next_select())
+      {
+        if (!unit->fake_select_lex)
+	{
+          Query_arena *arena, backup_arena;
+          arena= thd->activate_stmt_arena_if_needed(&backup_arena);
+          bool rc= unit->add_fake_select_lex(thd);
+          if (arena)
+            thd->restore_active_arena(arena, &backup_arena);
+          if (rc)
+            goto err;
+        }
+        SELECT_LEX *fake= unit->fake_select_lex;
+        fake->order_list= sl->order_list;
+        fake->explicit_limit= sl->explicit_limit;
+        fake->select_limit= sl->select_limit;
+        fake->offset_limit= sl->offset_limit;
+        sl->order_list.empty();
+        sl->explicit_limit= 0;
+        sl->select_limit= 0;
+        sl->offset_limit= 0;
+        if (describe)
+          fake->options|= SELECT_DESCRIBE;
+      }
+      else if (!sl->explicit_limit)
+        sl->order_list.empty();
+    }
+  }
+
   for (;sl; sl= sl->next_select(), union_part_count++)
   {
     if (sl->tvc)
@@ -1016,7 +1057,7 @@ bool st_select_lex_unit::prepare(TABLE_LIST *derived_arg,
 	  goto err;
       }
       else if (sl->tvc->prepare(thd, sl, tmp_result, this))
-	goto err;
+	  goto err;
     }
     else if (prepare_join(thd, sl, tmp_result, additional_options,
                           is_union_select))
@@ -1114,12 +1155,12 @@ cont:
 
     while ((type= tp++))
     {
-      if (type->cmp_type() == STRING_RESULT &&
-          type->collation.derivation == DERIVATION_NONE)
-      {
-        my_error(ER_CANT_AGGREGATE_NCOLLATIONS, MYF(0), "UNION");
+      /*
+        Test if the aggregated data type is OK for a UNION element.
+        E.g. in case of string data, DERIVATION_NONE is not allowed.
+      */
+      if (type->type_handler()->union_element_finalize(type))
         goto err;
-      }
     }
     
     /*
@@ -1461,7 +1502,7 @@ bool st_select_lex_unit::exec()
         union_result->change_select();
       if (fake_select_lex)
       {
-        if (sl != &thd->lex->select_lex)
+        if (sl != thd->lex->first_select_lex())
           fake_select_lex->uncacheable|= sl->uncacheable;
         else
           fake_select_lex->uncacheable= 0;

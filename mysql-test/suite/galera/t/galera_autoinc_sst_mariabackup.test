@@ -45,6 +45,7 @@ DELIMITER ;|
 --connection node_2a
 --source include/kill_galera.inc
 
+--remove_file $MYSQLTEST_VARDIR/mysqld.2/data/grastate.dat
 --source include/start_mysqld.inc
 
 INSERT INTO t1 VALUES (DEFAULT);
@@ -56,7 +57,6 @@ INSERT INTO t1 VALUES (DEFAULT);
 --disable_query_log
 --eval KILL CONNECTION $connection_id
 --enable_query_log
-
 INSERT INTO t1 VALUES (DEFAULT);
 
 --connection node_1

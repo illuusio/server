@@ -25,6 +25,7 @@ Created 1/8/1996 Heikki Tuuri
 ***********************************************************************/
 
 #include "fsp0sysspace.h"
+#include "dict0pagecompress.h"
 
 /*********************************************************************//**
 Gets the minimum number of bytes per character.
@@ -241,83 +242,6 @@ dict_table_get_next_index(
 #endif /* UNIV_DEBUG */
 
 /********************************************************************//**
-Check whether the index is the clustered index.
-@return nonzero for clustered index, zero for other indexes */
-UNIV_INLINE
-ulint
-dict_index_is_clust(
-/*================*/
-	const dict_index_t*	index)	/*!< in: index */
-{
-	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
-	return(index->type & DICT_CLUSTERED);
-}
-
-/** Check if index is auto-generated clustered index.
-@param[in]	index	index
-
-@return true if index is auto-generated clustered index. */
-UNIV_INLINE
-bool
-dict_index_is_auto_gen_clust(
-	const dict_index_t*	index)
-{
-	return(index->type == DICT_CLUSTERED);
-}
-
-/********************************************************************//**
-Check whether the index is unique.
-@return nonzero for unique index, zero for other indexes */
-UNIV_INLINE
-ulint
-dict_index_is_unique(
-/*=================*/
-	const dict_index_t*	index)	/*!< in: index */
-{
-	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
-	return(index->type & DICT_UNIQUE);
-}
-
-/********************************************************************//**
-Check whether the index is a Spatial Index.
-@return	nonzero for Spatial Index, zero for other indexes */
-UNIV_INLINE
-ulint
-dict_index_is_spatial(
-/*==================*/
-	const dict_index_t*	index)	/*!< in: index */
-{
-	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
-	return ulint(UNIV_EXPECT(index->type & DICT_SPATIAL, 0));
-}
-
-/********************************************************************//**
-Check whether the index is the insert buffer tree.
-@return nonzero for insert buffer, zero for other indexes */
-UNIV_INLINE
-ulint
-dict_index_is_ibuf(
-/*===============*/
-	const dict_index_t*	index)	/*!< in: index */
-{
-	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
-	return(index->type & DICT_IBUF);
-}
-
-/********************************************************************//**
-Check whether the index is a secondary index or the insert buffer tree.
-@return nonzero for insert buffer, zero for other indexes */
-UNIV_INLINE
-ulint
-dict_index_is_sec_or_ibuf(
-/*======================*/
-	const dict_index_t*	index)	/*!< in: index */
-{
-	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
-	return((index->type & (DICT_CLUSTERED | DICT_IBUF)) != DICT_CLUSTERED);
-}
-
-/********************************************************************//**
 Gets the number of user-defined non-virtual columns in a table in the
 dictionary cache.
 @return number of user-defined (e.g., not ROW_ID) non-virtual
@@ -462,7 +386,8 @@ dict_table_get_nth_v_col(
 	ut_ad(table);
 	ut_ad(pos < table->n_v_def);
 	ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
-	ut_ad(!table->v_cols[pos].m_col.is_instant());
+	ut_ad(!table->v_cols[pos].m_col.is_added());
+	ut_ad(!table->v_cols[pos].m_col.is_dropped());
 	return &table->v_cols[pos];
 }
 
@@ -499,19 +424,6 @@ dict_table_get_sys_col_no(
 	ut_ad(sys < DATA_N_SYS_COLS);
 	ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
 	return unsigned(table->n_cols) + (sys - DATA_N_SYS_COLS);
-}
-
-/********************************************************************//**
-Check whether the table uses the compact page format.
-@return TRUE if table uses the compact page format */
-UNIV_INLINE
-bool
-dict_table_is_comp(
-/*===============*/
-	const dict_table_t*	table)	/*!< in: table */
-{
-	ut_ad(table);
-	return (table->flags & DICT_TF_COMPACT) != 0;
 }
 
 /************************************************************************
@@ -720,20 +632,34 @@ dict_tf_to_fsp_flags(ulint table_flags)
 	DBUG_EXECUTE_IF("dict_tf_to_fsp_flags_failure",
 			return(ULINT_UNDEFINED););
 
-	/* Adjust bit zero. */
-	fsp_flags = DICT_TF_HAS_ATOMIC_BLOBS(table_flags) ? 1 : 0;
+	/* No ROW_FORMAT=COMPRESSED for innodb_checksum_algorithm=full_crc32 */
+	if ((srv_checksum_algorithm == SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32
+	     || srv_checksum_algorithm == SRV_CHECKSUM_ALGORITHM_FULL_CRC32)
+	    && !(table_flags & DICT_TF_MASK_ZIP_SSIZE)) {
 
-	/* ZIP_SSIZE and ATOMIC_BLOBS are at the same position. */
-	fsp_flags |= table_flags
-		& (DICT_TF_MASK_ZIP_SSIZE | DICT_TF_MASK_ATOMIC_BLOBS);
+		fsp_flags = 1U << FSP_FLAGS_FCRC32_POS_MARKER
+			| FSP_FLAGS_FCRC32_PAGE_SSIZE();
 
-	fsp_flags |= FSP_FLAGS_PAGE_SSIZE();
+		if (page_compression_level) {
+			fsp_flags |= innodb_compression_algorithm
+				<< FSP_FLAGS_FCRC32_POS_COMPRESSED_ALGO;
+		}
+	} else {
+		/* Adjust bit zero. */
+		fsp_flags = DICT_TF_HAS_ATOMIC_BLOBS(table_flags) ? 1 : 0;
 
-	if (page_compression_level) {
-		fsp_flags |= FSP_FLAGS_MASK_PAGE_COMPRESSION;
+		/* ZIP_SSIZE and ATOMIC_BLOBS are at the same position. */
+		fsp_flags |= table_flags
+			& (DICT_TF_MASK_ZIP_SSIZE | DICT_TF_MASK_ATOMIC_BLOBS);
+
+		fsp_flags |= FSP_FLAGS_PAGE_SSIZE();
+
+		if (page_compression_level) {
+			fsp_flags |= FSP_FLAGS_MASK_PAGE_COMPRESSION;
+		}
 	}
 
-	ut_a(fsp_flags_is_valid(fsp_flags, false));
+	ut_a(fil_space_t::is_valid_flags(fsp_flags, false));
 
 	if (DICT_TF_HAS_DATA_DIR(table_flags)) {
 		fsp_flags |= 1U << FSP_FLAGS_MEM_DATA_DIR;
@@ -779,50 +705,6 @@ dict_tf_to_sys_tables_type(
 	return(type);
 }
 
-/** Extract the page size info from table flags.
-@param[in]	flags	flags
-@return a structure containing the compressed and uncompressed
-page sizes and a boolean indicating if the page is compressed. */
-UNIV_INLINE
-const page_size_t
-dict_tf_get_page_size(
-	ulint	flags)
-{
-	const ulint	zip_ssize = DICT_TF_GET_ZIP_SSIZE(flags);
-
-	if (zip_ssize == 0) {
-		return(univ_page_size);
-	}
-
-	const ulint	zip_size = (UNIV_ZIP_SIZE_MIN >> 1) << zip_ssize;
-
-	ut_ad(zip_size <= UNIV_ZIP_SIZE_MAX);
-
-	return(page_size_t(zip_size, srv_page_size, true));
-}
-
-/*********************************************************************//**
-Obtain exclusive locks on all index trees of the table. This is to prevent
-accessing index trees while InnoDB is updating internal metadata for
-operations such as truncate tables. */
-UNIV_INLINE
-void
-dict_table_x_lock_indexes(
-/*======================*/
-	dict_table_t*	table)	/*!< in: table */
-{
-	dict_index_t*   index;
-
-	ut_ad(mutex_own(&dict_sys->mutex));
-
-	/* Loop through each index of the table and lock them */
-	for (index = dict_table_get_first_index(table);
-	     index != NULL;
-	     index = dict_table_get_next_index(index)) {
-		rw_lock_x_lock(dict_index_get_lock(index));
-	}
-}
-
 /*********************************************************************//**
 Returns true if the particular FTS index in the table is still syncing
 in the background, false otherwise.
@@ -843,24 +725,6 @@ dict_fts_index_syncing(
 		}
 	}
 	return(false);
-}
-/*********************************************************************//**
-Release the exclusive locks on all index tree. */
-UNIV_INLINE
-void
-dict_table_x_unlock_indexes(
-/*========================*/
-	dict_table_t*	table)	/*!< in: table */
-{
-	dict_index_t*   index;
-
-	ut_ad(mutex_own(&dict_sys->mutex));
-
-	for (index = dict_table_get_first_index(table);
-	     index != NULL;
-	     index = dict_table_get_next_index(index)) {
-		rw_lock_x_unlock(dict_index_get_lock(index));
-	}
 }
 
 /********************************************************************//**
@@ -978,30 +842,6 @@ dict_index_get_nth_field(
 	return((dict_field_t*) (index->fields) + pos);
 }
 #endif /* UNIV_DEBUG */
-
-/********************************************************************//**
-Returns the position of a system column in an index.
-@return position, ULINT_UNDEFINED if not contained */
-UNIV_INLINE
-ulint
-dict_index_get_sys_col_pos(
-/*=======================*/
-	const dict_index_t*	index,	/*!< in: index */
-	ulint			type)	/*!< in: DATA_ROW_ID, ... */
-{
-	ut_ad(index->magic_n == DICT_INDEX_MAGIC_N);
-	ut_ad(!dict_index_is_ibuf(index));
-
-	if (dict_index_is_clust(index)) {
-
-		return(dict_col_get_clust_pos(
-			       dict_table_get_sys_col(index->table, type),
-			       index));
-	}
-
-	return(dict_index_get_nth_col_pos(
-			index, dict_table_get_sys_col_no(index->table, type), NULL));
-}
 
 /*********************************************************************//**
 Gets the field column.
@@ -1233,9 +1073,7 @@ dict_table_is_fts_column(
 
 		index = (dict_index_t*) ib_vector_getp(indexes, i);
 
-		if (dict_index_contains_col_or_prefix(
-			index, col_no, is_virtual)) {
-
+		if (index->contains_col_or_prefix(col_no, is_virtual)) {
 			return(i);
 		}
 	}
@@ -1300,21 +1138,6 @@ dict_max_v_field_len_store_undo(
 	return(max_log_len);
 }
 
-/**********************************************************************//**
-Prevent table eviction by moving a table to the non-LRU list from the
-LRU list if it is not already there. */
-UNIV_INLINE
-void
-dict_table_prevent_eviction(
-/*========================*/
-	dict_table_t*	table)	/*!< in: table to prevent eviction */
-{
-	ut_ad(mutex_own(&dict_sys->mutex));
-	if (table->can_be_evicted) {
-		dict_table_move_from_lru_to_non_lru(table);
-	}
-}
-
 /********************************************************************//**
 Check whether the table is corrupted.
 @return nonzero for corrupted table, zero for valid tables */
@@ -1358,8 +1181,8 @@ inline
 void
 dict_table_t::acquire()
 {
-	ut_ad(mutex_own(&dict_sys->mutex));
-	my_atomic_add32_explicit(&n_ref_count, 1, MY_MEMORY_ORDER_RELAXED);
+	ut_ad(mutex_own(&dict_sys.mutex));
+	n_ref_count++;
 }
 
 /** Release the table handle.
@@ -1368,8 +1191,7 @@ inline
 bool
 dict_table_t::release()
 {
-	int32 n = my_atomic_add32_explicit(
-			&n_ref_count, -1, MY_MEMORY_ORDER_RELAXED);
+	auto n = n_ref_count--;
 	ut_ad(n > 0);
 	return n == 1;
 }

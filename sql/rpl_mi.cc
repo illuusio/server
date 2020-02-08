@@ -1082,7 +1082,7 @@ bool Master_info_index::init_all_master_info()
 
   if ((index_file_nr= my_open(index_file_name,
                               O_RDWR | O_CREAT | O_BINARY ,
-                              MYF(MY_WME | ME_NOREFRESH))) < 0 ||
+                              MYF(MY_WME | ME_ERROR_LOG))) < 0 ||
       my_sync(index_file_nr, MYF(MY_WME)) ||
       init_io_cache(&index_file, index_file_nr,
                     IO_SIZE, READ_CACHE,
@@ -1298,7 +1298,7 @@ Master_info *get_master_info(const LEX_CSTRING *connection_name,
     if (warning != Sql_condition::WARN_LEVEL_NOTE)
       my_error(WARN_NO_MASTER_INFO,
                MYF(warning == Sql_condition::WARN_LEVEL_WARN ?
-                   ME_JUST_WARNING : 0),
+                   ME_WARNING : 0),
                (int) connection_name->length, connection_name->str);
     mysql_mutex_unlock(&LOCK_active_mi);
     DBUG_RETURN(0);
@@ -1368,7 +1368,7 @@ Master_info_index::get_master_info(const LEX_CSTRING *connection_name,
   if (!mi && warning != Sql_condition::WARN_LEVEL_NOTE)
   {
     my_error(WARN_NO_MASTER_INFO,
-             MYF(warning == Sql_condition::WARN_LEVEL_WARN ? ME_JUST_WARNING :
+             MYF(warning == Sql_condition::WARN_LEVEL_WARN ? ME_WARNING :
                  0),
              (int) connection_name->length,
              connection_name->str);
@@ -1427,7 +1427,7 @@ bool Master_info_index::add_master_info(Master_info *mi, bool write_to_file)
     We have to protect against shutdown to ensure we are not calling
     my_hash_insert() while my_hash_free() is in progress
   */
-  if (unlikely(shutdown_in_progress) ||
+  if (unlikely(abort_loop) ||
       !my_hash_insert(&master_info_hash, (uchar*) mi))
   {
     if (global_system_variables.log_warnings > 1)
@@ -1570,7 +1570,7 @@ uint any_slave_sql_running(bool already_locked)
 
   if (!already_locked)
     mysql_mutex_lock(&LOCK_active_mi);
-  if (unlikely(shutdown_in_progress || !master_info_index))
+  if (unlikely(abort_loop || !master_info_index))
     count= 1;
   else
   {

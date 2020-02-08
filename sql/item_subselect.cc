@@ -54,7 +54,8 @@ Item_subselect::Item_subselect(THD *thd_arg):
   value_assigned(0), own_engine(0), thd(0), old_engine(0),
   have_to_be_excluded(0),
   inside_first_fix_fields(0), done_first_fix_fields(FALSE), 
-  expr_cache(0), forced_const(FALSE), substitution(0), engine(0), eliminated(FALSE),
+  expr_cache(0), forced_const(FALSE), expensive_fl(FALSE),
+  substitution(0), engine(0), eliminated(FALSE),
   changed(0), is_correlated(FALSE), with_recursive_reference(0)
 {
   DBUG_ENTER("Item_subselect::Item_subselect");
@@ -85,6 +86,9 @@ void Item_subselect::init(st_select_lex *select_lex,
   DBUG_ENTER("Item_subselect::init");
   DBUG_PRINT("enter", ("select_lex: %p  this: %p",
                        select_lex, this));
+
+  select_lex->parent_lex->relink_hack(select_lex);
+
   unit= select_lex->master_unit();
 
   if (unit->item)
@@ -118,17 +122,11 @@ void Item_subselect::init(st_select_lex *select_lex,
     parsing_place= (outer_select->in_sum_expr ?
                     NO_MATTER :
                     outer_select->parsing_place);
-    if (unit->is_unit_op() && unit->first_select()->next_select())
+    if (unit->is_unit_op() &&
+        (unit->first_select()->next_select() || unit->fake_select_lex))
       engine= new subselect_union_engine(unit, result, this);
     else
       engine= new subselect_single_select_engine(select_lex, result, this);
-  }
-  {
-    SELECT_LEX *upper= unit->outer_select();
-    if (upper->parsing_place == IN_HAVING)
-      upper->subquery_in_having= 1;
-    /* The subquery is an expression cache candidate */
-    upper->expr_cache_may_be_used[upper->parsing_place]= TRUE;
   }
   DBUG_PRINT("info", ("engine: %p", engine));
   DBUG_VOID_RETURN;
@@ -220,7 +218,8 @@ Item_subselect::~Item_subselect()
   if (own_engine)
     delete engine;
   else
-    engine->cleanup();
+    if (engine)  // can be empty in case of EOM
+      engine->cleanup();
   engine= NULL;
   DBUG_VOID_RETURN;
 }
@@ -243,6 +242,14 @@ bool Item_subselect::fix_fields(THD *thd_param, Item **ref)
   thd= thd_param;
 
   DBUG_ASSERT(unit->thd == thd);
+
+  {
+    SELECT_LEX *upper= unit->outer_select();
+    if (upper->parsing_place == IN_HAVING)
+      upper->subquery_in_having= 1;
+    /* The subquery is an expression cache candidate */
+    upper->expr_cache_may_be_used[upper->parsing_place]= TRUE;
+  }
 
   status_var_increment(thd_param->status_var.feature_subquery);
 
@@ -580,6 +587,9 @@ bool Item_subselect::is_expensive()
   double examined_rows= 0;
   bool all_are_simple= true;
 
+  if (!expensive_fl && is_evaluated())
+    return false;
+
   /* check extremely simple select */
   if (!unit->first_select()->next_select()) // no union
   {
@@ -590,7 +600,7 @@ bool Item_subselect::is_expensive()
     SELECT_LEX *sl= unit->first_select();
     JOIN *join = sl->join;
     if (join && !join->tables_list && !sl->first_inner_unit())
-      return false;
+      return (expensive_fl= false);
   }
 
 
@@ -600,14 +610,14 @@ bool Item_subselect::is_expensive()
 
     /* not optimized subquery */
     if (!cur_join)
-      return true;
+      return (expensive_fl= true);
 
     /*
       If the subquery is not optimised or in the process of optimization
       it supposed to be expensive
     */
     if (cur_join->optimization_state != JOIN::OPTIMIZATION_DONE)
-      return true;
+      return (expensive_fl= true);
 
     if (!cur_join->tables_list && !sl->first_inner_unit())
       continue;
@@ -629,7 +639,7 @@ bool Item_subselect::is_expensive()
       considered optimized if it has a join plan.
     */
     if (!cur_join->join_tab)
-      return true;
+      return (expensive_fl= true);
 
     if (sl->first_inner_unit())
     {
@@ -637,15 +647,15 @@ bool Item_subselect::is_expensive()
         Subqueries that contain subqueries are considered expensive.
         @todo: accumulate the cost of subqueries.
       */
-      return true;
+      return (expensive_fl= true);
     }
 
     examined_rows+= cur_join->get_examined_rows();
   }
 
   // here we are sure that subquery is optimized so thd is set
-  return !all_are_simple &&
-    (examined_rows > thd->variables.expensive_subquery_limit);
+  return (expensive_fl= !all_are_simple &&
+	   (examined_rows > thd->variables.expensive_subquery_limit));
 }
 
 
@@ -948,7 +958,7 @@ bool Item_subselect::const_item() const
 
 Item *Item_subselect::get_tmp_table_item(THD *thd_arg)
 {
-  if (!with_sum_func && !const_item())
+  if (!Item_subselect::with_sum_func() && !const_item())
     return new (thd->mem_root) Item_temptable_field(thd_arg, result_field);
   return copy_or_same(thd_arg);
 }
@@ -1088,7 +1098,7 @@ void Item_maxmin_subselect::no_rows_in_result()
   */
   if (parsing_place != SELECT_LIST || const_item())
     return;
-  value= (new (thd->mem_root) Item_null(thd))->get_cache(thd);
+  value= get_cache(thd);
   null_value= 0;
   was_values= 0;
   make_const();
@@ -1106,7 +1116,7 @@ void Item_singlerow_subselect::no_rows_in_result()
   */
   if (parsing_place != SELECT_LIST || const_item())
     return;
-  value= (new (thd->mem_root) Item_null(thd))->get_cache(thd);
+  value= get_cache(thd);
   reset();
   make_const();
 }
@@ -1151,7 +1161,7 @@ Item_singlerow_subselect::select_transformer(JOIN *join)
   if (!select_lex->master_unit()->is_unit_op() &&
       !select_lex->table_list.elements &&
       select_lex->item_list.elements == 1 &&
-      !select_lex->item_list.head()->with_sum_func &&
+      !select_lex->item_list.head()->with_sum_func() &&
       /*
 	We cant change name of Item_field or Item_ref, because it will
 	prevent it's correct resolving, but we should save name of
@@ -1356,6 +1366,24 @@ String *Item_singlerow_subselect::val_str(String *str)
 }
 
 
+bool Item_singlerow_subselect::val_native(THD *thd, Native *to)
+{
+  DBUG_ASSERT(fixed == 1);
+  if (forced_const)
+    return value->val_native(thd, to);
+  if (!exec() && !value->null_value)
+  {
+    null_value= false;
+    return value->val_native(thd, to);
+  }
+  else
+  {
+    reset();
+    return true;
+  }
+}
+
+
 my_decimal *Item_singlerow_subselect::val_decimal(my_decimal *decimal_value)
 {
   DBUG_ASSERT(fixed == 1);
@@ -1392,15 +1420,15 @@ bool Item_singlerow_subselect::val_bool()
 }
 
 
-bool Item_singlerow_subselect::get_date(MYSQL_TIME *ltime,ulonglong fuzzydate)
+bool Item_singlerow_subselect::get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate)
 {
   DBUG_ASSERT(fixed == 1);
   if (forced_const)
-    return value->get_date(ltime, fuzzydate);
+    return value->get_date(thd, ltime, fuzzydate);
   if (!exec() && !value->null_value)
   {
     null_value= FALSE;
-    return value->get_date(ltime, fuzzydate);
+    return value->get_date(thd, ltime, fuzzydate);
   }
   else
   {
@@ -1416,6 +1444,8 @@ Item_exists_subselect::Item_exists_subselect(THD *thd,
   emb_on_expr_nest(NULL), optimizer(0), exists_transformed(0)
 {
   DBUG_ENTER("Item_exists_subselect::Item_exists_subselect");
+
+
   init(select_lex, new (thd->mem_root) select_exists_subselect(thd, this));
   max_columns= UINT_MAX;
   null_value= FALSE; //can't be NULL
@@ -1458,6 +1488,7 @@ Item_in_subselect::Item_in_subselect(THD *thd, Item * left_exp,
 {
   DBUG_ENTER("Item_in_subselect::Item_in_subselect");
   DBUG_PRINT("info", ("in_strategy: %u", (uint)in_strategy));
+
   left_expr_orig= left_expr= left_exp;
   /* prepare to possible disassembling the item in convert_subq_to_sj() */
   if (left_exp->type() == Item::ROW_ITEM)
@@ -2054,7 +2085,7 @@ bool Item_in_subselect::fix_having(Item *having, SELECT_LEX *select_lex)
 {
   bool fix_res= 0;
   DBUG_ASSERT(thd);
-  if (!having->fixed)
+  if (!having->is_fixed())
   {
     select_lex->having_fix_field= 1;
     fix_res= having->fix_fields(thd, 0);
@@ -2391,9 +2422,9 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
     Item *item_having_part2= 0;
     for (uint i= 0; i < cols_num; i++)
     {
-      DBUG_ASSERT((left_expr->fixed &&
+      DBUG_ASSERT((left_expr->is_fixed() &&
 
-                  select_lex->ref_pointer_array[i]->fixed) ||
+                  select_lex->ref_pointer_array[i]->is_fixed()) ||
                   (select_lex->ref_pointer_array[i]->type() == REF_ITEM &&
                    ((Item_ref*)(select_lex->ref_pointer_array[i]))->ref_type() ==
                     Item_ref::OUTER_REF));
@@ -2462,8 +2493,8 @@ Item_in_subselect::create_row_in_to_exists_cond(JOIN * join,
     for (uint i= 0; i < cols_num; i++)
     {
       Item *item, *item_isnull;
-      DBUG_ASSERT((left_expr->fixed &&
-                  select_lex->ref_pointer_array[i]->fixed) ||
+      DBUG_ASSERT((left_expr->is_fixed() &&
+                  select_lex->ref_pointer_array[i]->is_fixed()) ||
                   (select_lex->ref_pointer_array[i]->type() == REF_ITEM &&
                    ((Item_ref*)(select_lex->ref_pointer_array[i]))->ref_type() ==
                     Item_ref::OUTER_REF));
@@ -2886,7 +2917,6 @@ bool Item_exists_subselect::exists2in_processor(void *opt_arg)
                                 !upper_not->is_top_level_item())) ||
       first_select->is_part_of_union() ||
       first_select->group_list.elements ||
-      first_select->order_list.elements ||
       join->having ||
       first_select->with_sum_func ||
       !first_select->leaf_tables.elements||
@@ -2894,8 +2924,31 @@ bool Item_exists_subselect::exists2in_processor(void *opt_arg)
       with_recursive_reference)
     DBUG_RETURN(FALSE);
 
-  DBUG_ASSERT(first_select->order_list.elements == 0 &&
-              first_select->group_list.elements == 0 &&
+  /*
+    EXISTS-to-IN coversion and ORDER BY ... LIMIT clause:
+
+    - "[ORDER BY ...] LIMIT n" clause with a non-zero n does not affect
+      the result of the EXISTS(...) predicate, and so we can discard
+      it during the conversion.
+    - "[ORDER BY ...] LIMIT m, n" can turn a non-empty resultset into empty
+      one, so it affects tthe EXISTS(...) result and cannot be discarded.
+
+    Disallow exists-to-in conversion if
+    (1). three is a LIMIT which is not a basic constant
+    (1a)  or is a "LIMIT 0" (see MDEV-19429)
+    (2).  there is an OFFSET clause
+  */
+  if ((first_select->select_limit &&                        // (1)
+       (!first_select->select_limit->basic_const_item() ||  // (1)
+        first_select->select_limit->val_uint() == 0)) ||    // (1a)
+      first_select->offset_limit)                           // (2)
+  {
+    DBUG_RETURN(FALSE);
+  }
+
+  /* Disallow the conversion if offset + limit exists */
+
+  DBUG_ASSERT(first_select->group_list.elements == 0 &&
               first_select->having == NULL);
 
   if (find_inner_outer_equalities(&join->conds, eqs))
@@ -2926,9 +2979,6 @@ bool Item_exists_subselect::exists2in_processor(void *opt_arg)
   if ((uint)eqs.elements() > (first_select->item_list.elements +
                               first_select->select_n_reserved))
     goto out;
-  /* It is simple query */
-  DBUG_ASSERT(first_select->join->all_fields.elements ==
-              first_select->item_list.elements);
 
   arena= thd->activate_stmt_arena_if_needed(&backup);
 
@@ -3184,21 +3234,6 @@ Item_in_subselect::select_in_like_transformer(JOIN *join)
 
   DBUG_ENTER("Item_in_subselect::select_in_like_transformer");
   DBUG_ASSERT(thd == join->thd);
-
-  /*
-    IN/SOME/ALL/ANY subqueries aren't support LIMIT clause. Without it
-    ORDER BY clause becomes meaningless thus we drop it here.
-  */
-  for (SELECT_LEX *sl= current->master_unit()->first_select();
-       sl; sl= sl->next_select())
-  {
-    if (sl->join)
-    {
-      sl->join->order= 0;
-      sl->join->skip_sort_order= 1;
-    }
-  }
-
   thd->where= "IN/ALL/ANY subquery";
 
   /*
@@ -3262,7 +3297,8 @@ out:
 
 void Item_in_subselect::print(String *str, enum_query_type query_type)
 {
-  if (test_strategy(SUBS_IN_TO_EXISTS))
+  if (test_strategy(SUBS_IN_TO_EXISTS) &&
+      !(query_type & QT_PARSABLE))
     str->append(STRING_WITH_LEN("<exists>"));
   else
   {
@@ -3489,7 +3525,8 @@ Item_allany_subselect::select_transformer(JOIN *join)
 
 void Item_allany_subselect::print(String *str, enum_query_type query_type)
 {
-  if (test_strategy(SUBS_IN_TO_EXISTS))
+  if (test_strategy(SUBS_IN_TO_EXISTS) &&
+      !(query_type & QT_PARSABLE))
     str->append(STRING_WITH_LEN("<exists>"));
   else
   {
@@ -5801,7 +5838,7 @@ int
 Ordered_key::cmp_keys_by_row_data(ha_rows a, ha_rows b)
 {
   uchar *rowid_a, *rowid_b;
-  int __attribute__((unused)) error;
+  int error;
   int cmp_res;
   /* The length in bytes of the rowids (positions) of tmp_table. */
   uint rowid_length= tbl->file->ref_length;
@@ -5815,14 +5852,14 @@ Ordered_key::cmp_keys_by_row_data(ha_rows a, ha_rows b)
   if (unlikely((error= tbl->file->ha_rnd_pos(tbl->record[0], rowid_a))))
   {
     /* purecov: begin inspected */
-    tbl->file->print_error(error, MYF(ME_FATALERROR));  // Sets fatal_error
+    tbl->file->print_error(error, MYF(ME_FATAL));  // Sets fatal_error
     return 0;
     /* purecov: end */
   }
   if (unlikely((error= tbl->file->ha_rnd_pos(tbl->record[1], rowid_b))))
   {
     /* purecov: begin inspected */
-    tbl->file->print_error(error, MYF(ME_FATALERROR));  // Sets fatal_error
+    tbl->file->print_error(error, MYF(ME_FATAL));  // Sets fatal_error
     return 0;
     /* purecov: end */
   }    
@@ -5902,13 +5939,13 @@ int Ordered_key::cmp_key_with_search_key(rownum_t row_num)
   /* The length in bytes of the rowids (positions) of tmp_table. */
   uint rowid_length= tbl->file->ref_length;
   uchar *cur_rowid= row_num_to_rowid + row_num * rowid_length;
-  int __attribute__((unused)) error;
+  int error;
   int cmp_res;
 
   if (unlikely((error= tbl->file->ha_rnd_pos(tbl->record[0], cur_rowid))))
   {
     /* purecov: begin inspected */
-    tbl->file->print_error(error, MYF(ME_FATALERROR));  // Sets fatal_error
+    tbl->file->print_error(error, MYF(ME_FATAL));  // Sets fatal_error
     return 0;
     /* purecov: end */
   }

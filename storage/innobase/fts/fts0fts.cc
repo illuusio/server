@@ -465,7 +465,7 @@ fts_load_user_stopword(
 	trx->op_info = "Load user stopword table into FTS cache";
 
 	if (!has_lock) {
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 	}
 
 	/* Validate the user table existence and in the right
@@ -537,7 +537,7 @@ fts_load_user_stopword(
 
 cleanup:
 	if (!has_lock) {
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 	}
 
 	trx_free(trx);
@@ -908,7 +908,7 @@ fts_drop_index(
 }
 
 /****************************************************************//**
-Free the query graph but check whether dict_sys->mutex is already
+Free the query graph but check whether dict_sys.mutex is already
 held */
 void
 fts_que_graph_free_check_lock(
@@ -930,15 +930,15 @@ fts_que_graph_free_check_lock(
 	}
 
 	if (!has_dict) {
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 	}
 
-	ut_ad(mutex_own(&dict_sys->mutex));
+	ut_ad(mutex_own(&dict_sys.mutex));
 
 	que_graph_free(graph);
 
 	if (!has_dict) {
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 	}
 }
 
@@ -3207,15 +3207,10 @@ fts_fetch_doc_from_rec(
 					documents */
 {
 	dict_index_t*		index;
-	dict_table_t*		table;
 	const rec_t*		clust_rec;
-	ulint			num_field;
 	const dict_field_t*	ifield;
-	const dict_col_t*	col;
 	ulint			clust_pos;
-	ulint			i;
 	ulint			doc_len = 0;
-	ulint			processed_doc = 0;
 	st_mysql_ftparser*	parser;
 
 	if (!get_doc) {
@@ -3223,19 +3218,15 @@ fts_fetch_doc_from_rec(
 	}
 
 	index = get_doc->index_cache->index;
-	table = get_doc->index_cache->index->table;
 	parser = get_doc->index_cache->index->parser;
 
 	clust_rec = btr_pcur_get_rec(pcur);
 	ut_ad(!page_rec_is_comp(clust_rec)
 	      || rec_get_status(clust_rec) == REC_STATUS_ORDINARY);
 
-	num_field = dict_index_get_n_fields(index);
-
-	for (i = 0; i < num_field; i++) {
+	for (ulint i = 0; i < index->n_fields; i++) {
 		ifield = dict_index_get_nth_field(index, i);
-		col = dict_field_get_col(ifield);
-		clust_pos = dict_col_get_clust_pos(col, clust_index);
+		clust_pos = dict_col_get_clust_pos(ifield->col, clust_index);
 
 		if (!get_doc->index_cache->charset) {
 			get_doc->index_cache->charset = fts_get_charset(
@@ -3246,7 +3237,7 @@ fts_fetch_doc_from_rec(
 			doc->text.f_str =
 				btr_rec_copy_externally_stored_field(
 					clust_rec, offsets,
-					dict_table_page_size(table),
+					btr_pcur_get_block(pcur)->zip_size(),
 					clust_pos, &doc->text.f_len,
 					static_cast<mem_heap_t*>(
 						doc->self_heap->arg));
@@ -3264,13 +3255,12 @@ fts_fetch_doc_from_rec(
 			continue;
 		}
 
-		if (processed_doc == 0) {
+		if (!doc_len) {
 			fts_tokenize_document(doc, NULL, parser);
 		} else {
 			fts_tokenize_document_next(doc, doc_len, NULL, parser);
 		}
 
-		processed_doc++;
 		doc_len += doc->text.f_len + 1;
 	}
 }
@@ -3635,8 +3625,7 @@ fts_read_ulint(
 	dfield_t*	dfield = que_node_get_val(exp);
 	void*		data = dfield_get_data(dfield);
 
-	*value = static_cast<ulint>(mach_read_from_4(
-		static_cast<const byte*>(data)));
+	*value = mach_read_from_4(static_cast<const byte*>(data));
 
 	return(TRUE);
 }
@@ -3677,13 +3666,6 @@ fts_get_max_doc_id(
 
 	if (!page_is_empty(btr_pcur_get_page(&pcur))) {
 		const rec_t*    rec = NULL;
-		offset_t	offsets_[REC_OFFS_NORMAL_SIZE];
-		offset_t*	offsets = offsets_;
-		mem_heap_t*	heap = NULL;
-		ulint		len;
-		const void*	data;
-
-		rec_offs_init(offsets_);
 
 		do {
 			rec = btr_pcur_get_rec(&pcur);
@@ -3693,18 +3675,11 @@ fts_get_max_doc_id(
 			}
 		} while (btr_pcur_move_to_prev(&pcur, &mtr));
 
-		if (!rec) {
+		if (!rec || rec_is_metadata(rec, *index)) {
 			goto func_exit;
 		}
 
-		ut_ad(!rec_is_metadata(rec, index));
-		offsets = rec_get_offsets(
-			rec, index, offsets, true, ULINT_UNDEFINED, &heap);
-
-		data = rec_get_nth_field(rec, offsets, 0, &len);
-
-		doc_id = static_cast<doc_id_t>(fts_read_doc_id(
-			static_cast<const byte*>(data)));
+		doc_id = fts_read_doc_id(rec);
 	}
 
 func_exit:
@@ -5170,49 +5145,23 @@ fts_get_doc_id_from_row(
 }
 
 /** Extract the doc id from the record that belongs to index.
-@param[in]	table	table
-@param[in]	rec	record contains FTS_DOC_ID
+@param[in]	rec	record containing FTS_DOC_ID
 @param[in]	index	index of rec
-@param[in]	heap	heap memory
+@param[in]	offsets	rec_get_offsets(rec,index)
 @return doc id that was extracted from rec */
 doc_id_t
 fts_get_doc_id_from_rec(
-	dict_table_t*		table,
 	const rec_t*		rec,
 	const dict_index_t*	index,
-	mem_heap_t*		heap)
+	const offset_t*		offsets)
 {
-	ulint		len;
-	const byte*	data;
-	ulint		col_no;
-	doc_id_t	doc_id = 0;
-	offset_t	offsets_[REC_OFFS_NORMAL_SIZE];
-	offset_t*	offsets = offsets_;
-	mem_heap_t*	my_heap = heap;
-
-	ut_a(table->fts->doc_col != ULINT_UNDEFINED);
-
-	rec_offs_init(offsets_);
-
-	offsets = rec_get_offsets(
-		rec, index, offsets, true, ULINT_UNDEFINED, &my_heap);
-
-	col_no = dict_col_get_index_pos(
-		&table->cols[table->fts->doc_col], index);
-
-	ut_ad(col_no != ULINT_UNDEFINED);
-
-	data = rec_get_nth_field(rec, offsets, col_no, &len);
-
-	ut_a(len == 8);
-	ut_ad(8 == sizeof(doc_id));
-	doc_id = static_cast<doc_id_t>(mach_read_from_8(data));
-
-	if (my_heap && !heap) {
-		mem_heap_free(my_heap);
-	}
-
-	return(doc_id);
+	ulint f = dict_col_get_index_pos(
+		&index->table->cols[index->table->fts->doc_col], index);
+	ulint len;
+	doc_id_t doc_id = mach_read_from_8(
+		rec_get_nth_field(rec, offsets, f, &len));
+	ut_ad(len == 8);
+	return doc_id;
 }
 
 /*********************************************************************//**
@@ -7355,7 +7304,7 @@ fts_init_recover_doc(
 			doc.text.f_str = btr_copy_externally_stored_field(
 				&doc.text.f_len,
 				static_cast<byte*>(dfield_get_data(dfield)),
-				dict_table_page_size(table), len,
+				table->space->zip_size(), len,
 				static_cast<mem_heap_t*>(doc.self_heap->arg));
 		} else {
 			doc.text.f_str = static_cast<byte*>(
@@ -7409,7 +7358,7 @@ fts_init_index(
 	fts_cache_t*    cache = table->fts->cache;
 	bool		need_init = false;
 
-	ut_ad(!mutex_own(&dict_sys->mutex));
+	ut_ad(!mutex_own(&dict_sys.mutex));
 
 	/* First check cache->get_docs is initialized */
 	if (!has_cache_lock) {
@@ -7474,10 +7423,10 @@ func_exit:
 	}
 
 	if (need_init) {
-		mutex_enter(&dict_sys->mutex);
+		mutex_enter(&dict_sys.mutex);
 		/* Register the table with the optimize thread. */
 		fts_optimize_add_table(table);
-		mutex_exit(&dict_sys->mutex);
+		mutex_exit(&dict_sys.mutex);
 	}
 
 	return(TRUE);

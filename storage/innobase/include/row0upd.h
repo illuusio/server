@@ -101,19 +101,6 @@ upd_get_field_by_field_no(
 	bool		is_virtual) /*!< in: if it is a virtual column */
 	MY_ATTRIBUTE((warn_unused_result));
 /*********************************************************************//**
-Writes into the redo log the values of trx id and roll ptr and enough info
-to determine their positions within a clustered index record.
-@return new pointer to mlog */
-byte*
-row_upd_write_sys_vals_to_log(
-/*==========================*/
-	dict_index_t*	index,	/*!< in: clustered index */
-	trx_id_t	trx_id,	/*!< in: transaction id */
-	roll_ptr_t	roll_ptr,/*!< in: roll ptr of the undo log record */
-	byte*		log_ptr,/*!< pointer to a buffer of size > 20 opened
-				in mlog */
-	mtr_t*		mtr);	/*!< in: mtr */
-/*********************************************************************//**
 Updates the trx id and roll ptr field in a clustered index record when
 a row is updated or marked deleted. */
 UNIV_INLINE
@@ -127,18 +114,6 @@ row_upd_rec_sys_fields(
 	const offset_t*	offsets,/*!< in: rec_get_offsets(rec, index) */
 	const trx_t*	trx,	/*!< in: transaction */
 	roll_ptr_t	roll_ptr);/*!< in: DB_ROLL_PTR to the undo log */
-/*********************************************************************//**
-Sets the trx id or roll ptr field of a clustered index entry. */
-void
-row_upd_index_entry_sys_field(
-/*==========================*/
-	dtuple_t*	entry,	/*!< in/out: index entry, where the memory
-				buffers for sys fields are already allocated:
-				the function just copies the new values to
-				them */
-	dict_index_t*	index,	/*!< in: clustered index */
-	ulint		type,	/*!< in: DATA_TRX_ID or DATA_ROLL_PTR */
-	ib_uint64_t	val);	/*!< in: value to write */
 /*********************************************************************//**
 Creates an update node for a query graph.
 @return own: update node */
@@ -492,6 +467,14 @@ struct upd_t{
 		return false;
 	}
 
+	/** @return whether this is for a hidden metadata record
+	for instant ALTER TABLE */
+	bool is_metadata() const { return dtuple_t::is_metadata(info_bits); }
+	/** @return whether this is for a hidden metadata record
+	for instant ALTER TABLE (not only ADD COLUMN) */
+	bool is_alter_metadata() const
+	{ return dtuple_t::is_alter_metadata(info_bits); }
+
 #ifdef UNIV_DEBUG
         bool validate() const
         {
@@ -505,7 +488,6 @@ struct upd_t{
                 return(true);
         }
 #endif // UNIV_DEBUG
-
 };
 
 /** Kinds of update operation */

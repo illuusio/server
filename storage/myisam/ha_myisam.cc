@@ -96,6 +96,10 @@ static MYSQL_THDVAR_ENUM(stats_method, PLUGIN_VAR_RQCMDARG,
   "and NULLS_IGNORED", NULL, NULL,
   MI_STATS_METHOD_NULLS_NOT_EQUAL, &myisam_stats_method_typelib);
 
+const char *MI_CHECK_INFO= "info";
+const char *MI_CHECK_WARNING= "warning";
+const char *MI_CHECK_ERROR= "error";
+
 #ifndef DBUG_OFF
 /**
   Causes the thread to wait in a spin lock for a query kill signal.
@@ -130,6 +134,20 @@ static handler *myisam_create_handler(handlerton *hton,
   return new (mem_root) ha_myisam(hton, table);
 }
 
+
+static void mi_check_print(HA_CHECK *param, const char* msg_type,
+                           const char *msgbuf)
+{
+  if (msg_type == MI_CHECK_INFO)
+    sql_print_information("%s.%s: %s", param->db_name, param->table_name,
+                          msgbuf);
+  else if (msg_type == MI_CHECK_WARNING)
+    sql_print_warning("%s.%s: %s", param->db_name, param->table_name,
+                      msgbuf);
+  else
+    sql_print_error("%s.%s: %s", param->db_name, param->table_name, msgbuf);
+}
+
 // collect errors printed by mi_check routines
 
 static void mi_check_print_msg(HA_CHECK *param,	const char* msg_type,
@@ -151,16 +169,21 @@ static void mi_check_print_msg(HA_CHECK *param,	const char* msg_type,
 
   if (!thd->vio_ok())
   {
-    sql_print_error("%s.%s: %s", param->db_name, param->table_name, msgbuf);
+    mi_check_print(param, msg_type, msgbuf);
     return;
   }
 
   if (param->testflag & (T_CREATE_MISSING_KEYS | T_SAFE_REPAIR |
 			 T_AUTO_REPAIR))
   {
-    my_message(ER_NOT_KEYFILE, msgbuf, MYF(MY_WME));
+    myf flag= 0;
+    if (msg_type == MI_CHECK_INFO)
+      flag= ME_NOTE;
+    else if (msg_type == MI_CHECK_WARNING)
+      flag= ME_WARNING;
+    my_message(ER_NOT_KEYFILE, msgbuf, MYF(flag));
     if (thd->variables.log_warnings > 2 && ! thd->log_all_errors)
-      sql_print_error("%s.%s: %s", param->db_name, param->table_name, msgbuf);
+      mi_check_print(param, msg_type, msgbuf);
     return;
   }
   length=(uint) (strxmov(name, param->db_name,".",param->table_name,NullS) -
@@ -185,7 +208,7 @@ static void mi_check_print_msg(HA_CHECK *param,	const char* msg_type,
     sql_print_error("Failed on my_net_write, writing to stderr instead: %s\n",
 		    msgbuf);
   else if (thd->variables.log_warnings > 2)
-    sql_print_error("%s.%s: %s", param->db_name, param->table_name, msgbuf);
+    mi_check_print(param, msg_type, msgbuf);
 
   if (param->need_print_msg_lock)
     mysql_mutex_unlock(&param->print_msg_mutex);
@@ -592,7 +615,7 @@ void mi_check_print_error(HA_CHECK *param, const char *fmt,...)
     return;
   va_list args;
   va_start(args, fmt);
-  mi_check_print_msg(param, "error", fmt, args);
+  mi_check_print_msg(param, MI_CHECK_ERROR, fmt, args);
   va_end(args);
 }
 
@@ -600,7 +623,7 @@ void mi_check_print_info(HA_CHECK *param, const char *fmt,...)
 {
   va_list args;
   va_start(args, fmt);
-  mi_check_print_msg(param, "info", fmt, args);
+  mi_check_print_msg(param, MI_CHECK_INFO, fmt, args);
   param->note_printed= 1;
   va_end(args);
 }
@@ -611,7 +634,7 @@ void mi_check_print_warning(HA_CHECK *param, const char *fmt,...)
   param->out_flag|= O_DATA_LOST;
   va_list args;
   va_start(args, fmt);
-  mi_check_print_msg(param, "warning", fmt, args);
+  mi_check_print_msg(param, MI_CHECK_WARNING, fmt, args);
   va_end(args);
 }
 
@@ -747,7 +770,8 @@ ulong ha_myisam::index_flags(uint inx, uint part, bool all_parts) const
   else 
   {
     flags= HA_READ_NEXT | HA_READ_PREV | HA_READ_RANGE |
-          HA_READ_ORDER | HA_KEYREAD_ONLY | HA_DO_INDEX_COND_PUSHDOWN;
+           HA_READ_ORDER | HA_KEYREAD_ONLY | HA_DO_INDEX_COND_PUSHDOWN |
+           HA_DO_RANGE_FILTER_PUSHDOWN;
   }
   return flags;
 }
@@ -910,7 +934,7 @@ int ha_myisam::close(void)
   return mi_close(tmp);
 }
 
-int ha_myisam::write_row(uchar *buf)
+int ha_myisam::write_row(const uchar *buf)
 {
   /*
     If we have an auto_increment column and we are writing a changed row
@@ -951,7 +975,6 @@ void ha_myisam::setup_vcols_for_repair(HA_CHECK *param)
   DBUG_ASSERT(file->s->base.reclength < file->s->vreclength);
   param->fix_record= compute_vcols;
   table->use_all_columns();
-  table->vcol_set= &table->s->all_set;
 }
 
 void ha_myisam::restore_vcos_after_repair()
@@ -1042,6 +1065,15 @@ int ha_myisam::check(THD* thd, HA_CHECK_OPT* check_opt)
       mysql_mutex_unlock(&share->intern_lock);
       info(HA_STATUS_NO_LOCK | HA_STATUS_TIME | HA_STATUS_VARIABLE |
 	   HA_STATUS_CONST);
+      /*
+        Write a 'table is ok' message to error log if table is ok and
+        we have written to error log that table was getting checked
+      */
+      if (!error && !(table->db_stat & HA_READ_ONLY) &&
+          !mi_is_crashed(file) && thd->error_printed_to_log &&
+          (param->warning_printed || param->error_printed ||
+           param->note_printed))
+        mi_check_print_info(param, "Table is fixed");
     }
   }
   else if (!mi_is_crashed(file) && !thd->killed)
@@ -1816,7 +1848,7 @@ bool ha_myisam::check_and_repair(THD *thd)
       sql_print_information("Making backup of index file %s with extension '%s'",
                             file->s->index_file_name, buff);
       mi_make_backup_of_index(file, check_opt.start_time,
-                              MYF(MY_WME | ME_JUST_WARNING));
+                              MYF(MY_WME | ME_WARNING));
     }
     check_opt.flags=
       (((myisam_recover_options &
@@ -1854,6 +1886,9 @@ int ha_myisam::index_init(uint idx, bool sorted)
   active_index=idx;
   if (pushed_idx_cond_keyno == idx)
     mi_set_index_cond_func(file, handler_index_cond_check, this);
+  if (pushed_rowid_filter)
+    mi_set_rowid_filter_func(file, handler_rowid_filter_check,
+                             handler_rowid_filter_is_active, this);
   return 0; 
 }
 
@@ -1865,6 +1900,7 @@ int ha_myisam::index_end()
   //pushed_idx_cond_keyno= MAX_KEY;
   mi_set_index_cond_func(file, NULL, 0);
   in_range_check_pushed_down= FALSE;
+  mi_set_rowid_filter_func(file, NULL, NULL, 0);
   ds_mrr.dsmrr_close();
 #if !defined(DBUG_OFF) && defined(SQL_SELECT_FIXED_FOR_UPDATE)
   file->update&= ~HA_STATE_AKTIV;               // Forget active row
@@ -1900,6 +1936,9 @@ int ha_myisam::index_read_idx_map(uchar *buf, uint index, const uchar *key,
   end_range= NULL;
   if (index == pushed_idx_cond_keyno)
     mi_set_index_cond_func(file, handler_index_cond_check, this);
+  if (pushed_rowid_filter)
+    mi_set_rowid_filter_func(file, handler_rowid_filter_check,
+                             handler_rowid_filter_is_active, this);
   res= mi_rkey(file, buf, index, key, keypart_map, find_flag);
   mi_set_index_cond_func(file, NULL, 0);
   return res;
@@ -2560,6 +2599,14 @@ Item *ha_myisam::idx_cond_push(uint keyno_arg, Item* idx_cond_arg)
   return NULL;
 }
 
+bool ha_myisam::rowid_filter_push(Rowid_filter* rowid_filter)
+{
+  pushed_rowid_filter= rowid_filter;
+  mi_set_rowid_filter_func(file, handler_rowid_filter_check,
+			   handler_rowid_filter_is_active, this);
+  return false;
+}
+
 struct st_mysql_storage_engine myisam_storage_engine=
 { MYSQL_HANDLERTON_INTERFACE_VERSION };
 
@@ -2650,7 +2697,7 @@ my_bool ha_myisam::register_query_cache_table(THD *thd, const char *table_name,
 
       If the table size is unknown the SELECT statement can't be cached.
 
-      When concurrent inserts are disabled at table open, mi_open()
+      When concurrent inserts are disabled at table open, mi_ondopen()
       does not assign a get_status() function. In this case the local
       ("current") status is never updated. We would wrongly think that
       we cannot cache the statement.

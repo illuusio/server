@@ -266,7 +266,16 @@ wsrep_recover_position() {
     wsrep_start_position_opt="--wsrep_start_position=$start_pos"
   fi
 
-  [ $ret -eq 0 ] && rm $wr_logfile
+  if [ $ret -eq 0 ] ; then
+    local wr_logfile_permanent="$DATADIR/wsrep_recovery.ok"
+  else
+    local wr_logfile_permanent="$DATADIR/wsrep_recovery.fail"
+  fi
+  touch $wr_logfile_permanent
+  [ "$euid" = "0" ] && chown $user $wr_logfile_permanent
+  chmod 600 $wr_logfile_permanent
+  cat "$wr_logfile" >> $wr_logfile_permanent
+  rm -f "$wr_logfile"
 
   return $ret
 }
@@ -571,8 +580,8 @@ append_arg_to_args () {
 
 args=
 
-# Get first arguments from the my.cnf file, groups [mysqld] and [mysqld_safe]
-# and then merge with the command line arguments
+# Get first arguments from the my.cnf file, groups [mysqld] and [server]
+# (and related) and then merge with the command line arguments
 
 SET_USER=2
 parse_arguments `$print_defaults $defaults --loose-verbose --mysqld`
@@ -584,7 +593,7 @@ fi
 # If arguments come from [mysqld_safe] section of my.cnf
 # we complain about unrecognized options
 unrecognized_handling=complain
-parse_arguments `$print_defaults $defaults --loose-verbose mysqld_safe safe_mysqld mariadb_safe`
+parse_arguments `$print_defaults $defaults --loose-verbose mysqld_safe safe_mysqld mariadb_safe mariadbd-safe`
 
 # We only need to pass arguments through to the server if we don't
 # handle them here.  So, we collect unrecognized options (passed on

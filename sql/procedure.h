@@ -44,24 +44,30 @@ public:
      this->name.length= strlen(name_par);
   }
   enum Type type() const { return Item::PROC_ITEM; }
+  Field *create_tmp_field_ex(TABLE *table, Tmp_field_src *src,
+                             const Tmp_field_param *param)
+  {
+    /*
+      We can get to here when using a CURSOR for a query with PROCEDURE:
+        DECLARE c CURSOR FOR SELECT * FROM t1 PROCEDURE analyse();
+        OPEN c;
+    */
+    return create_tmp_field_ex_simple(table, src, param);
+  }
   virtual void set(double nr)=0;
   virtual void set(const char *str,uint length,CHARSET_INFO *cs)=0;
   virtual void set(longlong nr)=0;
   const Type_handler *type_handler() const=0;
   void set(const char *str) { set(str,(uint) strlen(str), default_charset()); }
-  void make_send_field(THD *thd, Send_field *tmp_field)
-  {
-    init_make_send_field(tmp_field,field_type());
-  }
   unsigned int size_of() { return sizeof(*this);}
   bool check_vcol_func_processor(void *arg)
   {
     DBUG_ASSERT(0); // impossible
     return mark_unsupported_function("proc", arg, VCOL_IMPOSSIBLE);
   }
-  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+  bool get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate)
   {
-    return type_handler()->Item_get_date(this, ltime, fuzzydate);
+    return type_handler()->Item_get_date_with_warn(thd, this, ltime, fuzzydate);
   }
   Item* get_copy(THD *thd) { return 0; }
 };

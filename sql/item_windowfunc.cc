@@ -120,7 +120,6 @@ Item_window_func::fix_fields(THD *thd, Item **ref)
 
   const_item_cache= false;
   with_window_func= true;
-  with_sum_func= false;
 
   if (fix_length_and_dec())
     return TRUE;
@@ -445,12 +444,20 @@ Item_sum_hybrid_simple::val_str(String *str)
   return retval;
 }
 
-bool Item_sum_hybrid_simple::get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+bool Item_sum_hybrid_simple::val_native(THD *thd, Native *to)
 {
   DBUG_ASSERT(fixed == 1);
   if (null_value)
     return true;
-  bool retval= value->get_date(ltime, fuzzydate);
+  return val_native_from_item(thd, value, to);
+}
+
+bool Item_sum_hybrid_simple::get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate)
+{
+  DBUG_ASSERT(fixed == 1);
+  if (null_value)
+    return true;
+  bool retval= value->get_date(thd, ltime, fuzzydate);
   if ((null_value= value->null_value))
     DBUG_ASSERT(retval == true);
   return retval;
@@ -519,11 +526,11 @@ void Item_sum_hybrid_simple::reset_field()
   }
   case DECIMAL_RESULT:
   {
-    my_decimal value_buff, *arg_dec= args[0]->val_decimal(&value_buff);
+    VDec arg_dec(args[0]);
 
     if (maybe_null)
     {
-      if (args[0]->null_value)
+      if (arg_dec.is_null())
         result_field->set_null();
       else
         result_field->set_notnull();
@@ -532,9 +539,7 @@ void Item_sum_hybrid_simple::reset_field()
       We must store zero in the field as we will use the field value in
       add()
     */
-    if (!arg_dec)                               // Null
-      arg_dec= &decimal_zero;
-    result_field->store_decimal(arg_dec);
+    result_field->store_decimal(arg_dec.ptr_or(&decimal_zero));
     break;
   }
   case ROW_RESULT:

@@ -23,10 +23,11 @@ INDEX i8(key8)
 );
 analyze table t0;
 Table	Op	Msg_type	Msg_text
+test.t0	analyze	status	Engine-independent statistics collected
 test.t0	analyze	status	OK
 explain select * from t0 where key1 < 3 or key1 > 1020;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t0	range	i1	i1	4	NULL	4	Using index condition; Using where
+1	SIMPLE	t0	range	i1	i1	4	NULL	4	Using index condition
 explain
 select * from t0 where key1 < 3 or key2 > 1020;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -286,7 +287,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 NULL	UNION RESULT	<union1,2>	ALL	NULL	NULL	NULL	NULL	NULL	
 explain select * from (select * from t1 where key1 = 3 or key2 =3) as Z where key8 >5;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	range	i1,i2,i8	i8	4	NULL	2	Using index condition; Using where
+1	SIMPLE	t1	index_merge	i1,i2,i8	i1,i2	4,4	NULL	4	Using union(i1,i2); Using where
 create table t3 like t0;
 insert into t3 select * from t0;
 alter table t3 add key9 int not null, add index i9(key9);
@@ -478,7 +479,7 @@ a	filler	b
 must use union, not sort-union:
 explain select * from t2 where a=4 or b=4;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t2	index_merge	a,b	a,b	5,5	NULL	#	Using union(a,b); Using where
+1	SIMPLE	t2	ALL	a,b	NULL	NULL	NULL	#	Using where
 select * from t2 where a=4 or b=4;
 a	filler	b
 4	4	0
@@ -826,6 +827,7 @@ insert into t1 (key1a, key1b, key2a, key2b, key3a, key3b)
 select key1a, key1b, key2a, key2b, key3a, key3b from t1;
 analyze table t1;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 select count(*) from t1;
 count(*)
@@ -1330,7 +1332,7 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ref	key1,pktail2ok	key1	4	const	2	Using where
 explain select * from t1 where (pktail2ok=1 and pk1< 50000) or key1=10;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	index_merge	PRIMARY,key1,pktail2ok	PRIMARY,key1	4,4	NULL	ROWS	Using union(PRIMARY,key1); Using where
+1	SIMPLE	t1	index_merge	PRIMARY,key1,pktail2ok	pktail2ok,key1	8,4	NULL	ROWS	Using sort_union(pktail2ok,key1); Using where
 explain select * from t1 where pktail3bad=1 and key1=10;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 1	SIMPLE	t1	ref	key1,pktail3bad	EITHER_KEY	4	const	ROWS	Using where

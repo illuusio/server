@@ -1,6 +1,6 @@
 /*
    Copyright (c) 2000, 2015, Oracle and/or its affiliates.
-   Copyright (c) 2010, 2017, MariaDB
+   Copyright (c) 2010, 2019, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -39,9 +39,6 @@ static uint opt_verbose=0;
 static char *default_charset= (char*) MYSQL_AUTODETECT_CHARSET_NAME;
 static char *opt_plugin_dir= 0, *opt_default_auth= 0;
 
-#ifdef HAVE_SMEM 
-static char *shared_memory_base_name=0;
-#endif
 static uint opt_protocol=0;
 
 static void get_options(int *argc,char ***argv);
@@ -59,7 +56,8 @@ static void print_res_top(MYSQL_RES *result);
 static void print_res_row(MYSQL_RES *result,MYSQL_ROW cur);
 
 static const char *load_default_groups[]=
-{ "mysqlshow","client", "client-server", "client-mariadb", 0 };
+{ "mysqlshow", "mariadb-show", "client", "client-server", "client-mariadb",
+  0 };
 static char * opt_mysql_unix_port=0;
 
 int main(int argc, char **argv)
@@ -125,16 +123,14 @@ int main(int argc, char **argv)
 		  opt_ssl_capath, opt_ssl_cipher);
     mysql_options(&mysql, MYSQL_OPT_SSL_CRL, opt_ssl_crl);
     mysql_options(&mysql, MYSQL_OPT_SSL_CRLPATH, opt_ssl_crlpath);
+    mysql_options(&mysql, MARIADB_OPT_TLS_VERSION, opt_tls_version);
   }
   mysql_options(&mysql,MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
                 (char*)&opt_ssl_verify_server_cert);
 #endif
   if (opt_protocol)
     mysql_options(&mysql,MYSQL_OPT_PROTOCOL,(char*)&opt_protocol);
-#ifdef HAVE_SMEM
-  if (shared_memory_base_name)
-    mysql_options(&mysql,MYSQL_SHARED_MEMORY_BASE_NAME,shared_memory_base_name);
-#endif
+
   if (!strcmp(default_charset,MYSQL_AUTODETECT_CHARSET_NAME))
     default_charset= (char *)my_default_csname();
   mysql_options(&mysql, MYSQL_SET_CHARSET_NAME, default_charset);
@@ -179,9 +175,6 @@ error:
   mysql_close(&mysql);			/* Close & free connection */
   my_free(opt_password);
   mysql_server_end();
-#ifdef HAVE_SMEM
-  my_free(shared_memory_base_name);
-#endif
   free_defaults(defaults_argv);
   my_end(my_end_arg);
   exit(error ? 1 : 0);
@@ -245,14 +238,8 @@ static struct my_option my_long_options[] =
    NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
   {"protocol", OPT_MYSQL_PROTOCOL, 
-   "The protocol to use for connection (tcp, socket, pipe, memory).",
+   "The protocol to use for connection (tcp, socket, pipe).",
    0, 0, 0, GET_STR,  REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef HAVE_SMEM
-  {"shared-memory-base-name", OPT_SHARED_MEMORY_BASE_NAME,
-   "Base name of shared memory.", &shared_memory_base_name,
-   &shared_memory_base_name, 0, GET_STR_ALLOC, REQUIRED_ARG,
-   0, 0, 0, 0, 0, 0},
-#endif
   {"show-table-type", 't', "Show table type column.",
    &opt_table_type, &opt_table_type, 0, GET_BOOL,
    NO_ARG, 0, 0, 0, 0, 0, 0},
@@ -285,7 +272,7 @@ static void usage(void)
 {
   print_version();
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"));
-  puts("Shows the structure of a MySQL database (databases, tables, and columns).\n");
+  puts("Shows the structure of a MariaDB database (databases, tables, and columns).\n");
   printf("Usage: %s [OPTIONS] [database [table [column]]]\n",my_progname);
   puts("\n\
 If last argument contains a shell or SQL wildcard (*,?,% or _) then only\n\
@@ -675,7 +662,7 @@ list_table_status(MYSQL *mysql,const char *db,const char *wild)
     fprintf(stderr,"%s: Cannot get status for db: %s, table: %s: %s\n",
 	    my_progname,db,wild ? wild : "",mysql_error(mysql));
     if (mysql_errno(mysql) == ER_PARSE_ERROR)
-      fprintf(stderr,"This error probably means that your MySQL server doesn't support the\n\'show table status' command.\n");
+      fprintf(stderr,"This error probably means that your MariaDB server doesn't support the\n\'show table status' command.\n");
     return 1;
   }
 

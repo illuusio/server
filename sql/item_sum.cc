@@ -406,7 +406,7 @@ bool Item_sum::register_sum_func(THD *thd, Item **ref)
     for (sl= thd->lex->current_select; 
          sl && sl != aggr_sel && sl->master_unit()->item;
          sl= sl->master_unit()->outer_select() )
-      sl->master_unit()->item->with_sum_func= 1;
+      sl->master_unit()->item->get_with_sum_func_cache()->set_with_sum_func();
   }
   thd->lex->current_select->mark_as_dependent(thd, aggr_sel, NULL);
 
@@ -486,7 +486,6 @@ void Item_sum::mark_as_sum_func()
   cur_select->n_sum_items++;
   cur_select->with_sum_func= 1;
   const_item_cache= false;
-  with_sum_func= 1;
   with_field= 0;
   window_func_sum_expr_flag= false;
 }
@@ -892,7 +891,7 @@ bool Aggregator_distinct::setup(THD *thd)
     item_sum->null_value= item_sum->maybe_null= 1;
     item_sum->quick_group= 0;
 
-    DBUG_ASSERT(item_sum->get_arg(0)->fixed);
+    DBUG_ASSERT(item_sum->get_arg(0)->is_fixed());
 
     arg= item_sum->get_arg(0);
     if (arg->const_item())
@@ -1288,9 +1287,11 @@ Field *Item_sum_min_max::create_tmp_field(bool group, TABLE *table)
   if (args[0]->type() == Item::FIELD_ITEM)
   {
     Field *field= ((Item_field*) args[0])->field;
-    if ((field= create_tmp_field_from_field(table->in_use, field, &name,
-                                            table, NULL)))
-      field->flags&= ~NOT_NULL_FLAG;
+    if ((field= field->create_tmp_field(table->in_use->mem_root, table, true)))
+    {
+      DBUG_ASSERT((field->flags & NOT_NULL_FLAG) == 0);
+      field->field_name= name;
+    }
     DBUG_RETURN(field);
   }
   DBUG_RETURN(tmp_table_field_from_field_type(table));
@@ -1338,7 +1339,7 @@ Item_sum_sp::fix_fields(THD *thd, Item **ref)
   if (!m_sp)
   {
     my_missing_function_error(m_name->m_name, ErrConvDQName(m_name).ptr());
-    context->process_error(thd);
+    process_error(thd);
     return TRUE;
   }
 
@@ -1690,12 +1691,7 @@ longlong Item_sum_sum::val_int()
   if (aggr)
     aggr->endup();
   if (result_type() == DECIMAL_RESULT)
-  {
-    longlong result;
-    my_decimal2int(E_DEC_FATAL_ERROR, dec_buffs + curr_dec_buff, unsigned_flag,
-                   &result);
-    return result;
-  }
+    return dec_buffs[curr_dec_buff].to_longlong(unsigned_flag);
   return val_int_from_real();
 }
 
@@ -1706,7 +1702,7 @@ double Item_sum_sum::val_real()
   if (aggr)
     aggr->endup();
   if (result_type() == DECIMAL_RESULT)
-    my_decimal2double(E_DEC_FATAL_ERROR, dec_buffs + curr_dec_buff, &sum);
+    sum= dec_buffs[curr_dec_buff].to_double();
   return sum;
 }
 
@@ -1716,7 +1712,7 @@ String *Item_sum_sum::val_str(String *str)
   if (aggr)
     aggr->endup();
   if (result_type() == DECIMAL_RESULT)
-    return val_string_from_decimal(str);
+    return VDec(this).to_string_round(str, decimals);
   return val_string_from_real(str);
 }
 
@@ -2082,7 +2078,7 @@ String *Item_sum_avg::val_str(String *str)
   if (aggr)
     aggr->endup();
   if (result_type() == DECIMAL_RESULT)
-    return val_string_from_decimal(str);
+    return VDec(this).to_string_round(str, decimals);
   return val_string_from_real(str);
 }
 
@@ -2142,46 +2138,42 @@ Item *Item_sum_std::result_item(THD *thd, Field *field)
   variance.  The difference between the two classes is that the first is used
   for a mundane SELECT, while the latter is used in a GROUPing SELECT.
 */
-static void variance_fp_recurrence_next(double *m, double *s, ulonglong *count, double nr)
+void Stddev::recurrence_next(double nr)
 {
-  *count += 1;
-
-  if (*count == 1) 
+  if (!m_count++)
   {
-    *m= nr;
-    *s= 0;
+    DBUG_ASSERT(m_m == 0);
+    DBUG_ASSERT(m_s == 0);
+    m_m= nr;
   }
   else
   {
-    double m_kminusone= *m;
+    double m_kminusone= m_m;
     volatile double diff= nr - m_kminusone;
-    *m= m_kminusone + diff / (double) *count;
-    *s= *s + diff * (nr - *m);
+    m_m= m_kminusone + diff / (double) m_count;
+    m_s= m_s + diff * (nr - m_m);
   }
 }
 
 
-static double variance_fp_recurrence_result(double s, ulonglong count, bool is_sample_variance)
+double Stddev::result(bool is_sample_variance)
 {
-  if (count == 1)
+  if (m_count == 1)
     return 0.0;
 
   if (is_sample_variance)
-    return s / (count - 1);
+    return m_s / (m_count - 1);
 
   /* else, is a population variance */
-  return s / count;
+  return m_s / m_count;
 }
 
 
 Item_sum_variance::Item_sum_variance(THD *thd, Item_sum_variance *item):
   Item_sum_double(thd, item),
-    count(item->count), sample(item->sample),
+    m_stddev(item->m_stddev), sample(item->sample),
     prec_increment(item->prec_increment)
-{
-  recurrence_m= item->recurrence_m;
-  recurrence_s= item->recurrence_s;
-}
+{ }
 
 
 void Item_sum_variance::fix_length_and_dec_double()
@@ -2244,8 +2236,7 @@ Field *Item_sum_variance::create_tmp_field(bool group, TABLE *table)
       The easiest way is to do this is to store both value in a string
       and unpack on access.
     */
-    field= new Field_string(sizeof(double)*2 + sizeof(longlong), 0,
-                            &name, &my_charset_bin);
+    field= new Field_string(Stddev::binary_size(), 0, &name, &my_charset_bin);
   }
   else
     field= new Field_double(max_length, maybe_null, &name, decimals,
@@ -2260,7 +2251,7 @@ Field *Item_sum_variance::create_tmp_field(bool group, TABLE *table)
 
 void Item_sum_variance::clear()
 {
-  count= 0; 
+  m_stddev= Stddev();
 }
 
 bool Item_sum_variance::add()
@@ -2272,7 +2263,7 @@ bool Item_sum_variance::add()
   double nr= args[0]->val_real();
   
   if (!args[0]->null_value)
-    variance_fp_recurrence_next(&recurrence_m, &recurrence_s, &count, nr);
+    m_stddev.recurrence_next(nr);
   return 0;
 }
 
@@ -2290,14 +2281,14 @@ double Item_sum_variance::val_real()
     below which a 'count' number of items is called NULL.
   */
   DBUG_ASSERT((sample == 0) || (sample == 1));
-  if (count <= sample)
+  if (m_stddev.count() <= sample)
   {
     null_value=1;
     return 0.0;
   }
 
   null_value=0;
-  return variance_fp_recurrence_result(recurrence_s, count, sample);
+  return m_stddev.result(sample);
 }
 
 
@@ -2309,24 +2300,32 @@ void Item_sum_variance::reset_field()
   nr= args[0]->val_real();              /* sets null_value as side-effect */
 
   if (args[0]->null_value)
-    bzero(res,sizeof(double)*2+sizeof(longlong));
+    bzero(res,Stddev::binary_size());
   else
-  {
-    /* Serialize format is (double)m, (double)s, (longlong)count */
-    ulonglong tmp_count;
-    double tmp_s;
-    float8store(res, nr);               /* recurrence variable m */
-    tmp_s= 0.0;
-    float8store(res + sizeof(double), tmp_s);
-    tmp_count= 1;
-    int8store(res + sizeof(double)*2, tmp_count);
-  }
+    Stddev(nr).to_binary(res);
+}
+
+
+Stddev::Stddev(const uchar *ptr)
+{
+  float8get(m_m, ptr);
+  float8get(m_s, ptr + sizeof(double));
+  m_count= sint8korr(ptr + sizeof(double) * 2);
+}
+
+
+void Stddev::to_binary(uchar *ptr) const
+{
+  /* Serialize format is (double)m, (double)s, (longlong)count */
+  float8store(ptr, m_m);
+  float8store(ptr + sizeof(double), m_s);
+  ptr+= sizeof(double)*2;
+  int8store(ptr, m_count);
 }
 
 
 void Item_sum_variance::update_field()
 {
-  ulonglong field_count;
   uchar *res=result_field->ptr;
 
   double nr= args[0]->val_real();       /* sets null_value as side-effect */
@@ -2335,17 +2334,9 @@ void Item_sum_variance::update_field()
     return;
 
   /* Serialize format is (double)m, (double)s, (longlong)count */
-  double field_recurrence_m, field_recurrence_s;
-  float8get(field_recurrence_m, res);
-  float8get(field_recurrence_s, res + sizeof(double));
-  field_count=sint8korr(res+sizeof(double)*2);
-
-  variance_fp_recurrence_next(&field_recurrence_m, &field_recurrence_s, &field_count, nr);
-
-  float8store(res, field_recurrence_m);
-  float8store(res + sizeof(double), field_recurrence_s);
-  res+= sizeof(double)*2;
-  int8store(res,field_count);
+  Stddev field_stddev(res);
+  field_stddev.recurrence_next(nr);
+  field_stddev.to_binary(res);
 }
 
 
@@ -2366,12 +2357,12 @@ void Item_sum_min_max::clear()
 
 
 bool
-Item_sum_min_max::get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+Item_sum_min_max::get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate)
 {
   DBUG_ASSERT(fixed == 1);
   if (null_value)
     return true;
-  bool retval= value->get_date(ltime, fuzzydate);
+  bool retval= value->get_date(thd, ltime, fuzzydate);
   if ((null_value= value->null_value))
     DBUG_ASSERT(retval == true);
   return retval;
@@ -2437,6 +2428,15 @@ Item_sum_min_max::val_str(String *str)
   if ((null_value= value->null_value))
     DBUG_ASSERT(retval == NULL);
   DBUG_RETURN(retval);
+}
+
+
+bool Item_sum_min_max::val_native(THD *thd, Native *to)
+{
+  DBUG_ASSERT(fixed == 1);
+  if (null_value)
+    return true;
+  return val_native_from_item(thd, value, to);
 }
 
 
@@ -2716,25 +2716,6 @@ bool Item_sum_and::add()
 ** reset result of a Item_sum with is saved in a tmp_table
 *************************************************************************/
 
-void Item_sum_num::reset_field()
-{
-  double nr= args[0]->val_real();
-  uchar *res=result_field->ptr;
-
-  if (maybe_null)
-  {
-    if (args[0]->null_value)
-    {
-      nr=0.0;
-      result_field->set_null();
-    }
-    else
-      result_field->set_notnull();
-  }
-  float8store(res,nr);
-}
-
-
 void Item_sum_min_max::reset_field()
 {
   Item *UNINIT_VAR(tmp_item), *arg0;
@@ -2805,11 +2786,11 @@ void Item_sum_min_max::reset_field()
   }
   case DECIMAL_RESULT:
   {
-    my_decimal value_buff, *arg_dec= arg0->val_decimal(&value_buff);
+    VDec arg_dec(arg0);
 
     if (maybe_null)
     {
-      if (arg0->null_value)
+      if (arg_dec.is_null())
         result_field->set_null();
       else
         result_field->set_notnull();
@@ -2818,9 +2799,7 @@ void Item_sum_min_max::reset_field()
       We must store zero in the field as we will use the field value in
       add()
     */
-    if (!arg_dec)                               // Null
-      arg_dec= &decimal_zero;
-    result_field->store_decimal(arg_dec);
+    result_field->store_decimal(arg_dec.ptr_or(&decimal_zero));
     break;
   }
   case ROW_RESULT:
@@ -2843,15 +2822,10 @@ void Item_sum_sum::reset_field()
   DBUG_ASSERT (aggr->Aggrtype() != Aggregator::DISTINCT_AGGREGATOR);
   if (result_type() == DECIMAL_RESULT)
   {
-    my_decimal value, *arg_val;
     if (unlikely(direct_added))
-      arg_val= &direct_sum_decimal;
+      result_field->store_decimal(&direct_sum_decimal);
     else
-    {
-      if (!(arg_val= args[0]->val_decimal(&value)))
-        arg_val= &decimal_zero;                 // Null
-    }
-    result_field->store_decimal(arg_val);
+      result_field->store_decimal(VDec(args[0]).ptr_or(&decimal_zero));
   }
   else
   {
@@ -2904,15 +2878,9 @@ void Item_sum_avg::reset_field()
   if (result_type() == DECIMAL_RESULT)
   {
     longlong tmp;
-    my_decimal value, *arg_dec= args[0]->val_decimal(&value);
-    if (args[0]->null_value)
-    {
-      arg_dec= &decimal_zero;
-      tmp= 0;
-    }
-    else
-      tmp= 1;
-    my_decimal2binary(E_DEC_FATAL_ERROR, arg_dec, res, f_precision, f_scale);
+    VDec value(args[0]);
+    tmp= value.is_null() ? 0 : 1;
+    value.to_binary(res, f_precision, f_scale);
     res+= dec_bin_size;
     int8store(res, tmp);
   }
@@ -2979,9 +2947,8 @@ void Item_sum_sum::update_field()
     {
       if (!result_field->is_null())
       {
-        my_decimal field_value;
-        my_decimal *field_val= result_field->val_decimal(&field_value);
-        my_decimal_add(E_DEC_FATAL_ERROR, dec_buffs, arg_val, field_val);
+        my_decimal field_value(result_field);
+        my_decimal_add(E_DEC_FATAL_ERROR, dec_buffs, arg_val, &field_value);
         result_field->store_decimal(dec_buffs);
       }
       else
@@ -3048,15 +3015,14 @@ void Item_sum_avg::update_field()
 
   if (result_type() == DECIMAL_RESULT)
   {
-    my_decimal value, *arg_val= args[0]->val_decimal(&value);
-    if (!args[0]->null_value)
+    VDec tmp(args[0]);
+    if (!tmp.is_null())
     {
       binary2my_decimal(E_DEC_FATAL_ERROR, res,
                         dec_buffs + 1, f_precision, f_scale);
       field_count= sint8korr(res + dec_bin_size);
-      my_decimal_add(E_DEC_FATAL_ERROR, dec_buffs, arg_val, dec_buffs + 1);
-      my_decimal2binary(E_DEC_FATAL_ERROR, dec_buffs,
-                        res, f_precision, f_scale);
+      my_decimal_add(E_DEC_FATAL_ERROR, dec_buffs, tmp.ptr(), dec_buffs + 1);
+      dec_buffs->to_binary(res, f_precision, f_scale);
       res+= dec_bin_size;
       field_count++;
       int8store(res, field_count);
@@ -3100,24 +3066,72 @@ void Item_sum_min_max::update_field()
     tmp_item= args[0];
     args[0]= direct_item;
   }
-  switch (result_type()) {
-  case STRING_RESULT:
-    min_max_update_str_field();
-    break;
-  case INT_RESULT:
-    min_max_update_int_field();
-    break;
-  case DECIMAL_RESULT:
-    min_max_update_decimal_field();
-    break;
-  default:
-    min_max_update_real_field();
+  if (Item_sum_min_max::type_handler()->is_val_native_ready())
+  {
+    /*
+      TODO-10.5: change Item_sum_min_max to use val_native() for all data types
+      - make all type handlers val_native() ready
+      - use min_max_update_native_field() for all data types
+      - remove Item_sum_min_max::min_max_update_{str|real|int|decimal}_field()
+    */
+    min_max_update_native_field();
+  }
+  else
+  {
+    switch (Item_sum_min_max::type_handler()->cmp_type()) {
+    case STRING_RESULT:
+    case TIME_RESULT:
+      min_max_update_str_field();
+      break;
+    case INT_RESULT:
+      min_max_update_int_field();
+      break;
+    case DECIMAL_RESULT:
+      min_max_update_decimal_field();
+      break;
+    default:
+      min_max_update_real_field();
+    }
   }
   if (unlikely(direct_added))
   {
     direct_added= FALSE;
     args[0]= tmp_item;
   }
+  DBUG_VOID_RETURN;
+}
+
+
+void Arg_comparator::min_max_update_field_native(THD *thd,
+                                                 Field *field,
+                                                 Item *item,
+                                                 int cmp_sign)
+{
+  DBUG_ENTER("Arg_comparator::min_max_update_field_native");
+  if (!item->val_native(current_thd, &m_native2))
+  {
+    if (field->is_null())
+      field->store_native(m_native2); // The first non-null value
+    else
+    {
+      field->val_native(&m_native1);
+      if ((cmp_sign * m_compare_handler->cmp_native(m_native2, m_native1)) < 0)
+        field->store_native(m_native2);
+    }
+    field->set_notnull();
+  }
+  DBUG_VOID_RETURN;
+}
+
+
+void
+Item_sum_min_max::min_max_update_native_field()
+{
+  DBUG_ENTER("Item_sum_min_max::min_max_update_native_field");
+  DBUG_ASSERT(cmp);
+  DBUG_ASSERT(type_handler_for_comparison() == cmp->compare_type_handler());
+  THD *thd= current_thd;
+  cmp->min_max_update_field_native(thd, result_field, args[0], cmp_sign);
   DBUG_VOID_RETURN;
 }
 
@@ -3254,9 +3268,7 @@ my_decimal *Item_avg_field_decimal::val_decimal(my_decimal *dec_buf)
   if ((null_value= !count))
     return 0;
 
-  my_decimal dec_count, dec_field;
-  binary2my_decimal(E_DEC_FATAL_ERROR,
-                    field->ptr, &dec_field, f_precision, f_scale);
+  my_decimal dec_count, dec_field(field->ptr, f_precision, f_scale);
   int2my_decimal(E_DEC_FATAL_ERROR, count, 0, &dec_count);
   my_decimal_div(E_DEC_FATAL_ERROR, dec_buf,
                  &dec_field, &dec_count, prec_increment);
@@ -3277,15 +3289,11 @@ double Item_std_field::val_real()
 double Item_variance_field::val_real()
 {
   // fix_fields() never calls for this Item
-  double recurrence_s;
-  ulonglong count;
-  float8get(recurrence_s, (field->ptr + sizeof(double)));
-  count=sint8korr(field->ptr+sizeof(double)*2);
-
-  if ((null_value= (count <= sample)))
+  Stddev tmp(field->ptr);
+  if ((null_value= (tmp.count() <= sample)))
     return 0.0;
 
-  return variance_fp_recurrence_result(recurrence_s, count, sample);
+  return tmp.result(sample);
 }
 
 
@@ -3313,6 +3321,25 @@ bool Item_udf_sum::add()
   null_value= tmp_null_value;
   DBUG_RETURN(0);
 }
+
+
+bool Item_udf_sum::supports_removal() const
+{
+  DBUG_ENTER("Item_udf_sum::supports_remove");
+  DBUG_PRINT("info", ("support: %d", udf.supports_removal()));
+  DBUG_RETURN(udf.supports_removal());
+}
+
+
+void Item_udf_sum::remove()
+{
+  my_bool tmp_null_value;
+  DBUG_ENTER("Item_udf_sum::remove");
+  udf.remove(&tmp_null_value);
+  null_value= tmp_null_value;
+  DBUG_VOID_RETURN;
+}
+
 
 void Item_udf_sum::cleanup()
 {
@@ -3367,24 +3394,6 @@ String *Item_sum_udf_float::val_str(String *str)
 my_decimal *Item_sum_udf_float::val_decimal(my_decimal *dec)
 {
   return val_decimal_from_real(dec);
-}
-
-
-String *Item_sum_udf_decimal::val_str(String *str)
-{
-  return val_string_from_decimal(str);
-}
-
-
-double Item_sum_udf_decimal::val_real()
-{
-  return val_real_from_decimal();
-}
-
-
-longlong Item_sum_udf_decimal::val_int()
-{
-  return val_int_from_decimal();
 }
 
 
@@ -4147,6 +4156,7 @@ bool Item_func_group_concat::setup(THD *thd)
     if (!ref_pointer_array)
       DBUG_RETURN(TRUE);
     memcpy(ref_pointer_array, args, arg_count * sizeof(Item*));
+    DBUG_ASSERT(context);
     if (setup_order(thd, Ref_ptr_array(ref_pointer_array, n_elems),
                     context->table_list, list,  all_fields, *order))
       DBUG_RETURN(TRUE);

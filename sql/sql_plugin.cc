@@ -281,6 +281,7 @@ struct st_mysql_sys_var
   MYSQL_PLUGIN_VAR_HEADER;
 };
 
+enum install_status { INSTALL_GOOD, INSTALL_FAIL_WARN_OK, INSTALL_FAIL_NOT_OK };
 /*
   sys_var class for access to all plugin variables visible to the user
 */
@@ -1078,7 +1079,7 @@ static st_plugin_int *plugin_insert_or_reuse(struct st_plugin_int *plugin)
   NOTE
     Requires that a write-lock is held on LOCK_system_variables_hash
 */
-static bool plugin_add(MEM_ROOT *tmp_root,
+static enum install_status plugin_add(MEM_ROOT *tmp_root, bool if_not_exists,
                        const LEX_CSTRING *name, LEX_CSTRING *dl, myf MyFlags)
 {
   struct st_plugin_int tmp, *maybe_dupe;
@@ -1089,14 +1090,16 @@ static bool plugin_add(MEM_ROOT *tmp_root,
 
   if (name->str && plugin_find_internal(name, MYSQL_ANY_PLUGIN))
   {
+    if (if_not_exists)
+      MyFlags|= ME_NOTE;
     my_error(ER_PLUGIN_INSTALLED, MyFlags, name->str);
-    DBUG_RETURN(TRUE);
+    DBUG_RETURN(if_not_exists ? INSTALL_FAIL_WARN_OK : INSTALL_FAIL_NOT_OK);
   }
   /* Clear the whole struct to catch future extensions. */
   bzero((char*) &tmp, sizeof(tmp));
   fix_dl_name(tmp_root, dl);
   if (! (tmp.plugin_dl= plugin_dl_add(dl, MyFlags)))
-    DBUG_RETURN(TRUE);
+    DBUG_RETURN(INSTALL_FAIL_NOT_OK);
   /* Find plugin by name */
   for (plugin= tmp.plugin_dl->plugins; plugin->info; plugin++)
   {
@@ -1122,7 +1125,7 @@ static bool plugin_add(MEM_ROOT *tmp_root,
       if (plugin->name != maybe_dupe->plugin->name)
       {
         my_error(ER_UDF_EXISTS, MyFlags, plugin->name);
-        DBUG_RETURN(TRUE);
+        DBUG_RETURN(INSTALL_FAIL_NOT_OK);
       }
       dupes++;
       continue; // already installed
@@ -1174,7 +1177,7 @@ static bool plugin_add(MEM_ROOT *tmp_root,
     init_alloc_root(&tmp_plugin_ptr->mem_root, "plugin", 4096, 4096, MYF(0));
 
     if (name->str)
-      DBUG_RETURN(FALSE); // all done
+      DBUG_RETURN(INSTALL_GOOD); // all done
 
     oks++;
     tmp.plugin_dl->ref_count++;
@@ -1192,7 +1195,9 @@ err:
     my_error(ER_CANT_FIND_DL_ENTRY, MyFlags, name->str);
 
   plugin_dl_del(tmp.plugin_dl);
-  DBUG_RETURN(errs > 0 || oks + dupes == 0);
+  if (errs > 0 || oks + dupes == 0)
+    DBUG_RETURN(INSTALL_FAIL_NOT_OK);
+  DBUG_RETURN(INSTALL_GOOD);
 }
 
 static void plugin_variables_deinit(struct st_plugin_int *plugin)
@@ -1851,7 +1856,7 @@ static void plugin_load(MEM_ROOT *tmp_root)
       the mutex here to satisfy the assert
     */
     mysql_mutex_lock(&LOCK_plugin);
-    plugin_add(tmp_root, &name, &dl, MYF(ME_ERROR_LOG));
+    plugin_add(tmp_root, false, &name, &dl, MYF(ME_ERROR_LOG));
     free_root(tmp_root, MYF(MY_MARK_BLOCKS_FREE));
     mysql_mutex_unlock(&LOCK_plugin);
   }
@@ -1874,7 +1879,7 @@ end:
 static bool plugin_load_list(MEM_ROOT *tmp_root, const char *list)
 {
   char buffer[FN_REFLEN];
-  LEX_STRING name= {buffer, 0}, dl= {NULL, 0}, *str= &name;
+  LEX_CSTRING name= {buffer, 0}, dl= {NULL, 0}, *str= &name;
   char *p= buffer;
   DBUG_ENTER("plugin_load_list");
   while (list)
@@ -1893,7 +1898,7 @@ static bool plugin_load_list(MEM_ROOT *tmp_root, const char *list)
 #ifndef __WIN__
     case ':':     /* can't use this as delimiter as it may be drive letter */
 #endif
-      str->str[str->length]= '\0';
+      p[-1]= 0;
       if (str == &name)  // load all plugins in named module
       {
         if (!name.length)
@@ -1906,16 +1911,16 @@ static bool plugin_load_list(MEM_ROOT *tmp_root, const char *list)
         mysql_mutex_lock(&LOCK_plugin);
         free_root(tmp_root, MYF(MY_MARK_BLOCKS_FREE));
         name.str= 0; // load everything
-        if (plugin_add(tmp_root, (LEX_CSTRING*) &name, (LEX_CSTRING*) &dl,
-                       MYF(ME_ERROR_LOG)))
+        if (plugin_add(tmp_root, false, &name, &dl,
+                       MYF(ME_ERROR_LOG)) != INSTALL_GOOD)
           goto error;
       }
       else
       {
         free_root(tmp_root, MYF(MY_MARK_BLOCKS_FREE));
         mysql_mutex_lock(&LOCK_plugin);
-        if (plugin_add(tmp_root, (LEX_CSTRING*) &name, (LEX_CSTRING*) &dl,
-                       MYF(ME_ERROR_LOG)))
+        if (plugin_add(tmp_root, false, &name, &dl,
+                       MYF(ME_ERROR_LOG)) != INSTALL_GOOD)
           goto error;
       }
       mysql_mutex_unlock(&LOCK_plugin);
@@ -1927,7 +1932,7 @@ static bool plugin_load_list(MEM_ROOT *tmp_root, const char *list)
     case '#':
       if (str == &name)
       {
-        name.str[name.length]= '\0';
+        p[-1]= 0;
         str= &dl;
         str->str= p;
         continue;
@@ -2150,7 +2155,7 @@ bool mysql_install_plugin(THD *thd, const LEX_CSTRING *name,
   TABLE_LIST tables;
   TABLE *table;
   LEX_CSTRING dl= *dl_arg;
-  bool error;
+  enum install_status error;
   int argc=orig_argc;
   char **argv=orig_argv;
   unsigned long event_class_mask[MYSQL_AUDIT_CLASS_MASK_SIZE] =
@@ -2198,12 +2203,14 @@ bool mysql_install_plugin(THD *thd, const LEX_CSTRING *name,
     mysql_audit_acquire_plugins(thd, event_class_mask);
 
   mysql_mutex_lock(&LOCK_plugin);
-  error= plugin_add(thd->mem_root, name, &dl, MYF(0));
-  if (unlikely(error))
+  error= plugin_add(thd->mem_root, thd->lex->create_info.if_not_exists(),
+                    name, &dl, MYF(0));
+  if (unlikely(error != INSTALL_GOOD))
     goto err;
 
   if (name->str)
-    error= finalize_install(thd, table, name, &argc, argv);
+    error= finalize_install(thd, table, name, &argc, argv)
+             ? INSTALL_FAIL_NOT_OK : INSTALL_GOOD;
   else
   {
     st_plugin_dl *plugin_dl= plugin_dl_find(&dl);
@@ -2211,11 +2218,12 @@ bool mysql_install_plugin(THD *thd, const LEX_CSTRING *name,
     for (plugin= plugin_dl->plugins; plugin->info; plugin++)
     {
       LEX_CSTRING str= { plugin->name, strlen(plugin->name) };
-      error|= finalize_install(thd, table, &str, &argc, argv);
+      if (finalize_install(thd, table, &str, &argc, argv))
+        error= INSTALL_FAIL_NOT_OK;
     }
   }
 
-  if (unlikely(error))
+  if (unlikely(error != INSTALL_GOOD))
   {
     reap_needed= true;
     reap_plugins();
@@ -2225,10 +2233,11 @@ err:
   mysql_mutex_unlock(&LOCK_plugin);
   if (argv)
     free_defaults(argv);
-  DBUG_RETURN(error);
-
-WSREP_ERROR_LABEL:
-  DBUG_RETURN(TRUE);
+  DBUG_RETURN(error == INSTALL_FAIL_NOT_OK);
+#ifdef WITH_WSREP
+wsrep_error_label:
+  DBUG_RETURN(true);
+#endif
 }
 
 
@@ -2240,8 +2249,9 @@ static bool do_uninstall(THD *thd, TABLE *table, const LEX_CSTRING *name)
   if (!(plugin= plugin_find_internal(name, MYSQL_ANY_PLUGIN)) ||
       plugin->state & (PLUGIN_IS_UNINITIALIZED | PLUGIN_IS_DYING))
   {
-    my_error(ER_SP_DOES_NOT_EXIST, MYF(0), "PLUGIN", name->str);
-    return 1;
+    myf MyFlags= thd->lex->if_exists() ? ME_NOTE : 0;
+    my_error(ER_SP_DOES_NOT_EXIST, MyFlags, "PLUGIN", name->str);
+    return !MyFlags;
   }
   if (!plugin->plugin_dl)
   {
@@ -2304,7 +2314,7 @@ bool mysql_uninstall_plugin(THD *thd, const LEX_CSTRING *name,
   if (!opt_noacl && check_table_access(thd, DELETE_ACL, &tables, FALSE, 1, FALSE))
     DBUG_RETURN(TRUE);
 
-  WSREP_TO_ISOLATION_BEGIN(WSREP_MYSQL_DB, NULL, NULL)
+  WSREP_TO_ISOLATION_BEGIN(WSREP_MYSQL_DB, NULL, NULL);
 
   /* need to open before acquiring LOCK_plugin or it will deadlock */
   if (! (table= open_ltable(thd, &tables, TL_WRITE, MYSQL_LOCK_IGNORE_TIMEOUT)))
@@ -2363,8 +2373,9 @@ bool mysql_uninstall_plugin(THD *thd, const LEX_CSTRING *name,
     }
     else
     {
-      my_error(ER_SP_DOES_NOT_EXIST, MYF(0), "SONAME", dl.str);
-      error= true;
+      myf MyFlags= thd->lex->if_exists() ? ME_NOTE : 0;
+      my_error(ER_SP_DOES_NOT_EXIST, MyFlags, "SONAME", dl.str);
+      error|= !MyFlags;
     }
   }
   reap_plugins();
@@ -2372,9 +2383,10 @@ bool mysql_uninstall_plugin(THD *thd, const LEX_CSTRING *name,
   global_plugin_version++;
   mysql_mutex_unlock(&LOCK_plugin);
   DBUG_RETURN(error);
-
-WSREP_ERROR_LABEL:
-  DBUG_RETURN(TRUE);
+#ifdef WITH_WSREP
+wsrep_error_label:
+  DBUG_RETURN(true);
+#endif
 }
 
 
@@ -4344,33 +4356,31 @@ void wsrep_plugins_pre_init()
   members of wsrep startup threads with correct values, as these value
   were not available at the time these threads were created.
 */
+
+my_bool post_init_callback(THD *thd, void *)
+{
+  DBUG_ASSERT(!current_thd);
+  if (thd->wsrep_applier)
+  {
+    // Save options_bits as it will get overwritten in
+    // plugin_thdvar_init() (verified)
+    ulonglong option_bits_saved= thd->variables.option_bits;
+
+    set_current_thd(thd);
+    plugin_thdvar_init(thd);
+
+    // Restore option_bits
+    thd->variables.option_bits= option_bits_saved;
+  }
+  set_current_thd(0);
+  return 0;
+}
+
+
 void wsrep_plugins_post_init()
 {
-  THD *thd;
-  I_List_iterator<THD> it(threads);
-
-  DBUG_ASSERT(!current_thd);
-
   mysql_mutex_lock(&LOCK_global_system_variables);
-
-  while ((thd= it++))
-  {
-    if (thd->wsrep_applier)
-    {
-      // Save options_bits as it will get overwritten in
-      // plugin_thdvar_init() (verified)
-      ulonglong option_bits_saved= thd->variables.option_bits;
-
-      set_current_thd(thd);
-      plugin_thdvar_init(thd);
-
-      // Restore option_bits
-      thd->variables.option_bits= option_bits_saved;
-    }
-  }
-
+  server_threads.iterate(post_init_callback);
   mysql_mutex_unlock(&LOCK_global_system_variables);
-  set_current_thd(0);
-  return;
 }
 #endif /* WITH_WSREP */

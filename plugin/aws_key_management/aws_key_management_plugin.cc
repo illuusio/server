@@ -110,7 +110,7 @@ static void print_kms_error(const char *func, const Aws::Client::AWSError<Aws::K
 {
   my_printf_error(ER_UNKNOWN_ERROR,
     "AWS KMS plugin : KMS Client API '%s' failed : %s - %s",
-    ME_ERROR_LOG,
+    ME_ERROR_LOG_ONLY,
     func, err.GetExceptionName().c_str(), err.GetMessage().c_str());
 }
 
@@ -214,7 +214,7 @@ Aws::SDKOptions sdkOptions;
 static int aws_init()
 {
 
-#ifdef HAVE_YASSL
+#ifdef HAVE_WOLFSSL
   sdkOptions.cryptoOptions.initAndCleanupOpenSSL = true;
 #else
   /* Server initialized OpenSSL already, thus AWS must skip it */
@@ -237,7 +237,7 @@ static int aws_init()
   client = new KMSClient(clientConfiguration);
   if (!client)
   {
-    my_printf_error(ER_UNKNOWN_ERROR, "Can not initialize KMS client", ME_ERROR_LOG | ME_WARNING);
+    my_printf_error(ER_UNKNOWN_ERROR, "Can't initialize KMS client", ME_ERROR_LOG_ONLY | ME_WARNING);
     return -1;
   }
   return 0;
@@ -339,12 +339,12 @@ static int load_key(KEY_INFO *info)
 
   if (!ret)
   {
-    my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: loaded key %u, version %u, key length %u bit", ME_ERROR_LOG | ME_NOTE,
+    my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: loaded key %u, version %u, key length %u bit", ME_ERROR_LOG_ONLY | ME_NOTE,
       info->key_id, info->key_version,(uint)info->length*8);
   }
   else
   {
-    my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: key %u, version %u could not be decrypted", ME_ERROR_LOG | ME_WARNING,
+    my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: key %u, version %u could not be decrypted", ME_ERROR_LOG_ONLY | ME_WARNING,
       info->key_id, info->key_version);
   }
   return ret;
@@ -443,13 +443,13 @@ static  int read_and_decrypt_key(const char *path, KEY_INFO *info)
   ifstream ifs(path, ios::binary | ios::ate);
   if (!ifs.good())
   {
-    my_printf_error(ER_UNKNOWN_ERROR, "can't open file %s", ME_ERROR_LOG, path);
+    my_printf_error(ER_UNKNOWN_ERROR, "can't open file %s", ME_ERROR_LOG_ONLY, path);
     return(-1);
   }
   size_t pos = (size_t)ifs.tellg();
   if (!pos || pos == SIZE_T_MAX)
   {
-    my_printf_error(ER_UNKNOWN_ERROR, "invalid key file %s", ME_ERROR_LOG, path);
+    my_printf_error(ER_UNKNOWN_ERROR, "invalid key file %s", ME_ERROR_LOG_ONLY, path);
     return(-1);
   }
   std::vector<char>  contents(pos);
@@ -470,7 +470,7 @@ static  int read_and_decrypt_key(const char *path, KEY_INFO *info)
 
   if (len > sizeof(info->data))
   {
-    my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: encoding key too large for %s", ME_ERROR_LOG, path);
+    my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: encoding key too large for %s", ME_ERROR_LOG_ONLY, path);
     return(ENCRYPTION_KEY_BUFFER_TOO_SMALL);
   }
   memcpy(info->data, plaintext.GetUnderlyingData(), len);
@@ -527,19 +527,19 @@ static int generate_and_save_datakey(uint keyid, uint version)
   int fd= open(filename, O_WRONLY |O_CREAT|O_BINARY, IF_WIN(_S_IREAD, S_IRUSR| S_IRGRP| S_IROTH));
   if (fd < 0)
   {
-    my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: Can't create file %s", ME_ERROR_LOG, filename);
+    my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: Can't create file %s", ME_ERROR_LOG_ONLY, filename);
     return(-1);
   }
   unsigned int len= (unsigned int)byteBuffer.GetLength();
   if (write(fd, byteBuffer.GetUnderlyingData(), len) != len)
   {
-    my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: can't write to %s", ME_ERROR_LOG, filename);
+    my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: can't write to %s", ME_ERROR_LOG_ONLY, filename);
     close(fd);
     unlink(filename);
     return(-1);
   }
   close(fd);
-  my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: generated encrypted datakey for key id=%u, version=%u", ME_ERROR_LOG | ME_NOTE,
+  my_printf_error(ER_UNKNOWN_ERROR, "AWS KMS plugin: generated encrypted datakey for key id=%u, version=%u", ME_ERROR_LOG_ONLY | ME_NOTE,
     keyid, version);
   return(0);
 }
@@ -552,13 +552,13 @@ static int rotate_single_key(uint key_id)
 
   if (!ver)
   {
-    my_printf_error(ER_UNKNOWN_ERROR, "key %u does not exist", MYF(ME_JUST_WARNING), key_id);
+    my_printf_error(ER_UNKNOWN_ERROR, "key %u does not exist", MYF(ME_WARNING), key_id);
     return -1;
   }
   else if (generate_and_save_datakey(key_id, ver + 1))
   {
     my_printf_error(ER_UNKNOWN_ERROR, "Could not generate datakey for key id= %u, ver= %u",
-      MYF(ME_JUST_WARNING), key_id, ver);
+      MYF(ME_WARNING), key_id, ver);
     return -1;
   }
   else
@@ -569,7 +569,7 @@ static int rotate_single_key(uint key_id)
     if (load_key(&info))
     {
       my_printf_error(ER_UNKNOWN_ERROR, "Could not load datakey for key id= %u, ver= %u",
-        MYF(ME_JUST_WARNING), key_id, ver);
+        MYF(ME_WARNING), key_id, ver);
       return -1;
     }
   }
@@ -594,7 +594,7 @@ static void update_rotate(MYSQL_THD, struct st_mysql_sys_var *, void *, const vo
   if (!master_key_id[0])
   {
     my_printf_error(ER_UNKNOWN_ERROR,
-      "aws_key_management_master_key_id must be set to generate new data keys", MYF(ME_JUST_WARNING));
+      "aws_key_management_master_key_id must be set to generate new data keys", MYF(ME_WARNING));
     return;
   }
   mtx.lock();

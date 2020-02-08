@@ -531,18 +531,6 @@ normalize_table_name_c_low(
 	const char*	name,		/*!< in: table name string */
 	ibool		set_lower_case); /*!< in: TRUE if we want to set
 					name to lower case */
-/*************************************************************//**
-InnoDB index push-down condition check defined in ha_innodb.cc
-@return ICP_NO_MATCH, ICP_MATCH, or ICP_OUT_OF_RANGE */
-
-#include <my_compare.h>
-
-ICP_RESULT
-innobase_index_cond(
-/*================*/
-	void*	file)	/*!< in/out: pointer to ha_innobase */
-	MY_ATTRIBUTE((warn_unused_result));
-
 /** Update the system variable with the given value of the InnoDB
 buffer pool size.
 @param[in]	buf_pool_size	given value of buffer pool size.*/

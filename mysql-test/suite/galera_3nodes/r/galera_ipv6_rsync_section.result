@@ -1,3 +1,5 @@
+connection node_2;
+connection node_1;
 SELECT VARIABLE_VALUE LIKE '%[::1]%' FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_incoming_addresses';
 VARIABLE_VALUE LIKE '%[::1]%'
 1

@@ -21,6 +21,8 @@ delete from t1 where x = 3;
 delete from t1 where x > 7;
 insert into t1(x, y) values(3, 33);
 select sys_trx_start from t1 where x = 3 and y = 33 into @t1;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 select x, y from t1;
 x	y
 0	100
@@ -192,6 +194,40 @@ NULL	NULL	2	1
 NULL	NULL	3	1
 drop table t1;
 drop table t2;
+create or replace table t1(x int) with system versioning;
+insert into t1 values (1);
+delete from t1;
+insert into t1 values (2);
+delete from t1;
+insert into t1 values (3);
+delete from t1;
+select row_start into @start1 from t1 for system_time all where x = 1;
+select row_end into @end1 from t1 for system_time all where x = 1;
+select row_start into @start2 from t1 for system_time all where x = 2;
+select row_end into @end2 from t1 for system_time all where x = 2;
+select row_start into @start3 from t1 for system_time all where x = 3;
+select row_end into @end3 from t1 for system_time all where x = 3;
+select x as ASOF_x from t1 for system_time as of @start2;
+ASOF_x
+2
+select x as ASOF_x from t1 for system_time as of @end2;
+ASOF_x
+select x as FROMTO_x from t1 for system_time from @start1 to @end3;
+FROMTO_x
+1
+2
+3
+select x as FROMTO_x from t1 for system_time from @end1 to @start2;
+FROMTO_x
+select x as BETWAND_x from t1 for system_time between @start1 and @end3;
+BETWAND_x
+1
+2
+3
+select x as BETWAND_x from t1 for system_time between @end1 and @start2;
+BETWAND_x
+2
+drop table t1;
 create table t1(
 A int
 ) with system versioning;
@@ -345,6 +381,8 @@ insert into t1 values (1);
 set @ts= now(6);
 delete from t1;
 select sys_trx_start from t1 for system_time all into @trx_start;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 ## ensure @trx_start is much lower than unix timestamp
 select @trx_start < unix_timestamp(@ts) - 100 as trx_start_good;
 trx_start_good
@@ -541,7 +579,11 @@ period for system_time (row_start, row_end)
 insert into t1 values (1);
 delete from t1;
 select row_start from t1 for system_time all into @t1;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 select row_end from t1 for system_time all into @t2;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 select * from t1 for system_time between @t1 and @t2;
 a
 1

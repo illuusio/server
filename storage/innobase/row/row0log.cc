@@ -42,7 +42,7 @@ Created 2011-05-26 Marko Makela
 #include <algorithm>
 #include <map>
 
-ulint onlineddl_rowlog_rows;
+Atomic_counter<ulint> onlineddl_rowlog_rows;
 ulint onlineddl_rowlog_pct_used;
 ulint onlineddl_pct_progress;
 
@@ -293,7 +293,8 @@ row_log_block_allocate(
 		);
 
 		log_buf.block = ut_allocator<byte>(mem_key_row_log_buf)
-			.allocate_large(srv_sort_buf_size, &log_buf.block_pfx);
+			.allocate_large(srv_sort_buf_size,
+					&log_buf.block_pfx);
 
 		if (log_buf.block == NULL) {
 			DBUG_RETURN(false);
@@ -313,7 +314,8 @@ row_log_block_free(
 	DBUG_ENTER("row_log_block_free");
 	if (log_buf.block != NULL) {
 		ut_allocator<byte>(mem_key_row_log_buf).deallocate_large(
-			log_buf.block, &log_buf.block_pfx, log_buf.size);
+			log_buf.block, &log_buf.block_pfx,
+			log_buf.size);
 		log_buf.block = NULL;
 	}
 	DBUG_VOID_RETURN;
@@ -606,7 +608,7 @@ write_failed:
 err_exit:
 	mutex_exit(&log->mutex);
 
-	my_atomic_addlint(&onlineddl_rowlog_rows, 1);
+	onlineddl_rowlog_rows++;
 	/* 10000 means 100.00%, 4525 means 45.25% */
 	onlineddl_rowlog_pct_used = static_cast<ulint>((log->tail.total * 10000) / srv_online_max_size);
 }
@@ -684,9 +686,9 @@ row_log_table_delete(
 		fields of the record. */
 		heap = mem_heap_create(
 			DATA_TRX_ID_LEN
-			+ DTUPLE_EST_ALLOC(unsigned(new_index->n_uniq) + 2));
-		old_pk = tuple = dtuple_create(
-			heap, unsigned(new_index->n_uniq) + 2);
+			+ DTUPLE_EST_ALLOC(new_index->first_user_field()));
+		old_pk = tuple = dtuple_create(heap,
+					       new_index->first_user_field());
 		dict_index_copy_types(tuple, new_index, tuple->n_fields);
 		dtuple_set_n_fields_cmp(tuple, new_index->n_uniq);
 
@@ -851,7 +853,7 @@ row_log_table_low_redundant(
 
 	const bool is_instant = index->online_log->is_instant(index);
 	rec_comp_status_t status = is_instant
-		? REC_STATUS_COLUMNS_ADDED : REC_STATUS_ORDINARY;
+		? REC_STATUS_INSTANT : REC_STATUS_ORDINARY;
 
 	size = rec_get_converted_size_temp(
 		index, tuple->fields, tuple->n_fields, &extra_size, status);
@@ -905,7 +907,7 @@ row_log_table_low_redundant(
 			*b++ = static_cast<byte>(extra_size);
 		}
 
-		if (status == REC_STATUS_COLUMNS_ADDED) {
+		if (status == REC_STATUS_INSTANT) {
 			ut_ad(is_instant);
 			if (n_fields <= index->online_log->n_core_fields) {
 				status = REC_STATUS_ORDINARY;
@@ -971,7 +973,7 @@ row_log_table_low(
 		ut_ad(!"wrong page type");
 	}
 #endif /* UNIV_DEBUG */
-	ut_ad(!rec_is_metadata(rec, index));
+	ut_ad(!rec_is_metadata(rec, *index));
 	ut_ad(page_rec_is_leaf(rec));
 	ut_ad(!page_is_comp(page_align(rec)) == !rec_offs_comp(offsets));
 	/* old_pk=row_log_table_get_pk() [not needed in INSERT] is a prefix
@@ -994,7 +996,7 @@ row_log_table_low(
 
 	ut_ad(page_is_comp(page_align(rec)));
 	ut_ad(rec_get_status(rec) == REC_STATUS_ORDINARY
-	      || rec_get_status(rec) == REC_STATUS_COLUMNS_ADDED);
+	      || rec_get_status(rec) == REC_STATUS_INSTANT);
 
 	const ulint omit_size = REC_N_NEW_EXTRA_BYTES;
 
@@ -1068,7 +1070,7 @@ row_log_table_low(
 
 		if (is_instant) {
 			*b++ = fake_extra_size
-				? REC_STATUS_COLUMNS_ADDED
+				? REC_STATUS_INSTANT
 				: rec_get_status(rec);
 		} else {
 			ut_ad(rec_get_status(rec) == REC_STATUS_ORDINARY);
@@ -1141,7 +1143,7 @@ ALTER TABLE)
 table
 @param[in]	offsets		rec_get_offsets(rec)
 @param[in]	i		rec field corresponding to col
-@param[in]	page_size	page size of the old table
+@param[in]	zip_size	ROW_FORMAT=COMPRESSED size of the old table
 @param[in]	max_len		maximum length of dfield
 @param[in]	log		row log for the table
 @retval DB_INVALID_NULL		if a NULL value is encountered
@@ -1155,7 +1157,7 @@ row_log_table_get_pk_col(
 	const rec_t*		rec,
 	const offset_t*		offsets,
 	ulint			i,
-	const page_size_t&	page_size,
+	ulint			zip_size,
 	ulint			max_len,
 	const row_log_t*	log)
 {
@@ -1198,7 +1200,7 @@ row_log_table_get_pk_col(
 			mem_heap_alloc(heap, field_len));
 
 		len = btr_copy_externally_stored_field_prefix(
-			blob_field, field_len, page_size, field, len);
+			blob_field, field_len, zip_size, field, len);
 		if (len >= max_len + 1) {
 			return(DB_TOO_BIG_INDEX_COL);
 		}
@@ -1249,19 +1251,16 @@ row_log_table_get_pk(
 			ulint	trx_id_offs = index->trx_id_offset;
 
 			if (!trx_id_offs) {
-				ulint	pos = dict_index_get_sys_col_pos(
-					index, DATA_TRX_ID);
 				ulint	len;
-				ut_ad(pos > 0);
 
 				if (!offsets) {
 					offsets = rec_get_offsets(
 						rec, index, NULL, true,
-						pos + 1, heap);
+						index->db_trx_id() + 1, heap);
 				}
 
 				trx_id_offs = rec_get_nth_field_offs(
-					offsets, pos, &len);
+					offsets, index->db_trx_id(), &len);
 				ut_ad(len == DATA_TRX_ID_LEN);
 			}
 
@@ -1316,8 +1315,7 @@ row_log_table_get_pk(
 
 		const ulint max_len = DICT_MAX_FIELD_LEN_BY_FORMAT(new_table);
 
-		const page_size_t&	page_size
-			= dict_table_page_size(index->table);
+		const ulint zip_size = index->table->space->zip_size();
 
 		for (ulint new_i = 0; new_i < new_n_uniq; new_i++) {
 			dict_field_t*	ifield;
@@ -1344,7 +1342,8 @@ row_log_table_get_pk(
 
 				log->error = row_log_table_get_pk_col(
 					ifield, dfield, *heap,
-					rec, offsets, i, page_size, max_len, log);
+					rec, offsets, i, zip_size, max_len,
+					log);
 
 				if (log->error != DB_SUCCESS) {
 err_exit:
@@ -1564,11 +1563,17 @@ row_log_table_apply_convert_mrec(
 		const dict_col_t*	col
 			= dict_field_get_col(ind_field);
 
+		if (col->is_dropped()) {
+			/* the column was instantly dropped earlier */
+			ut_ad(index->table->instant);
+			continue;
+		}
+
 		ulint			col_no
 			= log->col_map[dict_col_get_no(col)];
 
 		if (col_no == ULINT_UNDEFINED) {
-			/* dropped column */
+			/* the column is being dropped now */
 			continue;
 		}
 
@@ -1605,7 +1610,7 @@ row_log_table_apply_convert_mrec(
 
 			data = btr_rec_copy_externally_stored_field(
 				mrec, offsets,
-				dict_table_page_size(index->table),
+				index->table->space->zip_size(),
 				i, &len, heap);
 			ut_a(data);
 			dfield_set_data(dfield, data, len);
@@ -1643,12 +1648,12 @@ blob_done:
 		/* See if any columns were changed to NULL or NOT NULL. */
 		const dict_col_t*	new_col
 			= dict_table_get_nth_col(log->table, col_no);
-		ut_ad(new_col->mtype == col->mtype);
+		ut_ad(new_col->same_format(*col));
 
 		/* Assert that prtype matches except for nullability. */
-		ut_ad(!((new_col->prtype ^ col->prtype) & ~DATA_NOT_NULL));
 		ut_ad(!((new_col->prtype ^ dfield_get_type(dfield)->prtype)
-			& ~DATA_NOT_NULL));
+			& ~(DATA_NOT_NULL | DATA_VERSIONED
+			    | CHAR_COLL_MASK << 16 | DATA_LONG_TRUE_VARCHAR)));
 
 		if (new_col->prtype == col->prtype) {
 			continue;
@@ -1925,8 +1930,7 @@ row_log_table_apply_delete(
 	btr_pcur_t	pcur;
 	offset_t*	offsets;
 
-	ut_ad(rec_offs_n_fields(moffsets)
-	      == dict_index_get_n_unique(index) + 2);
+	ut_ad(rec_offs_n_fields(moffsets) == index->first_user_field());
 	ut_ad(!rec_offs_any_extern(moffsets));
 
 	/* Convert the row to a search tuple. */
@@ -2493,8 +2497,7 @@ row_log_table_apply_op(
 		/* The ROW_T_DELETE record was converted by
 		rec_convert_dtuple_to_temp() using new_index. */
 		ut_ad(!new_index->is_instant());
-		rec_offs_set_n_fields(offsets,
-				      unsigned(new_index->n_uniq) + 2);
+		rec_offs_set_n_fields(offsets, new_index->first_user_field());
 		rec_init_offsets_temp(mrec, new_index, offsets);
 		next_mrec = mrec + rec_offs_data_size(offsets);
 		if (next_mrec > mrec_end) {
@@ -2586,7 +2589,7 @@ row_log_table_apply_op(
 			rec_convert_dtuple_to_temp() using new_index. */
 			ut_ad(!new_index->is_instant());
 			rec_offs_set_n_fields(offsets,
-					      unsigned(new_index->n_uniq) + 2);
+					      new_index->first_user_field());
 			rec_init_offsets_temp(mrec, new_index, offsets);
 
 			next_mrec = mrec + rec_offs_data_size(offsets);
@@ -2596,13 +2599,12 @@ row_log_table_apply_op(
 
 			/* Copy the PRIMARY KEY fields and
 			DB_TRX_ID, DB_ROLL_PTR from mrec to old_pk. */
-			old_pk = dtuple_create(
-				heap, unsigned(new_index->n_uniq) + 2);
+			old_pk = dtuple_create(heap,
+					       new_index->first_user_field());
 			dict_index_copy_types(old_pk, new_index,
 					      old_pk->n_fields);
 
-			for (ulint i = 0;
-			     i < dict_index_get_n_unique(new_index) + 2;
+			for (ulint i = 0; i < new_index->first_user_field();
 			     i++) {
 				const void*	field;
 				ulint		len;
@@ -2684,8 +2686,8 @@ ulint
 row_log_progress_inc_per_block()
 {
 	/* We must increment the progress once per page (as in
-	univ_page_size, usually 16KiB). One block here is srv_sort_buf_size
-	(usually 1MiB). */
+	srv_page_size, default = innodb_page_size=16KiB).
+	One block here is srv_sort_buf_size (usually 1MiB). */
 	const ulint	pages_per_block = std::max<ulint>(
 		ulint(srv_sort_buf_size >> srv_page_size_shift), 1);
 
@@ -2753,8 +2755,8 @@ row_log_table_apply_ops(
 	dict_index_t*	new_index	= dict_table_get_first_index(
 		new_table);
 	const ulint	i		= 1 + REC_OFFS_HEADER_SIZE
-		+ ut_max(dict_index_get_n_fields(index),
-			 dict_index_get_n_unique(new_index) + 2);
+		+ std::max<ulint>(index->n_fields,
+				  new_index->first_user_field());
 	const ulint	new_trx_id_col	= dict_col_get_clust_pos(
 		dict_table_get_sys_col(new_table, DATA_TRX_ID), new_index);
 	trx_t*		trx		= thr_get_trx(thr);
@@ -3115,7 +3117,7 @@ row_log_table_apply(
 
 	stage->begin_phase_log_table();
 
-	ut_ad(!rw_lock_own(&dict_operation_lock, RW_LOCK_S));
+	ut_ad(!rw_lock_own(&dict_sys.latch, RW_LOCK_S));
 	clust_index = dict_table_get_first_index(old_table);
 
 	if (clust_index->online_log->n_rows == 0) {
@@ -3213,7 +3215,8 @@ row_log_allocate(
 	log->head.total = 0;
 	log->path = path;
 	log->n_core_fields = index->n_core_fields;
-	ut_ad(!table || log->is_instant(index) == index->is_instant());
+	ut_ad(!table || log->is_instant(index)
+	      == (index->n_core_fields < index->n_fields));
 	log->allow_not_null = allow_not_null;
 	log->old_table = old_table;
 	log->n_rows = 0;

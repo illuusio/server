@@ -356,7 +356,7 @@ bool Sql_cmd_alter_table::execute(THD *thd)
 {
   LEX *lex= thd->lex;
   /* first SELECT_LEX (have special meaning for many of non-SELECTcommands) */
-  SELECT_LEX *select_lex= &lex->select_lex;
+  SELECT_LEX *select_lex= lex->first_select_lex();
   /* first table of first SELECT_LEX */
   TABLE_LIST *first_table= (TABLE_LIST*) select_lex->table_list.first;
 
@@ -485,6 +485,7 @@ bool Sql_cmd_alter_table::execute(THD *thd)
   thd->work_part_info= 0;
 #endif
 
+#ifdef WITH_WSREP
   if (WSREP(thd) &&
       (!thd->is_current_stmt_binlog_format_row() ||
        !thd->find_temporary_table(first_table)))
@@ -496,6 +497,7 @@ bool Sql_cmd_alter_table::execute(THD *thd)
     thd->variables.auto_increment_offset = 1;
     thd->variables.auto_increment_increment = 1;
   }
+#endif
 
   result= mysql_alter_table(thd, &select_lex->db, &lex->name,
                             &create_info,
@@ -506,16 +508,17 @@ bool Sql_cmd_alter_table::execute(THD *thd)
                             lex->ignore);
 
   DBUG_RETURN(result);
-
-WSREP_ERROR_LABEL:
+#ifdef WITH_WSREP
+wsrep_error_label:
   WSREP_WARN("ALTER TABLE isolation failure");
   DBUG_RETURN(TRUE);
+#endif
 }
 
 bool Sql_cmd_discard_import_tablespace::execute(THD *thd)
 {
   /* first SELECT_LEX (have special meaning for many of non-SELECTcommands) */
-  SELECT_LEX *select_lex= &thd->lex->select_lex;
+  SELECT_LEX *select_lex= thd->lex->first_select_lex();
   /* first table of first SELECT_LEX */
   TABLE_LIST *table_list= (TABLE_LIST*) select_lex->table_list.first;
 

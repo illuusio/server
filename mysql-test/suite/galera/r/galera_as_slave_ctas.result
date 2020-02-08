@@ -1,28 +1,29 @@
 connect node_2a, 127.0.0.1, root, , test, $NODE_MYPORT_2;
 connect node_3, 127.0.0.1, root, , test, $NODE_MYPORT_3;
-connection node_2;
+connection node_2a;
 START SLAVE;
-connection node_1;
+connection default;
 SHOW VARIABLES LIKE 'binlog_format';
 Variable_name	Value
 binlog_format	ROW
-connection node_1;
+connection default;
 CREATE TABLE source (f1 INTEGER PRIMARY KEY) ENGINE=InnoDB;
 CREATE TABLE target AS SELECT * FROM source;
-connection node_2;
+connection node_2a;
 connection node_3;
-connection node_1;
+connection default;
 DROP TABLE target;
 INSERT INTO source VALUES(1);
 CREATE TABLE target AS SELECT * FROM source;
-connection node_2;
+connection node_2a;
 connection node_3;
-connection node_1;
+connection default;
 DROP TABLE source;
 DROP TABLE target;
 connection node_3;
-connection node_2;
+connection node_2a;
 STOP SLAVE;
 RESET SLAVE ALL;
-connection node_1;
+connection default;
 RESET MASTER;
+disconnect node_2a;

@@ -163,22 +163,22 @@ row_merge_create_fts_sort_index(
 /** Initialize FTS parallel sort structures.
 @param[in]	trx		transaction
 @param[in,out]	dup		descriptor of FTS index being created
-@param[in]	new_table	table where indexes are created
+@param[in,out]	new_table	table where indexes are created
 @param[in]	opt_doc_id_size	whether to use 4 bytes instead of 8 bytes
 				integer to store Doc ID during sort
-@param[in]	old_page_size	page size of the old table during alter
+@param[in]	old_zip_size	page size of the old table during alter
 @param[out]	psort		parallel sort info to be instantiated
 @param[out]	merge		parallel merge info to be instantiated
-@return TRUE if all successful */
-ibool
+@return true if all successful */
+bool
 row_fts_psort_info_init(
-        trx_t*                  trx,
-        row_merge_dup_t*        dup,
-        const dict_table_t*     new_table,
-        ibool                   opt_doc_id_size,
-        const page_size_t       old_page_size,
-        fts_psort_t**           psort,
-        fts_psort_t**           merge)
+	trx_t*		trx,
+	row_merge_dup_t*dup,
+	dict_table_t*	new_table,
+	bool		opt_doc_id_size,
+	ulint		old_zip_size,
+	fts_psort_t**	psort,
+	fts_psort_t**	merge)
 {
 	ulint			i;
 	ulint			j;
@@ -188,6 +188,7 @@ row_fts_psort_info_init(
 	ulint			block_size;
 	ibool			ret = TRUE;
 	bool			encrypted = false;
+	ut_ad(ut_is_2pow(old_zip_size));
 
 	block_size = 3 * srv_sort_buf_size;
 
@@ -210,8 +211,8 @@ row_fts_psort_info_init(
 	}
 
 	common_info->dup = dup;
-	common_info->new_table = (dict_table_t*) new_table;
-	common_info->old_page_size = old_page_size;
+	common_info->new_table = new_table;
+	common_info->old_zip_size = old_zip_size;
 	common_info->trx = trx;
 	common_info->all_info = psort_info;
 	common_info->sort_event = os_event_create(0);
@@ -805,8 +806,7 @@ DECLARE_THREAD(fts_parallel_tokenization)(
 	block = psort_info->merge_block;
 	crypt_block = psort_info->crypt_block;
 
-	const page_size_t	old_page_size =
-			psort_info->psort_common->old_page_size;
+	const ulint zip_size = psort_info->psort_common->old_zip_size;
 
 	row_merge_fts_get_next_doc_item(psort_info, &doc_item);
 
@@ -836,7 +836,7 @@ loop:
 				doc.text.f_str =
 					btr_copy_externally_stored_field(
 						&doc.text.f_len, data,
-						old_page_size, data_len, blob_heap);
+						zip_size, data_len, blob_heap);
 			} else {
 				doc.text.f_str = data;
 				doc.text.f_len = data_len;

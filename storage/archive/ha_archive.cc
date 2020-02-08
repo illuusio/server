@@ -371,7 +371,7 @@ int Archive_share::write_v1_metafile()
   @return Length of packed row
 */
 
-unsigned int ha_archive::pack_row_v1(uchar *record)
+unsigned int ha_archive::pack_row_v1(const uchar *record)
 {
   uint *blob, *end;
   uchar *pos;
@@ -802,7 +802,7 @@ int ha_archive::create(const char *name, TABLE *table_arg,
 #endif /* HAVE_READLINK */
   {
     if (create_info->data_file_name)
-      my_error(WARN_OPTION_IGNORED, MYF(ME_JUST_WARNING), "DATA DIRECTORY");
+      my_error(WARN_OPTION_IGNORED, MYF(ME_WARNING), "DATA DIRECTORY");
 
     fn_format(name_buff, name, "", ARZ,
               MY_REPLACE_EXT | MY_UNPACK_FILENAME);
@@ -811,7 +811,7 @@ int ha_archive::create(const char *name, TABLE *table_arg,
 
   /* Archive engine never uses INDEX DIRECTORY. */
   if (create_info->index_file_name)
-      my_error(WARN_OPTION_IGNORED, MYF(ME_JUST_WARNING), "INDEX DIRECTORY");
+      my_error(WARN_OPTION_IGNORED, MYF(ME_WARNING), "INDEX DIRECTORY");
 
   /*
     There is a chance that the file was "discovered". In this case
@@ -868,7 +868,7 @@ error:
 /*
   This is where the actual row is written out.
 */
-int ha_archive::real_write_row(uchar *buf, azio_stream *writer)
+int ha_archive::real_write_row(const uchar *buf, azio_stream *writer)
 {
   my_off_t written;
   unsigned int r_pack_length;
@@ -917,7 +917,7 @@ uint32 ha_archive::max_row_length(const uchar *record)
 }
 
 
-unsigned int ha_archive::pack_row(uchar *record, azio_stream *writer)
+unsigned int ha_archive::pack_row(const uchar *record, azio_stream *writer)
 {
   uchar *ptr;
   my_ptrdiff_t const rec_offset= record - table->record[0];
@@ -959,7 +959,7 @@ unsigned int ha_archive::pack_row(uchar *record, azio_stream *writer)
   for implementing start_bulk_insert() is that we could skip 
   setting dirty to true each time.
 */
-int ha_archive::write_row(uchar *buf)
+int ha_archive::write_row(const uchar *buf)
 {
   int rc;
   uchar *read_buf= NULL;
@@ -980,7 +980,7 @@ int ha_archive::write_row(uchar *buf)
 
   if (table->next_number_field && record == table->record[0])
   {
-    KEY *mkey= &table->s->key_info[0]; // We only support one key right now
+    KEY *mkey= &table->key_info[0]; // We only support one key right now
     update_auto_increment();
     temp_auto= table->next_number_field->val_int();
 
@@ -1098,7 +1098,7 @@ int ha_archive::index_read_idx(uchar *buf, uint index, const uchar *key,
 {
   int rc;
   bool found= 0;
-  KEY *mkey= &table->s->key_info[index];
+  KEY *mkey= &table->key_info[index];
   current_k_offset= mkey->key_part->offset;
   current_key= key;
   current_key_len= key_len;
@@ -1752,6 +1752,20 @@ void ha_archive::flush_and_clear_pending_writes()
   mysql_mutex_unlock(&share->mutex);
 }
 
+
+int ha_archive::extra(enum ha_extra_function operation)
+{
+  switch (operation) {
+  case HA_EXTRA_FLUSH:
+    mysql_mutex_lock(&share->mutex);
+    share->close_archive_writer();
+    mysql_mutex_unlock(&share->mutex);
+    break;
+  default:
+    break;
+  }
+  return 0;
+}
 
 /*
   This method tells us that a bulk insert operation is about to occur. We set

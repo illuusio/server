@@ -32,10 +32,11 @@ extern "C" {
 #include <stdlib.h>
 #endif
 
-#define ME_ERROR_LOG    64      /* Write the message to the error log */
-#define ME_NOTE         1024    /* Not an error, just a note */
-#define ME_WARNING      2048    /* Not an error, just a warning */
-#define ME_FATAL        4096    /* Fatal statement error */
+#define ME_ERROR_LOG        64 /* Write the message to the error log */
+#define ME_ERROR_LOG_ONLY  128 /* Write the error message to error log only */
+#define ME_NOTE           1024 /* Not an error, just a note */
+#define ME_WARNING        2048 /* Not an error, just a warning */
+#define ME_FATAL          4096 /* Fatal statement error */
 
 extern struct my_print_error_service_st {
   void (*my_error_func)(unsigned int nr, unsigned long MyFlags, ...);
@@ -50,11 +51,9 @@ extern struct my_print_error_service_st {
 #define my_printv_error(A,B,C,D) my_print_error_service->my_printv_error_func(A,B,C,D)
 
 #else
-#ifndef MY_ERROR_DEFINED
 extern void my_error(unsigned int nr, unsigned long MyFlags, ...);
 extern void my_printf_error(unsigned int my_err, const char *format, unsigned long MyFlags, ...);
 extern void my_printv_error(unsigned int error, const char *format, unsigned long MyFlags,va_list ap);
-#endif /* MY_ERROR_DEFINED */
 #endif /* MYSQL_DYNAMIC_PLUGIN */
 
 #ifdef __cplusplus

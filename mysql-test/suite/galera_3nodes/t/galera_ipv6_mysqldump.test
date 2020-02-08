@@ -59,6 +59,7 @@ INSERT INTO t1 VALUES (1);
 --connection node_2
 --echo Starting server ...
 --let $start_mysqld_params = --wsrep_sst_auth=sst: --wsrep_sst_method=mysqldump --wsrep-sst-receive-address=[::1].1:$NODE_MYPORT_2
+let $restart_noprint=2;
 --source include/start_mysqld.inc
 
 #--source suite/galera/include/galera_load_provider.inc
@@ -77,6 +78,11 @@ DROP TABLE t1;
 
 SELECT VARIABLE_VALUE LIKE '%[::1]%' FROM INFORMATION_SCHEMA.GLOBAL_STATUS WHERE VARIABLE_NAME = 'wsrep_incoming_addresses';
 
+# restart node so we don't fail on WSREP_START_POSITION internal check
+--source include/restart_mysqld.inc
+--source include/wait_until_connected_again.inc
+
+--source ../galera/include/auto_increment_offset_restore.inc
 --source suite/galera/include/galera_sst_restore.inc
 --connection node_2
 CALL mtr.add_suppression("Unsupported protocol downgrade: incremental data collection disabled. Expect abort");

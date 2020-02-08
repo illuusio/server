@@ -445,7 +445,7 @@ drop procedure b|
 drop procedure if exists b2|
 --enable_warnings
 create procedure b2(x int)
-repeat(select 1 into outfile 'b2');
+repeat(select 1) into outfile 'b2';
   insert into test.t1 values (repeat("b2",3), x);
   set x = x-1;
 until x = 0 end repeat|
@@ -2923,7 +2923,7 @@ create procedure bug4904()
 begin
   declare continue handler for sqlstate 'HY000' begin end;
 
-  create table t2 as select * from t3;
+  create table not_existing_table as select * from t3;
 end|
 
 -- error 1146
@@ -5046,6 +5046,7 @@ drop procedure if exists bug14643_1|
 drop procedure if exists bug14643_2|
 --enable_warnings
 
+--error ER_BAD_FIELD_ERROR
 create procedure bug14643_1()
 begin
   declare continue handler for sqlexception select 'boo' as 'Handler';
@@ -5061,6 +5062,7 @@ begin
   end;
 end|
 
+--error ER_BAD_FIELD_ERROR
 create procedure bug14643_2()
 begin
   declare continue handler for sqlexception select 'boo' as 'Handler';
@@ -5075,11 +5077,6 @@ begin
   select undefined_var;
 end|
 
-call bug14643_1()|
-call bug14643_2()|
-
-drop procedure bug14643_1|
-drop procedure bug14643_2|
 
 #
 # BUG#14304: auto_increment field incorrect set in SP
@@ -5120,15 +5117,12 @@ drop table t3, t4|
 drop procedure if exists bug14376|
 --enable_warnings
 
+--error ER_BAD_FIELD_ERROR
 create procedure bug14376()
 begin
   declare x int default x;
 end|
 
-# Not the error we want, but that's what we got for now...
---error ER_BAD_FIELD_ERROR
-call bug14376()|
-drop procedure bug14376|
 
 create procedure bug14376()
 begin
@@ -5350,6 +5344,7 @@ drop procedure if exists bug14498_4|
 drop procedure if exists bug14498_5|
 --enable_warnings
 
+--error ER_BAD_FIELD_ERROR
 create procedure bug14498_1()
 begin
   declare continue handler for sqlexception select 'error' as 'Handler';
@@ -5362,6 +5357,7 @@ begin
   select 'done' as 'End';
 end|
 
+--error ER_BAD_FIELD_ERROR
 create procedure bug14498_2()
 begin
   declare continue handler for sqlexception select 'error' as 'Handler';
@@ -5372,6 +5368,7 @@ begin
   select 'done' as 'End';
 end|
 
+--error ER_BAD_FIELD_ERROR
 create procedure bug14498_3()
 begin
   declare continue handler for sqlexception select 'error' as 'Handler';
@@ -5382,6 +5379,7 @@ begin
   select 'done' as 'End';
 end|
 
+--error ER_BAD_FIELD_ERROR
 create procedure bug14498_4()
 begin
   declare continue handler for sqlexception select 'error' as 'Handler';
@@ -5397,6 +5395,7 @@ begin
   select 'done' as 'End';
 end|
 
+--error ER_BAD_FIELD_ERROR
 create procedure bug14498_5()
 begin
   declare continue handler for sqlexception select 'error' as 'Handler';
@@ -5412,17 +5411,6 @@ begin
   select 'done' as 'End';
 end|
 
-call bug14498_1()|
-call bug14498_2()|
-call bug14498_3()|
-call bug14498_4()|
-call bug14498_5()|
-
-drop procedure bug14498_1|
-drop procedure bug14498_2|
-drop procedure bug14498_3|
-drop procedure bug14498_4|
-drop procedure bug14498_5|
 
 #
 # BUG#15231: Stored procedure bug with not found condition handler
@@ -9942,6 +9930,8 @@ BEGIN
   SET name="hello";
   call p1(name);
 END|
+
+--error ER_BAD_FIELD_ERROR
 CREATE OR REPLACE PROCEDURE p3 ()
 BEGIN
   DECLARE name VARCHAR(10);
@@ -9952,11 +9942,8 @@ END|
 DELIMITER ;|
 
 call p2();
---error ER_BAD_FIELD_ERROR
-call p3();
 drop procedure p1;
 drop procedure p2;
-drop procedure p3;
 
 --echo #
 --echo # MDEV-15328: MariaDB 10.2.13 Crashes upon CALL PROCEDURE PARAM
@@ -10392,3 +10379,26 @@ $$
 DELIMITER ;$$
 
 --echo # End of 10.3 tests
+
+
+--echo #
+--echo # Start of 10.4 tests
+--echo #
+
+--echo #
+--echo # MDEV-19637 Crash on an SP variable assignment to a wrong subselect
+--echo #
+
+DELIMITER $$;
+--error ER_CANT_USE_OPTION_HERE
+BEGIN NOT ATOMIC
+  DECLARE a INT;
+  SET a=(SELECT 1 FROM DUAL UNION SELECT HIGH_PRIORITY 2 FROM DUAL);
+END;
+$$
+DELIMITER ;$$
+
+
+--echo #
+--echo # End of 10.4 tests
+--echo #

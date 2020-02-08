@@ -901,7 +901,7 @@ static MYSQL_THDVAR_BOOL(
     NULL,
     false);
 
-static MYSQL_THDVAR_BOOL(
+    static MYSQL_THDVAR_BOOL(
     enable_fast_upsert,
     PLUGIN_VAR_THDLOCAL,
     "disable slow upsert",

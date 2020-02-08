@@ -20,6 +20,7 @@ INSERT INTO t1 VALUES(1, 'sql'), (2, 'server'), (3, 'mariadb'),
 	(8, 'test4'), (9, 'test5'), (10, 'test6'), (11, 'test7'),
 	(12, 'test8');
 
+let $restart_noprint=2;
 --source include/restart_mysqld.inc
 
 let INNODB_PAGE_SIZE=`select @@innodb_page_size`;
@@ -37,7 +38,7 @@ perl;
 my $file = "$ENV{MYSQLD_DATADIR}/test/t1.ibd";
 open(FILE, "+<$file") || die "Unable to open $file";
 binmode FILE;
-seek (FILE, $ENV{INNODB_PAGE_SIZE} * 19, SEEK_SET) or die "seek";
+seek (FILE, $ENV{INNODB_PAGE_SIZE} * 19 + 38, SEEK_SET) or die "seek";
 print FILE "junk";
 close FILE or die "close";
 EOF

@@ -157,6 +157,8 @@ typedef st_spider_result SPIDER_RESULT;
 #define SPIDER_SQL_MBR_DISJOINT_LEN (sizeof(SPIDER_SQL_MBR_DISJOINT_STR) - 1)
 #define SPIDER_SQL_NOT_BETWEEN_STR "not between"
 #define SPIDER_SQL_NOT_BETWEEN_LEN (sizeof(SPIDER_SQL_NOT_BETWEEN_STR) - 1)
+#define SPIDER_SQL_TO_FLOAT_STR "/* create function to_float(a decimal(20,6)) returns float return a */ to_float("
+#define SPIDER_SQL_TO_FLOAT_LEN (sizeof(SPIDER_SQL_TO_FLOAT_STR) - 1)
 #define SPIDER_SQL_IN_STR "in("
 #define SPIDER_SQL_IN_LEN (sizeof(SPIDER_SQL_IN_STR) - 1)
 #define SPIDER_SQL_NOT_IN_STR "not in("
@@ -181,6 +183,8 @@ typedef st_spider_result SPIDER_RESULT;
 #define SPIDER_SQL_AS_TIME_LEN (sizeof(SPIDER_SQL_AS_TIME_STR) - 1)
 #define SPIDER_SQL_AS_BINARY_STR " as binary"
 #define SPIDER_SQL_AS_BINARY_LEN (sizeof(SPIDER_SQL_AS_BINARY_STR) - 1)
+#define SPIDER_SQL_AS_FLOAT_STR " as float"
+#define SPIDER_SQL_AS_FLOAT_LEN (sizeof(SPIDER_SQL_AS_FLOAT_STR) - 1)
 #define SPIDER_SQL_IS_TRUE_STR " is true"
 #define SPIDER_SQL_IS_TRUE_LEN (sizeof(SPIDER_SQL_IS_TRUE_STR) - 1)
 #define SPIDER_SQL_IS_NOT_TRUE_STR " is not true"
@@ -251,6 +255,7 @@ typedef struct st_spider_transaction SPIDER_TRX;
 typedef struct st_spider_share SPIDER_SHARE;
 class ha_spider;
 class spider_db_copy_table;
+class spider_db_handler;
 
 class spider_string
 {
@@ -533,6 +538,11 @@ public:
     const char *st,
     uint len
   );
+  void append_escape_string(
+    const char *st,
+    uint len,
+    CHARSET_INFO *cs
+  );
   bool append_for_single_quote(
     const char *st,
     uint len
@@ -812,6 +822,17 @@ public:
     uint name_length,
     CHARSET_INFO *name_charset
   ) = 0;
+  virtual int append_escaped_name(
+    spider_string *str,
+    const char *name,
+    uint name_length
+  ) = 0;
+  virtual int append_escaped_name_with_charset(
+    spider_string *str,
+    const char *name,
+    uint name_length,
+    CHARSET_INFO *name_charset
+  ) = 0;
   virtual bool is_name_quote(
     const char head_code
   ) = 0;
@@ -836,6 +857,14 @@ public:
   virtual int append_sql_log_off(
     spider_string *str,
     bool sql_log_off
+  ) = 0;
+  virtual int append_wait_timeout(
+    spider_string *str,
+    int wait_timeout
+  ) = 0;
+  virtual int append_sql_mode(
+    spider_string *str,
+    sql_mode_t sql_mode
   ) = 0;
   virtual int append_time_zone(
     spider_string *str,
@@ -979,20 +1008,17 @@ public:
   ) = 0;
   virtual int fetch_table_status(
     int mode,
-    ha_rows &records,
-    ulong &mean_rec_length,
-    ulonglong &data_file_length,
-    ulonglong &max_data_file_length,
-    ulonglong &index_file_length,
-    ulonglong &auto_increment_value,
-    time_t &create_time,
-    time_t &update_time,
-    time_t &check_time
+    ha_statistics &stat
   ) = 0;
   virtual int fetch_table_records(
     int mode,
     ha_rows &records
   ) = 0;
+#ifdef HA_HAS_CHECKSUM_EXTENDED
+  virtual int fetch_table_checksum(
+    ha_spider *spider
+  );
+#endif
   virtual int fetch_table_cardinality(
     int mode,
     TABLE *table,
@@ -1080,6 +1106,11 @@ public:
   ) = 0;
   virtual int next_result() = 0;
   virtual uint affected_rows() = 0;
+  virtual uint matched_rows() = 0;
+  virtual bool inserted_info(
+    spider_db_handler *handler,
+    ha_copy_info *copy_info
+  ) = 0;
   virtual ulonglong last_insert_id() = 0;
   virtual int set_character_set(
     const char *csname
@@ -1134,6 +1165,16 @@ public:
   virtual bool set_sql_log_off_in_bulk_sql() = 0;
   virtual int set_sql_log_off(
     bool sql_log_off,
+    int *need_mon
+  ) = 0;
+  virtual bool set_wait_timeout_in_bulk_sql() = 0;
+  virtual int set_wait_timeout(
+    int wait_timeout,
+    int *need_mon
+  ) = 0;
+  virtual bool set_sql_mode_in_bulk_sql() = 0;
+  virtual int set_sql_mode(
+    sql_mode_t sql_mode,
     int *need_mon
   ) = 0;
   virtual bool set_time_zone_in_bulk_sql() = 0;
@@ -1261,6 +1302,9 @@ public:
     SPIDER_SHARE *spider_share,
     spider_string *str
   ) = 0;
+#endif
+#ifdef HA_HAS_CHECKSUM_EXTENDED
+  virtual bool checksum_support();
 #endif
 };
 
@@ -1630,6 +1674,11 @@ public:
   virtual int show_records(
     int link_idx
   ) = 0;
+#ifdef HA_HAS_CHECKSUM_EXTENDED
+  virtual int checksum_table(
+    int link_idx
+  );
+#endif
   virtual int show_last_insert_id(
     int link_idx,
     ulonglong &last_insert_id

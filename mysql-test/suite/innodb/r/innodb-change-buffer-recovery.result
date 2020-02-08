@@ -30,11 +30,13 @@ ERROR HY000: Lost connection to MySQL server during query
 disconnect con1;
 connection default;
 FOUND 1 /Wrote log record for ibuf update in place operation/ in mysqld.1.err
+# restart: --innodb-read-only
 CHECK TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	check	Error	Unknown storage engine 'InnoDB'
 test.t1	check	error	Corrupt
 FOUND 1 /innodb_read_only prevents crash recovery/ in mysqld.1.err
+# restart: --innodb-force-recovery=5
 SELECT * FROM t1 LIMIT 1;
 a	b	c
 1	X	1
@@ -42,6 +44,7 @@ SHOW ENGINE INNODB STATUS;
 Type	Name	Status
 InnoDB		insert 0, delete mark 0
 SET GLOBAL innodb_fast_shutdown=0;
+# restart
 CHECK TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	check	status	OK

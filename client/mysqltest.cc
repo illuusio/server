@@ -107,7 +107,6 @@ enum {
 static int record= 0, opt_sleep= -1;
 static char *opt_db= 0, *opt_pass= 0;
 const char *opt_user= 0, *opt_host= 0, *unix_sock= 0, *opt_basedir= "./";
-static char *shared_memory_base_name=0;
 const char *opt_logdir= "";
 const char *opt_prologue= 0, *opt_charsets_dir;
 static int opt_port= 0;
@@ -137,7 +136,8 @@ static my_bool server_initialized= 0;
 static my_bool is_windows= 0;
 static char **default_argv;
 static const char *load_default_groups[]=
-{ "mysqltest", "client", "client-server", "client-mariadb", 0 };
+{ "mysqltest", "mariadb-test", "client", "client-server", "client-mariadb",
+  0 };
 static char line_buffer[MAX_DELIMITER_LENGTH], *line_buffer_pos= line_buffer;
 
 /* Info on properties that can be set with --enable_X and --disable_X */
@@ -870,21 +870,6 @@ static char *my_fgets(char * s, int n, FILE * stream, int *len)
   }
 #endif
   return buf;
-}
-
-/*
-  Wrapper for popen().
-  On Windows, uses binary mode to workaround
-  C runtime bug mentioned in MDEV-9409
-*/
-static FILE* my_popen(const char *cmd, const char *mode)
-{
-  FILE *f= popen(cmd, mode);
-#ifdef _WIN32
-  if (f)
-    _setmode(fileno(f), O_BINARY);
-#endif
-  return f;
 }
 
 #ifdef EMBEDDED_LIBRARY
@@ -1861,7 +1846,7 @@ static int run_command(char* cmd,
     }
   }
 
-  error= pclose(res_file);
+  error= my_pclose(res_file);
   DBUG_RETURN(WEXITSTATUS(error));
 }
 
@@ -3447,7 +3432,7 @@ void do_exec(struct st_command *command)
   {
     replace_dynstr_append_mem(ds_result, buf, len);
   }
-  error= pclose(res_file);
+  error= my_pclose(res_file);
 
   if (display_result_sorted)
   {
@@ -4677,7 +4662,7 @@ void do_perl(struct st_command *command)
         replace_dynstr_append_mem(&ds_res, buf, len);
       }
     }
-    error= pclose(res_file);
+    error= my_pclose(res_file);
 
     /* Remove the temporary file, but keep it if perl failed */
     if (!error)
@@ -5904,7 +5889,6 @@ do_handle_error:
   <opts> - options to use for the connection
    * SSL - use SSL if available
    * COMPRESS - use compression if available
-   * SHM - use shared memory if available
    * PIPE - use named pipe if available
 
 */
@@ -5916,7 +5900,6 @@ void do_connect(struct st_command *command)
   char *ssl_cipher __attribute__((unused))= 0;
   my_bool con_ssl= 0, con_compress= 0;
   my_bool con_pipe= 0;
-  my_bool con_shm __attribute__ ((unused))= 0;
   int read_timeout= 0;
   int write_timeout= 0;
   int connect_timeout= 0;
@@ -5932,9 +5915,6 @@ void do_connect(struct st_command *command)
   static DYNAMIC_STRING ds_sock;
   static DYNAMIC_STRING ds_options;
   static DYNAMIC_STRING ds_default_auth;
-#ifdef HAVE_SMEM
-  static DYNAMIC_STRING ds_shm;
-#endif
   const struct command_arg connect_args[] = {
     { "connection name", ARG_STRING, TRUE, &ds_connection_name, "Name of the connection" },
     { "host", ARG_STRING, TRUE, &ds_host, "Host to connect to" },
@@ -5963,19 +5943,15 @@ void do_connect(struct st_command *command)
       die("Illegal argument for port: '%s'", ds_port.str);
   }
 
-#ifdef HAVE_SMEM
-  /* Shared memory */
-  init_dynamic_string(&ds_shm, ds_sock.str, 0, 0);
-#endif
-
   /* Sock */
   if (ds_sock.length)
   {
     /*
       If the socket is specified just as a name without path
+      or an abstract socket indicator ('@'), then
       append tmpdir in front
     */
-    if (*ds_sock.str != FN_LIBCHAR)
+    if (*ds_sock.str != FN_LIBCHAR && *ds_sock.str != '@')
     {
       char buff[FN_REFLEN];
       fn_format(buff, ds_sock.str, TMPDIR, "", 0);
@@ -6015,8 +5991,6 @@ void do_connect(struct st_command *command)
       con_compress= 1;
     else if (length == 4 && !strncmp(con_options, "PIPE", 4))
       con_pipe= 1;
-    else if (length == 3 && !strncmp(con_options, "SHM", 3))
-      con_shm= 1;
     else if (strncasecmp(con_options, "read_timeout=",
                          sizeof("read_timeout=")-1) == 0)
     {
@@ -6089,6 +6063,7 @@ void do_connect(struct st_command *command)
 		  opt_ssl_capath, ssl_cipher ? ssl_cipher : opt_ssl_cipher);
     mysql_options(con_slot->mysql, MYSQL_OPT_SSL_CRL, opt_ssl_crl);
     mysql_options(con_slot->mysql, MYSQL_OPT_SSL_CRLPATH, opt_ssl_crlpath);
+    mysql_options(con_slot->mysql, MARIADB_OPT_TLS_VERSION, opt_tls_version);
 #if MYSQL_VERSION_ID >= 50000
     /* Turn on ssl_verify_server_cert only if host is "localhost" */
     opt_ssl_verify_server_cert= !strcmp(ds_host.str, "localhost");
@@ -6125,22 +6100,6 @@ void do_connect(struct st_command *command)
     mysql_options(con_slot->mysql, MYSQL_OPT_CONNECT_TIMEOUT,
                   (char*)&connect_timeout);
   }
-
-#ifdef HAVE_SMEM
-  if (con_shm)
-  {
-    uint protocol= MYSQL_PROTOCOL_MEMORY;
-    if (!ds_shm.length)
-      die("Missing shared memory base name");
-    mysql_options(con_slot->mysql, MYSQL_SHARED_MEMORY_BASE_NAME, ds_shm.str);
-    mysql_options(con_slot->mysql, MYSQL_OPT_PROTOCOL, &protocol);
-  }
-  else if (shared_memory_base_name)
-  {
-    mysql_options(con_slot->mysql, MYSQL_SHARED_MEMORY_BASE_NAME,
-                  shared_memory_base_name);
-  }
-#endif
 
   /* Use default db name */
   if (ds_database.length == 0)
@@ -6186,9 +6145,6 @@ void do_connect(struct st_command *command)
   dynstr_free(&ds_sock);
   dynstr_free(&ds_options);
   dynstr_free(&ds_default_auth);
-#ifdef HAVE_SMEM
-  dynstr_free(&ds_shm);
-#endif
   free(csname);
   DBUG_VOID_RETURN;
 }
@@ -7080,7 +7036,7 @@ static struct my_option my_long_options[] =
    GET_INT, REQUIRED_ARG, DEFAULT_MAX_CONN, 8, 5120, 0, 0, 0},
   {"password", 'p', "Password to use when connecting to server.",
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
-  {"protocol", OPT_MYSQL_PROTOCOL, "The protocol of connection (tcp,socket,pipe,memory).",
+  {"protocol", OPT_MYSQL_PROTOCOL, "The protocol of connection (tcp,socket,pipe).",
    0, 0, 0, GET_STR,  REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"port", 'P', "Port number to use for connection or 0 for default to, in "
    "order of preference, my.cnf, $MYSQL_TCP_PORT, "
@@ -7113,10 +7069,6 @@ static struct my_option my_long_options[] =
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"server-file", 'F', "Read embedded server arguments from file.",
    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"shared-memory-base-name", 0,
-   "Base name of shared memory.", &shared_memory_base_name, 
-   &shared_memory_base_name, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 
-   0, 0, 0},
   {"silent", 's', "Suppress all normal output. Synonym for --quiet.",
    &silent, &silent, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"sleep", 'T', "Always sleep this many seconds on sleep commands.",
@@ -7177,7 +7129,7 @@ void usage()
 {
   print_version();
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"));
-  printf("Runs a test against the mysql server and compares output with a results file.\n\n");
+  printf("Runs a test against the MariaDB server and compares output with a results file.\n\n");
   printf("Usage: %s [OPTIONS] [database] < test_file\n", my_progname);
   print_defaults("my",load_default_groups);
   puts("");
@@ -7935,7 +7887,7 @@ int append_warnings(DYNAMIC_STRING *ds, MYSQL* mysql)
 static void handle_no_active_connection(struct st_command *command, 
   struct st_connection *cn, DYNAMIC_STRING *ds)
 {
-  handle_error(command, 2006, "MySQL server has gone away", "000000", ds);
+  handle_error(command, 2006, "MariaDB server has gone away", "000000", ds);
   cn->pending= FALSE;
   var_set_errno(2006);
 }
@@ -9298,7 +9250,7 @@ int main(int argc, char **argv)
   if (mysql_server_init(embedded_server_arg_count,
 			embedded_server_args,
 			(char**) embedded_server_groups))
-    die("Can't initialize MySQL server");
+    die("Can't initialize MariaDB server");
   server_initialized= 1;
   if (cur_file == file_stack && cur_file->file == 0)
   {
@@ -9354,11 +9306,6 @@ int main(int argc, char **argv)
                   &opt_ssl_verify_server_cert);
 #endif
   }
-#endif
-
-#ifdef HAVE_SMEM
-  if (shared_memory_base_name)
-    mysql_options(con->mysql,MYSQL_SHARED_MEMORY_BASE_NAME,shared_memory_base_name);
 #endif
 
   if (!(con->name = my_strdup("default", MYF(MY_WME))))
@@ -10029,7 +9976,7 @@ void do_get_replace(struct st_command *command)
   char *buff, *start;
   char word_end_chars[256], *pos;
   POINTER_ARRAY to_array, from_array;
-  DBUG_ENTER("get_replace");
+  DBUG_ENTER("do_get_replace");
 
   free_replace();
 

@@ -569,10 +569,10 @@ struct rw_lock_t
 #endif /* UNIV_DEBUG */
 {
 	/** Holds the state of the lock. */
-	int32_t	lock_word;
+	std::atomic<int32_t>	lock_word;
 
 	/** 1: there are waiters */
-	int32_t	waiters;
+	std::atomic<int32_t>	waiters;
 
 	/** number of granted SX locks. */
 	volatile ulint	sx_recursive;
@@ -625,8 +625,7 @@ struct rw_lock_t
 #endif /* UNIV_PFS_RWLOCK */
 
 #ifdef UNIV_DEBUG
-	virtual std::string to_string() const;
-	virtual std::string locked_from() const;
+	std::string to_string() const override;
 
 	/** In the debug version: pointer to the debug info list of the lock */
 	UT_LIST_BASE_NODE_T(rw_lock_debug_t) debug_list;
@@ -634,7 +633,6 @@ struct rw_lock_t
 	/** Level in the global latching order. */
 	latch_level_t	level;
 #endif /* UNIV_DEBUG */
-
 };
 #ifdef UNIV_DEBUG
 /** The structure for storing debug info of an rw-lock.  All access to this

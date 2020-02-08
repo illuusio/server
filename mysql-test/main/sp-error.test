@@ -610,6 +610,12 @@ create procedure nodb.bug3339() begin end|
 create procedure bug2653_1(a int, out b int)
   set b = aa|
 
+--error ER_BAD_FIELD_ERROR
+call bug2653_1(1, @b)|
+
+drop procedure bug2653_1|
+
+--error ER_BAD_FIELD_ERROR
 create procedure bug2653_2(a int, out b int)
 begin
   if aa < 0 then
@@ -619,13 +625,6 @@ begin
   end if;
 end|
 
---error 1054
-call bug2653_1(1, @b)|
---error 1054
-call bug2653_2(2, @b)|
-
-drop procedure bug2653_1|
-drop procedure bug2653_2|
 
 #
 # BUG#4344
@@ -1509,6 +1508,7 @@ DROP PROCEDURE IF EXISTS bug13037_p3;
 
 delimiter |;
 
+--error ER_BAD_FIELD_ERROR
 CREATE PROCEDURE bug13037_p1()
 BEGIN
   IF bug13037_foo THEN
@@ -1531,20 +1531,15 @@ delimiter ;|
 --echo
 
 --error 1054
-CALL bug13037_p1();
---error 1054
 CALL bug13037_p2();
 --error 1054
 CALL bug13037_p3();
 
 --error 1054
-CALL bug13037_p1();
---error 1054
 CALL bug13037_p2();
 --error 1054
 CALL bug13037_p3();
 
-DROP PROCEDURE bug13037_p1;
 DROP PROCEDURE bug13037_p2;
 DROP PROCEDURE bug13037_p3;
 

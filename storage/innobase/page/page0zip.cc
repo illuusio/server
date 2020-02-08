@@ -25,39 +25,31 @@ Compressed page interface
 Created June 2005 by Marko Makela
 *******************************************************/
 
-#include "page0size.h"
 #include "page0zip.h"
+#include "fsp0types.h"
+#include "page0page.h"
+#include "buf0checksum.h"
+#include "ut0crc32.h"
+#include "zlib.h"
+
+#ifndef UNIV_INNOCHECKSUM
 
 /** A BLOB field reference full of zero, for use in assertions and tests.
 Initially, BLOB field references are set to zero, in
 dtuple_convert_big_rec(). */
-const byte field_ref_zero[FIELD_REF_SIZE] = {
-        0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0,
-};
+const byte field_ref_zero[UNIV_PAGE_SIZE_MAX] = { 0, };
 
-#ifndef UNIV_INNOCHECKSUM
-#include "page0page.h"
 #include "mtr0log.h"
 #include "dict0dict.h"
 #include "btr0cur.h"
-#include "page0types.h"
 #include "log0recv.h"
 #include "row0row.h"
-#include "row0trunc.h"
-#include "zlib.h"
-#include "buf0buf.h"
-#include "buf0types.h"
-#include "buf0checksum.h"
 #include "btr0sea.h"
 #include "dict0boot.h"
 #include "lock0lock.h"
 #include "srv0srv.h"
 #include "buf0lru.h"
 #include "srv0mon.h"
-#include "ut0crc32.h"
 
 #include <map>
 #include <algorithm>
@@ -106,11 +98,11 @@ Compare at most sizeof(field_ref_zero) bytes.
 @param s in: size of the memory block, in bytes */
 #define ASSERT_ZERO(b, s)			\
 	ut_ad(!memcmp(b, field_ref_zero,	\
-		      ut_min(static_cast<size_t>(s), sizeof field_ref_zero)));
+		      std::min<size_t>(s, sizeof field_ref_zero)));
 /** Assert that a BLOB pointer is filled with zero bytes.
 @param b in: BLOB pointer */
 #define ASSERT_ZERO_BLOB(b) \
-	ut_ad(!memcmp(b, field_ref_zero, sizeof field_ref_zero))
+	ut_ad(!memcmp(b, field_ref_zero, FIELD_REF_SIZE))
 
 /* Enable some extra debugging output.  This code can be enabled
 independently of any UNIV_ debugging conditions. */
@@ -178,18 +170,17 @@ page_zip_is_too_big(
 	const dict_index_t*	index,
 	const dtuple_t*		entry)
 {
-	const page_size_t&	page_size =
-		dict_table_page_size(index->table);
+	const ulint zip_size = index->table->space->zip_size();
 
 	/* Estimate the free space of an empty compressed page.
 	Subtract one byte for the encoded heap_no in the
 	modification log. */
 	ulint	free_space_zip = page_zip_empty_size(
-		index->n_fields, page_size.physical());
+		index->n_fields, zip_size);
 	ulint	n_uniq = dict_index_get_n_unique_in_tree(index);
 
 	ut_ad(dict_table_is_comp(index->table));
-	ut_ad(page_size.is_compressed());
+	ut_ad(zip_size);
 
 	if (free_space_zip == 0) {
 		return(true);
@@ -1248,17 +1239,11 @@ page_zip_compress(
 	dict_index_t*		index,		/*!< in: index of the B-tree
 						node */
 	ulint			level,		/*!< in: commpression level */
-	const redo_page_compress_t* page_comp_info,
-						/*!< in: used for applying
-						TRUNCATE log
-						record during recovery */
 	mtr_t*			mtr)		/*!< in/out: mini-transaction,
 						or NULL */
 {
 	z_stream		c_stream;
 	int			err;
-	ulint			n_fields;	/* number of index fields
-						needed */
 	byte*			fields;		/*!< index field information */
 	byte*			buf;		/*!< compressed payload of the
 						page */
@@ -1273,7 +1258,6 @@ page_zip_compress(
 	ulint			n_blobs	= 0;
 	byte*			storage;	/* storage of uncompressed
 						columns */
-	index_id_t		ind_id;
 	const ulonglong		ns = my_interval_timer();
 #ifdef PAGE_ZIP_COMPRESS_DBG
 	FILE*			logfile = NULL;
@@ -1288,10 +1272,8 @@ page_zip_compress(
 	ut_a(fil_page_index_page_check(page));
 	ut_ad(page_simple_validate_new((page_t*) page));
 	ut_ad(page_zip_simple_validate(page_zip));
-	ut_ad(!index
-	      || (index
-		  && dict_table_is_comp(index->table)
-		  && !dict_index_is_ibuf(index)));
+	ut_ad(dict_table_is_comp(index->table));
+	ut_ad(!dict_index_is_ibuf(index));
 
 	UNIV_MEM_ASSERT_RW(page, srv_page_size);
 
@@ -1311,18 +1293,10 @@ page_zip_compress(
 		     == PAGE_NEW_SUPREMUM);
 	}
 
-	if (truncate_t::s_fix_up_active) {
-		ut_ad(page_comp_info != NULL);
-		n_fields = page_comp_info->n_fields;
-		ind_id = page_comp_info->index_id;
-	} else {
-		if (page_is_leaf(page)) {
-			n_fields = dict_index_get_n_fields(index);
-		} else {
-			n_fields = dict_index_get_n_unique_in_tree_nonleaf(index);
-		}
-		ind_id = index->id;
-	}
+	const ulint n_fields = page_is_leaf(page)
+		? dict_index_get_n_fields(index)
+		: dict_index_get_n_unique_in_tree_nonleaf(index);
+	index_id_t ind_id = index->id;
 
 	/* The dense directory excludes the infimum and supremum records. */
 	n_dense = ulint(page_dir_get_n_heap(page)) - PAGE_HEAP_NO_USER_LOW;
@@ -1433,20 +1407,8 @@ page_zip_compress(
 
 	/* Dense page directory and uncompressed columns, if any */
 	if (page_is_leaf(page)) {
-		if ((index && dict_index_is_clust(index))
-		    || (page_comp_info
-			&& (page_comp_info->type & DICT_CLUSTERED))) {
-
-			if (index) {
-				trx_id_col = dict_index_get_sys_col_pos(
-					index, DATA_TRX_ID);
-				ut_ad(trx_id_col > 0);
-				ut_ad(trx_id_col != ULINT_UNDEFINED);
-			} else if (page_comp_info
-				   && (page_comp_info->type
-				       & DICT_CLUSTERED)) {
-				trx_id_col = page_comp_info->trx_id_pos;
-			}
+		if (dict_index_is_clust(index)) {
+			trx_id_col = index->db_trx_id();
 
 			slot_size = PAGE_ZIP_DIR_SLOT_SIZE
 				+ DATA_TRX_ID_LEN + DATA_ROLL_PTR_LEN;
@@ -1454,10 +1416,6 @@ page_zip_compress(
 		} else {
 			/* Signal the absence of trx_id
 			in page_zip_fields_encode() */
-			if (index) {
-				ut_ad(dict_index_get_sys_col_pos(
-					index, DATA_TRX_ID) == ULINT_UNDEFINED);
-			}
 			trx_id_col = 0;
 			slot_size = PAGE_ZIP_DIR_SLOT_SIZE;
 		}
@@ -1471,19 +1429,9 @@ page_zip_compress(
 		goto zlib_error;
 	}
 
-	c_stream.avail_out -= static_cast<uInt>(n_dense * slot_size);
-	if (truncate_t::s_fix_up_active) {
-		ut_ad(page_comp_info != NULL);
-		c_stream.avail_in = static_cast<uInt>(
-			page_comp_info->field_len);
-		for (ulint i = 0; i < page_comp_info->field_len; i++) {
-			fields[i] = page_comp_info->fields[i];
-		}
-	} else {
-		c_stream.avail_in = static_cast<uInt>(
-			page_zip_fields_encode(
-				n_fields, index, trx_id_col, fields));
-	}
+	c_stream.avail_out -= uInt(n_dense * slot_size);
+	c_stream.avail_in = uInt(page_zip_fields_encode(n_fields, index,
+							trx_id_col, fields));
 	c_stream.next_in = fields;
 
 	if (UNIV_LIKELY(!trx_id_col)) {
@@ -1637,7 +1585,7 @@ err_exit:
 		mutex_exit(&page_zip_stat_per_index_mutex);
 	}
 
-	if (page_is_leaf(page) && !truncate_t::s_fix_up_active) {
+	if (page_is_leaf(page)) {
 		dict_index_zip_success(index);
 	}
 
@@ -1654,7 +1602,7 @@ page_zip_fields_free(
 {
 	if (index) {
 		dict_table_t*	table = index->table;
-		dict_index_zip_pad_mutex_destroy(index);
+		mutex_free(&index->zip_pad.mutex);
 		mem_heap_free(index->heap);
 
 		dict_mem_table_free(table);
@@ -2169,6 +2117,10 @@ page_zip_apply_log(
 		rec_get_offsets_reverse(data, index,
 					hs & REC_STATUS_NODE_PTR,
 					offsets);
+		/* Silence a debug assertion in rec_offs_make_valid().
+		This will be overwritten in page_zip_set_extra_bytes(),
+		called by page_zip_decompress_low(). */
+		ut_d(rec[-REC_NEW_INFO_BITS] = 0);
 		rec_offs_make_valid(rec, index, is_leaf, offsets);
 
 		/* Copy the extra bytes (backwards). */
@@ -3782,29 +3734,25 @@ page_zip_write_rec(
 		ulint		len;
 
 		if (dict_index_is_clust(index)) {
-			ulint		trx_id_col;
-
-			trx_id_col = dict_index_get_sys_col_pos(index,
-								DATA_TRX_ID);
-			ut_ad(trx_id_col != ULINT_UNDEFINED);
-
 			/* Store separately trx_id, roll_ptr and
 			the BTR_EXTERN_FIELD_REF of each BLOB column. */
 			if (rec_offs_any_extern(offsets)) {
 				data = page_zip_write_rec_ext(
 					page_zip, page,
 					rec, index, offsets, create,
-					trx_id_col, heap_no, storage, data);
+					index->db_trx_id(), heap_no,
+					storage, data);
 			} else {
 				/* Locate trx_id and roll_ptr. */
 				const byte*	src
 					= rec_get_nth_field(rec, offsets,
-							    trx_id_col, &len);
+							    index->db_trx_id(),
+							    &len);
 				ut_ad(len == DATA_TRX_ID_LEN);
 				ut_ad(src + DATA_TRX_ID_LEN
 				      == rec_get_nth_field(
 					      rec, offsets,
-					      trx_id_col + 1, &len));
+					      index->db_roll_ptr(), &len));
 				ut_ad(len == DATA_ROLL_PTR_LEN);
 
 				/* Log the preceding fields. */
@@ -3832,8 +3780,6 @@ page_zip_write_rec(
 		} else {
 			/* Leaf page of a secondary index:
 			no externally stored columns */
-			ut_ad(dict_index_get_sys_col_pos(index, DATA_TRX_ID)
-			      == ULINT_UNDEFINED);
 			ut_ad(!rec_offs_any_extern(offsets));
 
 			/* Log the entire record. */
@@ -3907,7 +3853,7 @@ page_zip_parse_write_blob_ptr(
 	    || offset >= srv_page_size
 	    || z_offset >= srv_page_size) {
 corrupt:
-		recv_sys->found_corrupt_log = TRUE;
+		recv_sys.found_corrupt_log = TRUE;
 
 		return(NULL);
 	}
@@ -4049,7 +3995,7 @@ page_zip_parse_write_node_ptr(
 	    || offset >= srv_page_size
 	    || z_offset >= srv_page_size) {
 corrupt:
-		recv_sys->found_corrupt_log = TRUE;
+		recv_sys.found_corrupt_log = TRUE;
 
 		return(NULL);
 	}
@@ -4264,7 +4210,7 @@ page_zip_parse_write_trx_id(
 	    || offset >= srv_page_size
 	    || z_offset >= srv_page_size) {
 corrupt:
-		recv_sys->found_corrupt_log = TRUE;
+		recv_sys.found_corrupt_log = TRUE;
 
 		return(NULL);
 	}
@@ -4681,7 +4627,7 @@ page_zip_parse_write_header(
 
 	if (len == 0 || offset + len >= PAGE_DATA) {
 corrupt:
-		recv_sys->found_corrupt_log = TRUE;
+		recv_sys.found_corrupt_log = TRUE;
 
 		return(NULL);
 	}
@@ -4817,9 +4763,7 @@ page_zip_reorganize(
 	/* Restore logging. */
 	mtr_set_log_mode(mtr, log_mode);
 
-	if (!page_zip_compress(page_zip, page, index,
-			       page_zip_level, NULL, mtr)) {
-
+	if (!page_zip_compress(page_zip, page, index, page_zip_level, mtr)) {
 		buf_block_free(temp_block);
 		return(FALSE);
 	}
@@ -4961,7 +4905,7 @@ byte* page_zip_parse_compress(const byte* ptr, const byte* end_ptr,
 		if (!page_zip || page_zip_get_size(page_zip) < size
 		    || block->page.id.page_no() < 3) {
 corrupt:
-			recv_sys->found_corrupt_log = TRUE;
+			recv_sys.found_corrupt_log = TRUE;
 
 			return(NULL);
 		}
@@ -5000,12 +4944,7 @@ uint32_t
 page_zip_calc_checksum(
 	const void*			data,
 	ulint				size,
-	srv_checksum_algorithm_t	algo
-#ifdef INNODB_BUG_ENDIAN_CRC32
-	/** for crc32, use the big-endian bug-compatible crc32 variant */
-	, bool				use_legacy_big_endian
-#endif
-)
+	srv_checksum_algorithm_t	algo)
 {
 	uLong		adler;
 	const Bytef*	s = static_cast<const byte*>(data);
@@ -5014,22 +4953,11 @@ page_zip_calc_checksum(
 	and FIL_PAGE_FILE_FLUSH_LSN from the checksum. */
 
 	switch (algo) {
+	case SRV_CHECKSUM_ALGORITHM_FULL_CRC32:
+	case SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32:
 	case SRV_CHECKSUM_ALGORITHM_CRC32:
 	case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
 		ut_ad(size > FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
-#ifdef INNODB_BUG_ENDIAN_CRC32
-		if (use_legacy_big_endian) {
-			return ut_crc32_legacy_big_endian(s + FIL_PAGE_OFFSET,
-							  FIL_PAGE_LSN
-							  - FIL_PAGE_OFFSET)
-				^ ut_crc32_legacy_big_endian(
-					s + FIL_PAGE_TYPE, 2)
-				^ ut_crc32_legacy_big_endian(
-					s + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID,
-					size
-					- FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
-		}
-#endif
 		return ut_crc32(s + FIL_PAGE_OFFSET,
 				FIL_PAGE_LSN - FIL_PAGE_OFFSET)
 			^ ut_crc32(s + FIL_PAGE_TYPE, 2)
@@ -5059,15 +4987,12 @@ page_zip_calc_checksum(
 	return(0);
 }
 
-/**********************************************************************//**
-Verify a compressed page's checksum.
-@return TRUE if the stored checksum is valid according to the value of
+/** Verify a compressed page's checksum.
+@param[in]	data		compressed page
+@param[in]	size		size of compressed page
+@return whether the stored checksum is valid according to the value of
 innodb_checksum_algorithm */
-ibool
-page_zip_verify_checksum(
-/*=====================*/
-	const void*	data,		/*!< in: compressed page */
-	ulint		size)		/*!< in: size of compressed page */
+bool page_zip_verify_checksum(const void* data, ulint size)
 {
 	const uint32_t stored = mach_read_from_4(
 		static_cast<const byte*>(data) + FIL_PAGE_SPACE_OR_CHKSUM);
@@ -5146,40 +5071,26 @@ page_zip_verify_checksum(
 	}
 
 	switch (curr_algo) {
+	case SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32:
 	case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
-#ifdef INNODB_BUG_ENDIAN_CRC32
-		return stored == page_zip_calc_checksum(data, size, curr_algo,
-							true);
-#endif
-		/* fall through */
 	case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
 	case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
 		return FALSE;
+	case SRV_CHECKSUM_ALGORITHM_FULL_CRC32:
 	case SRV_CHECKSUM_ALGORITHM_CRC32:
 		if (stored == BUF_NO_CHECKSUM_MAGIC) {
 			return(TRUE);
 		}
 
-		return
-#ifdef INNODB_BUG_ENDIAN_CRC32
-			stored == page_zip_calc_checksum(data, size, curr_algo,
-							 true) ||
-#endif
-			stored == page_zip_calc_checksum(
-				data, size, SRV_CHECKSUM_ALGORITHM_INNODB);
+		return stored == page_zip_calc_checksum(
+			data, size, SRV_CHECKSUM_ALGORITHM_INNODB);
 	case SRV_CHECKSUM_ALGORITHM_INNODB:
 		if (stored == BUF_NO_CHECKSUM_MAGIC) {
 			return TRUE;
 		}
 
 		return stored == page_zip_calc_checksum(
-			data, size, SRV_CHECKSUM_ALGORITHM_CRC32)
-#ifdef INNODB_BUG_ENDIAN_CRC32
-			|| stored == page_zip_calc_checksum(
-				data, size,
-				SRV_CHECKSUM_ALGORITHM_CRC32, true)
-#endif
-			;
+			data, size, SRV_CHECKSUM_ALGORITHM_CRC32);
 	case SRV_CHECKSUM_ALGORITHM_NONE:
 		return TRUE;
 	}

@@ -192,26 +192,6 @@ TARGET_LINK_LIBRARIES(rocksdb rocksdb_aux_lib)
     NAMES liblz4${PIC_EXT}.a lz4
     HINTS ${WITH_LZ4}/lib)
 
-IF(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-
-  # MARIAROCKS_NOT_YET: Add -frtti flag when compiling RocksDB files.
-  # TODO: is this the right way to do this?
-  #  - SQL layer and storage/rocksdb/*.cc are compiled with -fnortti
-  #  - RocksDB files are compiled with "-fnortti ... -frtti" 
-  #  - This causes RocksDB headers to be compiled with different settings:
-  #     = with RTTI when compiling RocksDB
-  #     = without RTTI when compiling storage/rocksdb/*.cc
-  # 
-  #  (facebook/mysql-5.6 just compiles everything without -f*rtti, which means
-  #  everything is compiled with -frtti) 
-  #
-  #  (also had to add -frtti above, because something that event_listener.cc
-  #  includes requires it. So, now everything in MariaRocks is compiled with
-  #  -frtti)
-  set_source_files_properties(event_listener.cc rdb_cf_options.cc rdb_sst_info.cc
-    PROPERTIES COMPILE_FLAGS -frtti)
-ENDIF()
-
 CHECK_FUNCTION_EXISTS(sched_getcpu  HAVE_SCHED_GETCPU)
 IF(HAVE_SCHED_GETCPU)
   ADD_DEFINITIONS(-DHAVE_SCHED_GETCPU=1)
@@ -256,9 +236,6 @@ CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/myrocks_hotbackup.py
   ${CMAKE_CURRENT_BINARY_DIR}/myrocks_hotbackup @ONLY)
 INSTALL_SCRIPT(${CMAKE_CURRENT_BINARY_DIR}/myrocks_hotbackup COMPONENT rocksdb-engine)
 
-IF(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  SET_TARGET_PROPERTIES(rocksdb_tools sst_dump mysql_ldb PROPERTIES COMPILE_FLAGS "-frtti -Wno-error")
-ENDIF()
 IF(MSVC)
   # RocksDB, the storage engine, overdoes "const" by adding
   # additional const qualifiers to parameters of the overriden virtual functions
@@ -271,6 +248,8 @@ IF(MSVC)
   IF(CMAKE_SIZEOF_VOID_P EQUAL 8)
     SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4267")
   ENDIF()
+ELSEIF(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  SET_TARGET_PROPERTIES(rocksdb_tools sst_dump mysql_ldb PROPERTIES COMPILE_FLAGS "-Wno-error")
 ENDIF()
 
 # Enable ZSTD if available. Upstream rocksdb cmake will use WITH_ZSTD and set

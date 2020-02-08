@@ -28,7 +28,6 @@ SET FOREIGN_KEY_CHECKS=0;
 DROP INDEX `idx_1` ON `main`;
 SHOW TABLES;
 
---echo # restart and see if we can still access the main table
 --source include/restart_mysqld.inc
 
 ALTER TABLE `main` ADD INDEX `idx_1` (`ref_id1`);

@@ -705,6 +705,9 @@ FOR UPDATE;
 1
 1
 SELECT 1 FROM DUAL WHERE 1 GROUP BY 1 HAVING 1 ORDER BY 1
+PROCEDURE ANALYSE();
+ERROR HY000: Can't use ORDER clause with this procedure
+SELECT 1 FROM DUAL WHERE 1 GROUP BY 1 HAVING 1 ORDER BY 1
 PROCEDURE ANALYSE() FOR UPDATE;
 ERROR HY000: Can't use ORDER clause with this procedure
 SELECT 1 FROM
@@ -734,7 +737,7 @@ SELECT 1 FROM t1
 UNION
 SELECT 1 FROM DUAL WHERE 1 GROUP BY 1 HAVING 1 ORDER BY 1
 PROCEDURE ANALYSE() FOR UPDATE;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'PROCEDURE ANALYSE() FOR UPDATE' at line 4
+ERROR 42000: Incorrect usage/placement of 'PROCEDURE'
 SELECT 1 FROM DUAL PROCEDURE ANALYSE() 
 UNION
 SELECT 1 FROM t1;
@@ -754,15 +757,18 @@ ERROR 42000: You have an error in your SQL syntax; check the manual that corresp
 # "FOR UPDATE" tests
 SELECT 1 FROM t1 UNION SELECT 1 FROM t1 ORDER BY 1 LIMIT 1;
 1
-SELECT 1 FROM t1 FOR UPDATE UNION SELECT 1 FROM t1 ORDER BY 1 LIMIT 1;
+(SELECT 1 FROM t1 FOR UPDATE) UNION SELECT 1 FROM t1 ORDER BY 1 LIMIT 1;
 1
 SELECT 1 FROM t1 UNION SELECT 1 FROM t1 ORDER BY 1 LIMIT 1 FOR UPDATE;
 1
 # "INTO" clause tests
 SELECT 1 FROM t1 INTO @var17727401;
 Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 Warning	1329	No data - zero rows fetched, selected, or processed
 SELECT 1 FROM DUAL INTO @var17727401;
+Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 SELECT 1 INTO @var17727401;
 SELECT 1 INTO @var17727401 FROM t1;
 Warnings:
@@ -778,6 +784,7 @@ Warnings:
 Warning	1329	No data - zero rows fetched, selected, or processed
 SELECT 1 FROM t1 WHERE 1 GROUP BY 1 HAVING 1 ORDER BY 1 LIMIT 1 INTO @var17727401;
 Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 Warning	1329	No data - zero rows fetched, selected, or processed
 SELECT 1 FROM t1 WHERE 1 INTO @var17727401 GROUP BY 1 HAVING 1 ORDER BY 1 LIMIT 1;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'GROUP BY 1 HAVING 1 ORDER BY 1 LIMIT 1' at line 1
@@ -794,31 +801,20 @@ ERROR 42000: You have an error in your SQL syntax; check the manual that corresp
 SELECT 1 FROM t1 INTO @var17727401 UNION SELECT 1 FROM t1 INTO t1;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'UNION SELECT 1 FROM t1 INTO t1' at line 1
 (SELECT 1 FROM t1 INTO @var17727401) UNION (SELECT 1 FROM t1 INTO t1);
-ERROR HY000: Incorrect usage of UNION and INTO
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'INTO @var17727401) UNION (SELECT 1 FROM t1 INTO t1)' at line 1
 SELECT 1 FROM t1 UNION SELECT 1 FROM t1 INTO @var17727401;
 Warnings:
+Warning	1287	'<select expression> INTO <destination>;' is deprecated and will be removed in a future release. Please use 'SELECT <select list> INTO <destination> FROM...' instead
 Warning	1329	No data - zero rows fetched, selected, or processed
 SELECT 1 INTO @var17727401 FROM t1 PROCEDURE ANALYSE();
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'PROCEDURE ANALYSE()' at line 1
 SELECT 1 FROM t1 PROCEDURE ANALYSE() INTO @var17727401;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'INTO @var17727401' at line 1
 # ORDER and LIMIT clause combinations
-(SELECT 1 FROM t1 ORDER BY 1) ORDER BY 1;
-1
-(SELECT 1 FROM t1 LIMIT 1) LIMIT 1;
-1
-((SELECT 1 FROM t1 ORDER BY 1) ORDER BY 1) ORDER BY 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'ORDER BY 1) ORDER BY 1' at line 1
-((SELECT 1 FROM t1 LIMIT 1) LIMIT 1) LIMIT 1;
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'LIMIT 1) LIMIT 1' at line 1
-(SELECT 1 FROM t1 ORDER BY 1) LIMIT 1;
-1
-(SELECT 1 FROM t1 LIMIT 1) ORDER BY 1;
-1
 ((SELECT 1 FROM t1 ORDER BY 1) LIMIT 1) ORDER BY 1);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'LIMIT 1) ORDER BY 1)' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near ')' at line 1
 ((SELECT 1 FROM t1 LIMIT 1) ORDER BY 1) LIMIT 1);
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'ORDER BY 1) LIMIT 1)' at line 1
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near ')' at line 1
 SELECT 1 FROM t1 UNION SELECT 1 FROM t1 ORDER BY 1;
 1
 SELECT (SELECT 1 FROM t1 UNION SELECT 1 FROM t1 ORDER BY 1);
@@ -1265,19 +1261,27 @@ CREATE TABLE t1 (i INT);
 (SELECT * FROM t1 PROCEDURE ANALYSE(10, 10))
 UNION
 (SELECT * FROM t1 PROCEDURE ANALYSE(10, 10));
-ERROR HY000: Incorrect usage of UNION and SELECT ... PROCEDURE ANALYSE()
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'PROCEDURE ANALYSE(10, 10))
+UNION
+(SELECT * FROM t1 PROCEDURE ANALYSE(10, 10))' at line 1
 (SELECT * FROM t1 PROCEDURE ANALYSE(10, 10))
 UNION
 SELECT * FROM t1 PROCEDURE ANALYSE(10, 10);
-ERROR HY000: Incorrect usage of UNION and SELECT ... PROCEDURE ANALYSE()
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'PROCEDURE ANALYSE(10, 10))
+UNION
+SELECT * FROM t1 PROCEDURE ANALYSE(10, 10)' at line 1
 (SELECT * FROM t1 PROCEDURE ANALYSE(10, 10))
 UNION
 (SELECT 1);
-ERROR HY000: Incorrect usage of UNION and SELECT ... PROCEDURE ANALYSE()
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'PROCEDURE ANALYSE(10, 10))
+UNION
+(SELECT 1)' at line 1
 (SELECT * FROM t1 PROCEDURE ANALYSE(10, 10))
 UNION
 SELECT 1;
-ERROR HY000: Incorrect usage of UNION and SELECT ... PROCEDURE ANALYSE()
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'PROCEDURE ANALYSE(10, 10))
+UNION
+SELECT 1' at line 1
 SELECT * FROM t1 PROCEDURE ANALYSE(10, 10)
 UNION
 (SELECT * FROM t1 PROCEDURE ANALYSE(10, 10));
@@ -1766,3 +1770,31 @@ ERROR HY000: Unknown system variable 'password'
 SELECT @@GLOBAL.role;
 ERROR HY000: Unknown system variable 'role'
 End of 10.3 tests
+#
+# MDEV-19540: 10.4 allow lock options with SELECT in brackets
+# which previous version do not
+#
+create table t1 (a int);
+(select * from t1) for update;
+a
+(select * from t1) union (select * from t1) for update;
+ERROR HY000: Incorrect usage of lock options and SELECT in brackets
+(select * from t1 for update);
+a
+select * from t1 for update;
+a
+drop table t1;
+#
+# MDEV-20108: [ERROR] mysqld got signal 11 in
+# st_select_lex::add_table_to_list
+#
+CREATE TABLE t1 (c1 INT NULL);
+CREATE TABLE t2 (c1 INT NULL);
+SET STATEMENT max_statement_time=900 FOR LOCK TABLES `t1` WRITE;
+select * from t1;
+c1
+select * from t2;
+ERROR HY000: Table 't2' was not locked with LOCK TABLES
+SET STATEMENT max_statement_time=900 FOR unlock tables;
+drop table t1, t2;
+# End of 10.4 tests

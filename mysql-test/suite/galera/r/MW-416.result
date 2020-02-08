@@ -1,3 +1,5 @@
+connection node_2;
+connection node_1;
 CREATE USER 'userMW416'@'localhost';
 GRANT SELECT, INSERT, UPDATE ON test.* TO 'userMW416'@'localhost';
 connect userMW416, localhost, userMW416,, test, $NODE_MYPORT_1;

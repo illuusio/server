@@ -177,6 +177,7 @@ typedef struct st_maria_state_info
   uint sortkey;				/* sorted by this key (not used) */
   uint open_count;
   uint changed;                         /* Changed since maria_chk */
+  uint org_changed;                     /* Changed since open */
   /**
      Birthday of the table: no record in the log before this LSN should ever
      be applied to the table. Updated when created, renamed, explicitly
@@ -605,7 +606,7 @@ struct st_maria_handler
 {
   MARIA_SHARE *s;			/* Shared between open:s */
   struct st_ma_transaction *trn;        /* Pointer to active transaction */
-  struct st_maria_handler *trn_next;
+  struct st_maria_handler *trn_next,**trn_prev;
   MARIA_STATUS_INFO *state, state_save;
   MARIA_STATUS_INFO *state_start;       /* State at start of transaction */
   MARIA_USED_TABLES *used_tables;
@@ -690,6 +691,7 @@ struct st_maria_handler
   uint16 last_used_keyseg;              /* For MARIAMRG */
   uint8 key_del_used;                   /* != 0 if key_del is used */
   my_bool was_locked;			/* Was locked in panic */
+  my_bool intern_lock_locked;           /* locked in ma_extra() */
   my_bool append_insert_at_end;		/* Set if concurrent insert */
   my_bool quick_mode;
   my_bool in_check_table;                /* We are running check tables */
@@ -1418,6 +1420,9 @@ extern my_bool maria_page_crc_check_bitmap(int, PAGECACHE_IO_HOOK_ARGS *args);
 extern my_bool maria_page_crc_check_data(int, PAGECACHE_IO_HOOK_ARGS *args);
 extern my_bool maria_page_crc_check_index(int, PAGECACHE_IO_HOOK_ARGS *args);
 extern my_bool maria_page_crc_check_none(int, PAGECACHE_IO_HOOK_ARGS *args);
+extern my_bool maria_page_crc_check(uchar *page, pgcache_page_no_t page_no,
+                                    MARIA_SHARE *share, uint32 no_crc_val,
+                                    int data_length);
 extern my_bool maria_page_filler_set_bitmap(PAGECACHE_IO_HOOK_ARGS *args);
 extern my_bool maria_page_filler_set_normal(PAGECACHE_IO_HOOK_ARGS *args);
 extern my_bool maria_page_filler_set_none(PAGECACHE_IO_HOOK_ARGS *args);

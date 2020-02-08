@@ -16,9 +16,8 @@ SHOW CREATE TABLE t1;
 --let $wait_condition=SELECT COUNT(*) = 0 FROM INFORMATION_SCHEMA.INNODB_TABLESPACES_ENCRYPTION WHERE MIN_KEY_VERSION = 0 AND ROTATING_OR_FLUSHING <> 0
 --source include/wait_condition.inc
 
---source include/shutdown_mysqld.inc
-
---source include/start_mysqld.inc
+let $restart_noprint=2;
+--source include/restart_mysqld.inc
 let MYSQLD_DATADIR =`SELECT @@datadir`;
 
 --list_files $MYSQLD_DATADIR/test

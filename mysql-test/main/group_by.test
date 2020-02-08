@@ -401,7 +401,7 @@ set big_tables=0;
 #
 
 SET @save_optimizer_use_condition_selectivity=@@optimizer_use_condition_selectivity,@save_optimizer_switch=@@optimizer_switch;
-SET optimizer_switch='outer_join_with_cache=off',@@optimizer_use_condition_selectivity=1;
+SET optimizer_switch='outer_join_with_cache=off',@@optimizer_use_condition_selectivity=4;
 create table t1 (a int not null, b int not null);
 insert into t1 values (1,1),(1,2),(3,1),(3,2),(2,2),(2,1);
 create table t2 (a int not null, b int not null, key(a));
@@ -1550,7 +1550,9 @@ CREATE TABLE t1 (
   b varchar(1),
   KEY (b,a)
 );
-INSERT INTO t1 VALUES (1,NULL),(0,'a'),(1,NULL),(0,'a');
+INSERT INTO t1 VALUES
+  (1,NULL),(0,'a'),(1,NULL),(0,'a'), (1,'a'),(0,'a'),(2,'a'),(1,'a');
+ANALYZE TABLE t1;
 
 let $query=
   SELECT SQL_BUFFER_RESULT MIN(a), b FROM t1 WHERE t1.b = 'a' GROUP BY b;

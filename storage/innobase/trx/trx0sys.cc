@@ -189,10 +189,9 @@ trx_sysf_create(
 	ut_a(ptr <= page + (srv_page_size - FIL_PAGE_DATA_END));
 
 	/* Initialize all of the page.  This part used to be uninitialized. */
-	memset(ptr, 0, srv_page_size - FIL_PAGE_DATA_END + size_t(page - ptr));
-
-	mlog_log_string(TRX_SYS + page, srv_page_size - FIL_PAGE_DATA_END
-			- TRX_SYS, mtr);
+	mlog_memset(block, ptr - page,
+		    srv_page_size - FIL_PAGE_DATA_END + size_t(page - ptr),
+		    0, mtr);
 
 	/* Create the first rollback segment in the SYSTEM tablespace */
 	slot_no = trx_sys_rseg_find_free(block);
@@ -212,7 +211,7 @@ trx_sys_t::create()
 	m_initialised = true;
 	mutex_create(LATCH_ID_TRX_SYS, &mutex);
 	UT_LIST_INIT(trx_list, &trx_t::trx_list);
-	my_atomic_store32(&rseg_history_len, 0);
+	rseg_history_len= 0;
 
 	rw_trx_hash.init();
 }

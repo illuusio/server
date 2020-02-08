@@ -27,22 +27,14 @@ Created 2/2/1994 Heikki Tuuri
 #define page0page_h
 
 #include "page0types.h"
-#ifndef UNIV_INNOCHECKSUM
+#include "fsp0fsp.h"
 #include "fil0fil.h"
 #include "buf0buf.h"
-#include "data0data.h"
-#include "dict0dict.h"
-#include "rem0types.h"
 #include "rem0rec.h"
-#endif /* !UNIV_INNOCHECKSUM*/
-#include "fsp0fsp.h"
 #ifndef UNIV_INNOCHECKSUM
+#include "dict0dict.h"
+#include "data0data.h"
 #include "mtr0mtr.h"
-
-#ifdef UNIV_MATERIALIZE
-#undef UNIV_INLINE
-#define UNIV_INLINE
-#endif
 
 /*			PAGE HEADER
 			===========
@@ -50,6 +42,8 @@ Created 2/2/1994 Heikki Tuuri
 Index page header starts at the first offset left free by the FIL-module */
 
 typedef	byte		page_header_t;
+#else
+# include "mach0data.h"
 #endif /* !UNIV_INNOCHECKSUM */
 
 #define	PAGE_HEADER	FSEG_PAGE_DATA	/* index page header starts at this
@@ -164,12 +158,12 @@ Otherwise written as 0. @see PAGE_ROOT_AUTO_INC */
 					not necessarily collation order;
 					this record may have been deleted */
 
-/* Directions of cursor movement */
-#define	PAGE_LEFT		1
-#define	PAGE_RIGHT		2
-#define	PAGE_SAME_REC		3
-#define	PAGE_SAME_PAGE		4
-#define	PAGE_NO_DIRECTION	5
+/* Directions of cursor movement (stored in PAGE_DIRECTION field) */
+constexpr uint16_t PAGE_LEFT= 1;
+constexpr uint16_t PAGE_RIGHT= 2;
+constexpr uint16_t PAGE_SAME_REC= 3;
+constexpr uint16_t PAGE_SAME_PAGE= 4;
+constexpr uint16_t PAGE_NO_DIRECTION= 5;
 
 #ifndef UNIV_INNOCHECKSUM
 
@@ -1013,13 +1007,6 @@ page_get_direction(const page_t* page)
 inline
 uint16_t
 page_get_instant(const page_t* page);
-/** Assign the PAGE_INSTANT field.
-@param[in,out]	page	clustered index root page
-@param[in]	n	original number of clustered index fields
-@param[in,out]	mtr	mini-transaction */
-inline
-void
-page_set_instant(page_t* page, unsigned n, mtr_t* mtr);
 
 /**********************************************************//**
 Create an uncompressed B-tree index page.
@@ -1041,16 +1028,10 @@ page_create_zip(
 	buf_block_t*		block,		/*!< in/out: a buffer frame
 						where the page is created */
 	dict_index_t*		index,		/*!< in: the index of the
-						page, or NULL when applying
-						TRUNCATE log
-						record during recovery */
+						page */
 	ulint			level,		/*!< in: the B-tree level of
 						the page */
 	trx_id_t		max_trx_id,	/*!< in: PAGE_MAX_TRX_ID */
-	const redo_page_compress_t* page_comp_info,
-						/*!< in: used for applying
-						TRUNCATE log
-						record during recovery */
 	mtr_t*			mtr);		/*!< in/out: mini-transaction
 						handle */
 /**********************************************************//**
@@ -1337,11 +1318,6 @@ page_find_rec_with_heap_no(
 const rec_t*
 page_find_rec_max_not_deleted(
 	const page_t*	page);
-
-#ifdef UNIV_MATERIALIZE
-#undef UNIV_INLINE
-#define UNIV_INLINE  UNIV_INLINE_ORIGINAL
-#endif
 
 #endif /* !UNIV_INNOCHECKSUM */
 

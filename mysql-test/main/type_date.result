@@ -211,7 +211,7 @@ a
 SET SQL_MODE=TRADITIONAL;
 EXPLAIN SELECT * FROM t1 WHERE a = '0000-00-00';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	ref	i	i	4	const	1	Using index
+1	SIMPLE	t1	ref	i	i	4	const	2	Using index
 SELECT * FROM t1 WHERE a = '0000-00-00';
 a
 0000-00-00
@@ -240,7 +240,7 @@ a
 SET SQL_MODE=TRADITIONAL;
 EXPLAIN SELECT * FROM t1 WHERE a = '1000-00-00';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
-1	SIMPLE	t1	ref	i	i	4	const	1	Using index
+1	SIMPLE	t1	ref	i	i	4	const	2	Using index
 SELECT * FROM t1 WHERE a = '1000-00-00';
 a
 1000-00-00
@@ -621,7 +621,7 @@ SELECT * FROM t1 WHERE LENGTH(a)=11+RAND() AND a=' garbage ';
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 Warnings:
-Warning	1292	Incorrect datetime value: ' garbage '
+Warning	1292	Truncated incorrect datetime value: ' garbage '
 Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where `test`.`t1`.`a` = DATE'0000-00-00' and <cache>(octet_length(DATE'0000-00-00')) = 11 + rand()
 DROP TABLE t1;
 CREATE TABLE t1 (a DATE);
@@ -946,4 +946,130 @@ id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
 DROP TABLE t1;
 #
 # End of 10.3 tests
+#
+#
+# Start of 10.4 tests
+#
+#
+# MDEV-11362 True condition elimination does not work for DECIMAL and temporal dynamic SQL parameters
+#
+CREATE TABLE t1 (a DATE);
+INSERT INTO t1 VALUES ('2001-01-01'),('2001-01-02'),('2001-01-03');
+# Equal values
+EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(DATE'2001:01:01',a)<=>COALESCE(DATE'2001-01-01',a);
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where 1
+EXECUTE IMMEDIATE 'EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(?,a)<=>COALESCE(?,a)' USING DATE'2001-01-01',DATE'2001-01-01';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where 1
+EXECUTE IMMEDIATE 'EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(DATE''2001-01-01'',a)<=>COALESCE(?,a)' USING DATE'2001-01-01';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where 1
+EXECUTE IMMEDIATE 'EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(?,a)<=>COALESCE(DATE''2001-01-01'',a)' USING DATE'2001-01-01';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where 1
+# Equal values but of different data types (should not propagate)
+EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(DATE'2001:01:01',a)<=>COALESCE(TIMESTAMP'2001-01-01 00:00:00',a);
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where coalesce(DATE'2001-01-01',`test`.`t1`.`a`) <=> coalesce(TIMESTAMP'2001-01-01 00:00:00',`test`.`t1`.`a`)
+EXECUTE IMMEDIATE 'EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(?,a)<=>COALESCE(?,a)' USING DATE'2001-01-01',TIMESTAMP'2001-01-01 00:00:00';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where coalesce(<cache>(DATE'2001-01-01'),`test`.`t1`.`a`) <=> coalesce(<cache>(TIMESTAMP'2001-01-01 00:00:00'),`test`.`t1`.`a`)
+EXECUTE IMMEDIATE 'EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(DATE''2001-01-01'',a)<=>COALESCE(?,a)' USING TIMESTAMP'2001-01-01 00:00:00';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where coalesce(DATE'2001-01-01',`test`.`t1`.`a`) <=> coalesce(<cache>(TIMESTAMP'2001-01-01 00:00:00'),`test`.`t1`.`a`)
+EXECUTE IMMEDIATE 'EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(?,a)<=>COALESCE(DATE''2001-01-01'',a)' USING TIMESTAMP'2001-01-01 00:00:00';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where coalesce(<cache>(TIMESTAMP'2001-01-01 00:00:00'),`test`.`t1`.`a`) <=> coalesce(DATE'2001-01-01',`test`.`t1`.`a`)
+# Not equal values
+EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(DATE'2001-01-01',a)<=>COALESCE(DATE'2001-01-02',a);
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where coalesce(DATE'2001-01-01',`test`.`t1`.`a`) <=> coalesce(DATE'2001-01-02',`test`.`t1`.`a`)
+EXECUTE IMMEDIATE 'EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(?,a)<=>COALESCE(?,a)' USING DATE'2001-01-01',DATE'2001-01-02';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where coalesce(<cache>(DATE'2001-01-01'),`test`.`t1`.`a`) <=> coalesce(<cache>(DATE'2001-01-02'),`test`.`t1`.`a`)
+EXECUTE IMMEDIATE 'EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(DATE''2001-01-01'',a)<=>COALESCE(?,a)' USING DATE'2001-01-02';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where coalesce(DATE'2001-01-01',`test`.`t1`.`a`) <=> coalesce(<cache>(DATE'2001-01-02'),`test`.`t1`.`a`)
+EXECUTE IMMEDIATE 'EXPLAIN EXTENDED SELECT * FROM t1 WHERE COALESCE(?,a)<=>COALESCE(DATE''2001-01-01'',a)' USING DATE'2001-01-02';
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	3	100.00	Using where
+Warnings:
+Note	1003	select `test`.`t1`.`a` AS `a` from `test`.`t1` where coalesce(<cache>(DATE'2001-01-02'),`test`.`t1`.`a`) <=> coalesce(DATE'2001-01-01',`test`.`t1`.`a`)
+DROP TABLE t1;
+#
+# MDEV-15406 NO_ZERO_IN_DATE erroneously affects how CAST(AS DATE) warns about fractional digit truncation
+#
+SET sql_mode='';
+CREATE TABLE t1 (a DATE);
+SELECT CAST(20061108.01 AS DATE);
+CAST(20061108.01 AS DATE)
+2006-11-08
+Warnings:
+Note	1292	Truncated incorrect date value: '20061108.01'
+INSERT INTO t1 VALUES (20061108.01);
+Warnings:
+Note	1265	Data truncated for column 'a' at row 1
+DROP TABLE t1;
+SET sql_mode=NO_ZERO_IN_DATE;
+SELECT CAST(20061108.01 AS DATE);
+CAST(20061108.01 AS DATE)
+2006-11-08
+Warnings:
+Note	1292	Truncated incorrect date value: '20061108.01'
+CREATE TABLE t1 (a DATE);
+INSERT INTO t1 VALUES (20061108.01);
+Warnings:
+Note	1265	Data truncated for column 'a' at row 1
+DROP TABLE t1;
+SET sql_mode=DEFAULT;
+#
+# MDEV-17216 Assertion `!dt->fraction_remainder(decimals())' failed in Field_temporal_with_date::store_TIME_with_warning
+#
+SET sql_mode='';
+CREATE TABLE t1 (i1 date );
+CREATE TABLE t2 (i2 int unsigned );
+INSERT INTO t2 VALUES (0);
+INSERT INTO t1 SELECT * FROM t2;
+DROP TABLE t1,t2;
+SET sql_mode=DEFAULT;
+#
+# MDEV-19301 Assertion `!is_valid_datetime() || fraction_remainder(((item->decimals) < (6) ? (item->decimals) : (6))) == 0' failed in Datetime_truncation_not_needed::Datetime_truncation_not_needed
+#
+SELECT NULLIF(CAST(1012.5 AS DATE), 1);
+NULLIF(CAST(1012.5 AS DATE), 1)
+2000-10-12
+Warnings:
+Note	1292	Truncated incorrect date value: '1012.5'
+Warning	1292	Truncated incorrect datetime value: '1'
+Note	1292	Truncated incorrect date value: '1012.5'
+SELECT CAST(1012.5 AS DATE) * 1.0;
+CAST(1012.5 AS DATE) * 1.0
+20001012.0
+Warnings:
+Note	1292	Truncated incorrect date value: '1012.5'
+#
+# End of 10.4 tests
 #

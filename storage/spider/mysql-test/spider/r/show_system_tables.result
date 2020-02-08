@@ -13,15 +13,15 @@ connection master_1;
 SELECT table_name, engine FROM information_schema.tables
 WHERE table_schema = 'mysql' AND table_name like '%spider_%';
 table_name	engine
-spider_link_failed_log	MyISAM
-spider_link_mon_servers	MyISAM
-spider_table_crd	MyISAM
-spider_table_position_for_recovery	MyISAM
-spider_table_sts	MyISAM
-spider_tables	MyISAM
-spider_xa	MyISAM
-spider_xa_failed_log	MyISAM
-spider_xa_member	MyISAM
+spider_link_failed_log	Aria
+spider_link_mon_servers	Aria
+spider_table_crd	Aria
+spider_table_position_for_recovery	Aria
+spider_table_sts	Aria
+spider_tables	Aria
+spider_xa	Aria
+spider_xa_failed_log	Aria
+spider_xa_member	Aria
 
 deinit
 for master_1

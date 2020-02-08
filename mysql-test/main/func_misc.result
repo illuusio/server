@@ -1612,3 +1612,29 @@ SELECT * FROM t1;
 c1	c2
 18446744073709551615	18446744073709551615
 DROP TABLE t1;
+#
+# End of 10.3 tests
+#
+#
+# Start of 10.4 tests
+#
+#
+# MDEV-16309 Split ::create_tmp_field() into virtual methods in Item
+#
+CREATE TABLE t1 (a INT);
+INSERT INTO t1 VALUES (1),(2),(3);
+BEGIN NOT ATOMIC
+DECLARE a TEXT;
+DECLARE c CURSOR FOR SELECT NAME_CONST('x','y') FROM t1;
+OPEN c;
+FETCH c INTO a;
+CLOSE c;
+SELECT a;
+END;
+$$
+a
+y
+DROP TABLE t1;
+#
+# End of 10.4 tests
+#

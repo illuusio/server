@@ -77,6 +77,7 @@ t1	CREATE TABLE `t1` (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1
 analyze table t1;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1 force index(c) order by c;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -119,6 +120,7 @@ t1	CREATE TABLE `t1` (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1
 analyze table t1;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1 force index(c) order by c;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -810,6 +812,7 @@ a	b
 2	2
 analyze table t1;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -846,6 +849,7 @@ a
 2
 analyze table t1;
 Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 explain select * from t1;
 id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -1910,11 +1914,13 @@ CREATE TABLE t1(f1 INT PRIMARY KEY)ENGINE=InnoDB;
 CREATE TABLE t2(f1 INT PRIMARY KEY)ENGINE=InnoDB;
 # Kill the server
 # Wrong space_id in a dirty file and a missing file
+# restart
 SELECT * FROM INFORMATION_SCHEMA.ENGINES
 WHERE engine = 'innodb'
 AND support IN ('YES', 'DEFAULT', 'ENABLED');
 ENGINE	SUPPORT	COMMENT	TRANSACTIONS	XA	SAVEPOINTS
 # Restore t1 and t2
+# restart
 SELECT * FROM t1;
 f1
 SELECT * FROM t2;

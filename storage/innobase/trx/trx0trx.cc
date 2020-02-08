@@ -200,6 +200,9 @@ struct TrxFactory {
 
 		lock_trx_lock_list_init(&trx->lock.trx_locks);
 
+		UT_LIST_INIT(trx->lock.evicted_tables,
+			     &dict_table_t::table_LRU);
+
 		UT_LIST_INIT(
 			trx->trx_savepoints,
 			&trx_named_savept_t::trx_savepoints);
@@ -224,6 +227,7 @@ struct TrxFactory {
 		}
 
 		ut_a(UT_LIST_GET_LEN(trx->lock.trx_locks) == 0);
+		ut_ad(UT_LIST_GET_LEN(trx->lock.evicted_tables) == 0);
 
 		UT_DELETE(trx->xid);
 		ut_free(trx->detailed_error);
@@ -376,6 +380,7 @@ trx_t *trx_create()
 	ut_ad(trx->lock.n_rec_locks == 0);
 	ut_ad(trx->lock.table_cached == 0);
 	ut_ad(trx->lock.rec_cached == 0);
+	ut_ad(UT_LIST_GET_LEN(trx->lock.evicted_tables) == 0);
 
 #ifdef WITH_WSREP
 	trx->wsrep_event = NULL;
@@ -613,10 +618,10 @@ trx_resurrect_table_locks(
 		if (dict_table_t* table = dict_table_open_on_id(
 			    *i, FALSE, DICT_TABLE_OP_LOAD_TABLESPACE)) {
 			if (!table->is_readable()) {
-				mutex_enter(&dict_sys->mutex);
+				mutex_enter(&dict_sys.mutex);
 				dict_table_close(table, TRUE, FALSE);
-				dict_table_remove_from_cache(table);
-				mutex_exit(&dict_sys->mutex);
+				dict_sys.remove(table);
+				mutex_exit(&dict_sys.mutex);
 				continue;
 			}
 
@@ -1257,16 +1262,10 @@ trx_update_mod_tables_timestamp(
 
 	trx_mod_tables_t::const_iterator	end = trx->mod_tables.end();
 #ifdef UNIV_DEBUG
-# if MYSQL_VERSION_ID >= 100405
-#  define dict_sys_mutex dict_sys.mutex
-# else
-#  define dict_sys_mutex dict_sys->mutex
-# endif
-
 	const bool preserve_tables = !innodb_evict_tables_on_commit_debug
 		|| trx->is_recovered /* avoid trouble with XA recovery */
 # if 1 /* if dict_stats_exec_sql() were not playing dirty tricks */
-		|| mutex_own(&dict_sys_mutex)
+		|| mutex_own(&dict_sys.mutex)
 # else /* this would be more proper way to do it */
 		|| trx->dict_operation_lock_mode || trx->dict_operation
 # endif
@@ -1296,19 +1295,46 @@ trx_update_mod_tables_timestamp(
 		}
 		/* recheck while holding the mutex that blocks
 		table->acquire() */
-		mutex_enter(&dict_sys_mutex);
+		mutex_enter(&dict_sys.mutex);
 		if (!table->get_ref_count()) {
-# if MYSQL_VERSION_ID >= 100405
 			dict_sys.remove(table, true);
-# else
-			dict_table_remove_from_cache_low(table, true);
-# endif
 		}
-		mutex_exit(&dict_sys_mutex);
+		mutex_exit(&dict_sys.mutex);
 #endif
 	}
 
 	trx->mod_tables.clear();
+}
+
+/** Evict a table definition due to the rollback of ALTER TABLE.
+@param[in]	table_id	table identifier */
+void trx_t::evict_table(table_id_t table_id)
+{
+	ut_ad(in_rollback);
+
+	dict_table_t* table = dict_table_open_on_id(
+		table_id, true, DICT_TABLE_OP_OPEN_ONLY_IF_CACHED);
+	if (!table) {
+		return;
+	}
+
+	if (!table->release()) {
+		/* This must be a DDL operation that is being rolled
+		back in an active connection. */
+		ut_a(table->get_ref_count() == 1);
+		ut_ad(!is_recovered);
+		ut_ad(mysql_thd);
+		return;
+	}
+
+	/* This table should only be locked by this transaction, if at all. */
+	ut_ad(UT_LIST_GET_LEN(table->locks) <= 1);
+	const bool locked = UT_LIST_GET_LEN(table->locks);
+	ut_ad(!locked || UT_LIST_GET_FIRST(table->locks)->trx == this);
+	dict_sys.remove(table, true, locked);
+	if (locked) {
+		UT_LIST_ADD_FIRST(lock.evicted_tables, table);
+	}
 }
 
 /****************************************************************//**
@@ -1390,9 +1416,16 @@ trx_commit_in_memory(
 			MONITOR_INC(MONITOR_TRX_RW_COMMIT);
 			trx->is_recovered = false;
 		}
+
+		while (dict_table_t* table = UT_LIST_GET_FIRST(
+			       trx->lock.evicted_tables)) {
+			UT_LIST_REMOVE(trx->lock.evicted_tables, table);
+			dict_mem_table_free(table);
+		}
 	}
 
 	ut_ad(!trx->rsegs.m_redo.undo);
+	ut_ad(UT_LIST_GET_LEN(trx->lock.evicted_tables) == 0);
 
 	if (trx_rseg_t*	rseg = trx->rsegs.m_redo.rseg) {
 		mutex_enter(&rseg->mutex);
@@ -1479,11 +1512,8 @@ trx_commit_in_memory(
 
 	trx_mutex_enter(trx);
 	trx->dict_operation = TRX_DICT_OP_NONE;
-
 #ifdef WITH_WSREP
-	if (trx->mysql_thd && wsrep_on(trx->mysql_thd)) {
-		trx->lock.was_chosen_as_deadlock_victim = FALSE;
-	}
+	trx->lock.was_chosen_as_wsrep_victim = FALSE;
 #endif
 
 	DBUG_LOG("trx", "Commit in memory: " << trx);
@@ -1496,7 +1526,9 @@ trx_commit_in_memory(
 	trx_mutex_exit(trx);
 
 	ut_a(trx->error_state == DB_SUCCESS);
-	srv_wake_purge_thread_if_not_active();
+	if (!srv_read_only_mode) {
+		srv_wake_purge_thread_if_not_active();
+	}
 }
 
 /** Commit a transaction and a mini-transaction.
@@ -1608,6 +1640,16 @@ trx_commit(
 	}
 
 	trx_commit_low(trx, mtr);
+#ifdef WITH_WSREP
+	/* Serialization history has been written and the
+	   transaction is committed in memory, which makes
+	   this commit ordered. Release commit order critical
+	   section. */
+	if (wsrep_on(trx->mysql_thd))
+	{
+		wsrep_commit_ordered(trx->mysql_thd);
+	}
+#endif /* WITH_WSREP */
 }
 
 /****************************************************************//**
@@ -2228,7 +2270,7 @@ static my_bool trx_get_trx_by_xid_callback(rw_trx_hash_element_t *element,
       transaction needs a valid trx->xid for
       invoking trx_sys_update_wsrep_checkpoint(). */
       if (!wsrep_is_wsrep_xid(trx->xid))
-#endif
+#endif /* WITH_WSREP */
       /* Invalidate the XID, so that subsequent calls will not find it. */
       trx->xid->null();
       arg->trx= trx;

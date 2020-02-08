@@ -55,9 +55,7 @@ static bool save_index(Sort_param *param, uint count,
 static uint suffix_length(ulong string_length);
 static uint sortlength(THD *thd, SORT_FIELD *sortorder, uint s_length,
 		       bool *multi_byte_charset);
-static SORT_ADDON_FIELD *get_addon_fields(ulong max_length_for_sort_data,
-                                          Field **ptabfield,
-                                          uint sortlength,
+static SORT_ADDON_FIELD *get_addon_fields(TABLE *table, uint sortlength,
                                           LEX_STRING *addon_buf);
 static void unpack_addon_fields(struct st_sort_addon_field *addon_field,
                                 uchar *buff, uchar *buff_end);
@@ -66,7 +64,6 @@ static bool check_if_pq_applicable(Sort_param *param, SORT_INFO *info,
                                    ha_rows records, size_t memory_available);
 
 void Sort_param::init_for_filesort(uint sortlen, TABLE *table,
-                                   ulong max_length_for_sort_data,
                                    ha_rows maxrows, bool sort_positions)
 {
   DBUG_ASSERT(addon_field == 0 && addon_buf.length == 0);
@@ -80,8 +77,7 @@ void Sort_param::init_for_filesort(uint sortlen, TABLE *table,
       Get the descriptors of all fields whose values are appended 
       to sorted fields and get its total length in addon_buf.length
     */
-    addon_field= get_addon_fields(max_length_for_sort_data,
-                                  table->field, sort_length, &addon_buf);
+    addon_field= get_addon_fields(table, sort_length, &addon_buf);
   }
   if (addon_field)
   {
@@ -185,9 +181,7 @@ SORT_INFO *filesort(THD *thd, TABLE *table, Filesort *filesort,
 
   param.init_for_filesort(sortlength(thd, filesort->sortorder, s_length,
                                      &multi_byte_charset),
-                          table,
-                          thd->variables.max_length_for_sort_data,
-                          max_rows, filesort->sort_positions);
+                          table, max_rows, filesort->sort_positions);
 
   sort->addon_buf=    param.addon_buf;
   sort->addon_field=  param.addon_field;
@@ -253,7 +247,7 @@ SORT_INFO *filesort(THD *thd, TABLE *table, Filesort *filesort,
     }
     if (memory_available < min_sort_memory)
     {
-      my_error(ER_OUT_OF_SORTMEMORY,MYF(ME_ERROR + ME_FATALERROR));
+      my_error(ER_OUT_OF_SORTMEMORY,MYF(ME_ERROR_LOG + ME_FATAL));
       goto err;
     }
     tracker->report_sort_buffer_size(sort->sort_buffer_size());
@@ -706,7 +700,7 @@ static ha_rows find_all_keys(THD *thd, Sort_param *param, SQL_SELECT *select,
   uchar *ref_pos, *next_pos, ref_buff[MAX_REFLENGTH];
   TABLE *sort_form;
   handler *file;
-  MY_BITMAP *save_read_set, *save_write_set, *save_vcol_set;
+  MY_BITMAP *save_read_set, *save_write_set;
   Item *sort_cond;
   ha_rows retval;
   DBUG_ENTER("find_all_keys");
@@ -741,13 +735,11 @@ static ha_rows find_all_keys(THD *thd, Sort_param *param, SQL_SELECT *select,
   /* Remember original bitmaps */
   save_read_set=  sort_form->read_set;
   save_write_set= sort_form->write_set;
-  save_vcol_set=  sort_form->vcol_set;
 
   /* Set up temporary column read map for columns used by sort */
   DBUG_ASSERT(save_read_set != &sort_form->tmp_set);
   bitmap_clear_all(&sort_form->tmp_set);
-  sort_form->column_bitmaps_set(&sort_form->tmp_set, &sort_form->tmp_set, 
-                                &sort_form->tmp_set);
+  sort_form->column_bitmaps_set(&sort_form->tmp_set, &sort_form->tmp_set);
   register_used_fields(param);
   if (quick_select)
     select->quick->add_used_key_part_to_set();
@@ -805,16 +797,12 @@ static ha_rows find_all_keys(THD *thd, Sort_param *param, SQL_SELECT *select,
         */
         MY_BITMAP *tmp_read_set= sort_form->read_set;
         MY_BITMAP *tmp_write_set= sort_form->write_set;
-        MY_BITMAP *tmp_vcol_set= sort_form->vcol_set;
 
         if (select->cond->with_subquery())
-          sort_form->column_bitmaps_set(save_read_set, save_write_set,
-                                        save_vcol_set);
+          sort_form->column_bitmaps_set(save_read_set, save_write_set);
         write_record= (select->skip_record(thd) > 0);
         if (select->cond->with_subquery())
-          sort_form->column_bitmaps_set(tmp_read_set,
-                                        tmp_write_set,
-                                        tmp_vcol_set);
+          sort_form->column_bitmaps_set(tmp_read_set, tmp_write_set);
       }
       else
         write_record= true;
@@ -860,7 +848,7 @@ static ha_rows find_all_keys(THD *thd, Sort_param *param, SQL_SELECT *select,
   }
 
   /* Signal we should use orignal column read and write maps */
-  sort_form->column_bitmaps_set(save_read_set, save_write_set, save_vcol_set);
+  sort_form->column_bitmaps_set(save_read_set, save_write_set);
 
   if (unlikely(thd->is_error()))
     DBUG_RETURN(HA_POS_ERROR);
@@ -868,8 +856,8 @@ static ha_rows find_all_keys(THD *thd, Sort_param *param, SQL_SELECT *select,
   DBUG_PRINT("test",("error: %d  indexpos: %d",error,indexpos));
   if (unlikely(error != HA_ERR_END_OF_FILE))
   {
-    file->print_error(error,MYF(ME_ERROR | ME_WAITTANG)); // purecov: inspected
-    DBUG_RETURN(HA_POS_ERROR);			/* purecov: inspected */
+    file->print_error(error,MYF(ME_ERROR_LOG));
+    DBUG_RETURN(HA_POS_ERROR);
   }
   if (indexpos && idx &&
       write_keys(param, fs_info, idx, buffpek_pointers, tempfile))
@@ -881,7 +869,7 @@ static ha_rows find_all_keys(THD *thd, Sort_param *param, SQL_SELECT *select,
   DBUG_RETURN(retval);
 
 err:
-  sort_form->column_bitmaps_set(save_read_set, save_write_set, save_vcol_set);
+  sort_form->column_bitmaps_set(save_read_set, save_write_set);
   DBUG_RETURN(HA_POS_ERROR);
 } /* find_all_keys */
 
@@ -1059,7 +1047,10 @@ Type_handler_temporal_result::make_sort_key(uchar *to, Item *item,
                                             Sort_param *param) const
 {
   MYSQL_TIME buf;
-  if (item->get_date_result(&buf, TIME_INVALID_DATES))
+  // This is a temporal type. No nanoseconds. Rounding mode is not important.
+  DBUG_ASSERT(item->cmp_type() == TIME_RESULT);
+  static const Temporal::Options opt(TIME_INVALID_DATES, TIME_FRAC_NONE);
+  if (item->get_date_result(current_thd, &buf, opt))
   {
     DBUG_ASSERT(item->maybe_null);
     DBUG_ASSERT(item->null_value);
@@ -1069,6 +1060,39 @@ Type_handler_temporal_result::make_sort_key(uchar *to, Item *item,
   else
     make_sort_key_longlong(to, item->maybe_null, false,
                            item->unsigned_flag, pack_time(&buf));
+}
+
+
+void
+Type_handler_timestamp_common::make_sort_key(uchar *to, Item *item,
+                                             const SORT_FIELD_ATTR *sort_field,
+                                             Sort_param *param) const
+{
+  THD *thd= current_thd;
+  uint binlen= my_timestamp_binary_length(item->decimals);
+  Timestamp_or_zero_datetime_native_null native(thd, item);
+  if (native.is_null() || native.is_zero_datetime())
+  {
+    // NULL or '0000-00-00 00:00:00'
+    bzero(to, item->maybe_null ? binlen + 1 : binlen);
+  }
+  else
+  {
+    if (item->maybe_null)
+      *to++= 1;
+    if (native.length() != binlen)
+    {
+      /*
+        Some items can return native representation with a different
+        number of fractional digits, e.g.: GREATEST(ts_3, ts_4) can
+        return a value with 3 fractional digits, although its fractional
+        precision is 4. Re-pack with a proper precision now.
+      */
+      Timestamp(native).to_native(&native, item->datetime_precision(thd));
+    }
+    DBUG_ASSERT(native.length() == binlen);
+    memcpy((char *) to, native.ptr(), binlen);
+  }
 }
 
 
@@ -1118,9 +1142,8 @@ Type_handler_decimal_result::make_sort_key(uchar *to, Item *item,
     }
     *to++= 1;
   }
-  my_decimal2binary(E_DEC_FATAL_ERROR, dec_val, to,
-                    item->max_length - (item->decimals ? 1 : 0),
-                    item->decimals);
+  dec_val->to_binary(to, item->max_length - (item->decimals ? 1 : 0),
+                     item->decimals);
 }
 
 
@@ -1880,6 +1903,15 @@ Type_handler_temporal_result::sortlength(THD *thd,
 
 
 void
+Type_handler_timestamp_common::sortlength(THD *thd,
+                                          const Type_std_attributes *item,
+                                          SORT_FIELD_ATTR *sortorder) const
+{
+  sortorder->length= my_timestamp_binary_length(item->decimals);
+}
+
+
+void
 Type_handler_int_result::sortlength(THD *thd,
                                         const Type_std_attributes *item,
                                         SORT_FIELD_ATTR *sortorder) const
@@ -1966,6 +1998,30 @@ sortlength(THD *thd, SORT_FIELD *sortorder, uint s_length,
   return length;
 }
 
+bool filesort_use_addons(TABLE *table, uint sortlength,
+                         uint *length, uint *fields, uint *null_fields)
+{
+  Field **pfield, *field;
+  *length= *fields= *null_fields= 0;
+
+  for (pfield= table->field; (field= *pfield) ; pfield++)
+  {
+    if (!bitmap_is_set(table->read_set, field->field_index))
+      continue;
+    if (field->flags & BLOB_FLAG)
+      return false;
+    (*length)+= field->max_packed_col_length(field->pack_length());
+    if (field->maybe_null())
+      (*null_fields)++;
+    (*fields)++;
+  }
+  if (!*fields)
+    return false;
+  (*length)+= (*null_fields+7)/8;
+
+  return *length + sortlength <
+         table->in_use->variables.max_length_for_sort_data;
+}
 
 /**
   Get descriptors of fields appended to sorted fields and
@@ -1973,7 +2029,7 @@ sortlength(THD *thd, SORT_FIELD *sortorder, uint s_length,
 
   The function first finds out what fields are used in the result set.
   Then it calculates the length of the buffer to store the values of
-  these fields together with the value of sort values. 
+  these fields together with the value of sort values.
   If the calculated length is not greater than max_length_for_sort_data
   the function allocates memory for an array of descriptors containing
   layouts for the values of the non-sorted fields in the buffer and
@@ -1995,16 +2051,13 @@ sortlength(THD *thd, SORT_FIELD *sortorder, uint s_length,
 */
 
 static SORT_ADDON_FIELD *
-get_addon_fields(ulong max_length_for_sort_data,
-                 Field **ptabfield, uint sortlength, LEX_STRING *addon_buf)
+get_addon_fields(TABLE *table, uint sortlength, LEX_STRING *addon_buf)
 {
   Field **pfield;
   Field *field;
   SORT_ADDON_FIELD *addonf;
-  uint length= 0;
-  uint fields= 0;
-  uint null_fields= 0;
-  MY_BITMAP *read_set= (*ptabfield)->table->read_set;
+  uint length, fields, null_fields;
+  MY_BITMAP *read_set= table->read_set;
   DBUG_ENTER("get_addon_fields");
 
   /*
@@ -2013,40 +2066,28 @@ get_addon_fields(ulong max_length_for_sort_data,
     Note for future refinement:
     This this a too strong condition.
     Actually we need only the fields referred in the
-    result set. And for some of them it makes sense to use 
+    result set. And for some of them it makes sense to use
     the values directly from sorted fields.
     But beware the case when item->cmp_type() != item->result_type()
   */
   addon_buf->str= 0;
   addon_buf->length= 0;
 
-  for (pfield= ptabfield; (field= *pfield) ; pfield++)
-  {
-    if (!bitmap_is_set(read_set, field->field_index))
-      continue;
-    if (field->flags & BLOB_FLAG)
-      DBUG_RETURN(0);
-    length+= field->max_packed_col_length(field->pack_length());
-    if (field->maybe_null())
-      null_fields++;
-    fields++;
-  } 
-  if (!fields)
-    DBUG_RETURN(0);
-  length+= (null_fields+7)/8;
+  // see remove_const() for HA_SLOW_RND_POS explanation
+  if (table->file->ha_table_flags() & HA_SLOW_RND_POS)
+    sortlength= 0;
 
-  if (length+sortlength > max_length_for_sort_data ||
-      !my_multi_malloc(MYF(MY_WME | MY_THREAD_SPECIFIC),
-                       &addonf, sizeof(SORT_ADDON_FIELD) * (fields+1),
-                       &addon_buf->str, length,
-                       NullS))
+  if (!filesort_use_addons(table, sortlength, &length, &fields, &null_fields) ||
+      !my_multi_malloc(MYF(MY_WME | MY_THREAD_SPECIFIC), &addonf,
+                       sizeof(SORT_ADDON_FIELD) * (fields+1),
+                       &addon_buf->str, length, NullS))
 
     DBUG_RETURN(0);
 
   addon_buf->length= length;
   length= (null_fields+7)/8;
   null_fields= 0;
-  for (pfield= ptabfield; (field= *pfield) ; pfield++)
+  for (pfield= table->field; (field= *pfield) ; pfield++)
   {
     if (!bitmap_is_set(read_set, field->field_index))
       continue;
@@ -2068,7 +2109,7 @@ get_addon_fields(ulong max_length_for_sort_data,
     addonf++;
   }
   addonf->field= 0;     // Put end marker
-  
+
   DBUG_PRINT("info",("addon_length: %d",length));
   DBUG_RETURN(addonf-fields);
 }

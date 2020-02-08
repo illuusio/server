@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 2016, 2018, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2017, 2018, MariaDB Corporation.
+Copyright (c) 2017, 2019, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -145,7 +145,7 @@ rtr_pcur_getnext_from_path(
 						| MTR_MEMO_X_LOCK));
 	}
 
-	const page_size_t	page_size(index->table->space->flags);
+	const ulint zip_size = index->table->space->zip_size();
 
 	/* Pop each node/page to be searched from "path" structure
 	and do a search on it. Please note, any pages that are in
@@ -269,7 +269,7 @@ rtr_pcur_getnext_from_path(
 
 		block = buf_page_get_gen(
 			page_id_t(index->table->space_id,
-				  next_rec.page_no), page_size,
+				  next_rec.page_no), zip_size,
 			rw_latch, NULL, BUF_GET, __FILE__, __LINE__, mtr, &err);
 
 		if (block == NULL) {
@@ -424,7 +424,7 @@ rtr_pcur_getnext_from_path(
 						block,
 						page_id_t(index->table->space_id,
 							  block->page.id.page_no()),
-						page_size, BTR_MODIFY_TREE,
+						zip_size, BTR_MODIFY_TREE,
 						btr_cur, mtr);
 				}
 
@@ -972,7 +972,7 @@ rtr_create_rtr_info(
 		     &rtr_info->rtr_path_mutex);
 
 	mutex_enter(&index->rtr_track->rtr_active_mutex);
-	index->rtr_track->rtr_active->push_back(rtr_info);
+	index->rtr_track->rtr_active.push_front(rtr_info);
 	mutex_exit(&index->rtr_track->rtr_active_mutex);
 	return(rtr_info);
 }
@@ -1045,7 +1045,7 @@ rtr_init_rtr_info(
 	rtr_info->index = index;
 
 	mutex_enter(&index->rtr_track->rtr_active_mutex);
-	index->rtr_track->rtr_active->push_back(rtr_info);
+	index->rtr_track->rtr_active.push_front(rtr_info);
 	mutex_exit(&index->rtr_track->rtr_active_mutex);
 }
 
@@ -1097,7 +1097,7 @@ rtr_clean_rtr_info(
 	}
 
 	if (index) {
-		index->rtr_track->rtr_active->remove(rtr_info);
+		index->rtr_track->rtr_active.remove(rtr_info);
 		mutex_exit(&index->rtr_track->rtr_active_mutex);
 	}
 
@@ -1202,35 +1202,21 @@ rtr_check_discard_page(
 				the root page */
 	buf_block_t*	block)	/*!< in: block of page to be discarded */
 {
-	ulint			pageno = block->page.id.page_no();
-	rtr_info_t*		rtr_info;
-	rtr_info_active::iterator	it;
+	const ulint pageno = block->page.id.page_no();
 
 	mutex_enter(&index->rtr_track->rtr_active_mutex);
 
-	for (it = index->rtr_track->rtr_active->begin();
-	     it != index->rtr_track->rtr_active->end(); ++it) {
-		rtr_info = *it;
-		rtr_node_path_t::iterator	rit;
-		bool	found = false;
-
+	for (const auto& rtr_info : index->rtr_track->rtr_active) {
 		if (cursor && rtr_info == cursor->rtr_info) {
 			continue;
 		}
 
 		mutex_enter(&rtr_info->rtr_path_mutex);
-		for (rit = rtr_info->path->begin();
-		     rit != rtr_info->path->end(); ++rit) {
-			node_visit_t	node = *rit;
-
+		for (const node_visit_t& node : *rtr_info->path) {
 			if (node.page_no == pageno) {
-				found = true;
+				rtr_rebuild_path(rtr_info, pageno);
 				break;
 			}
-		}
-
-		if (found) {
-			rtr_rebuild_path(rtr_info, pageno);
 		}
 		mutex_exit(&rtr_info->rtr_path_mutex);
 
@@ -1344,8 +1330,7 @@ rtr_cur_restore_position(
 	page_cur_t*	page_cursor;
 	node_visit_t*	node = rtr_get_parent_node(btr_cur, level, false);
 	node_seq_t	path_ssn = node->seq_no;
-	const page_size_t	page_size(index->table->space->flags);
-
+	const ulint	zip_size = index->table->space->zip_size();
 	ulint		page_no = node->page_no;
 
 	heap = mem_heap_create(256);
@@ -1361,7 +1346,7 @@ search_again:
 
 	block = buf_page_get_gen(
 		page_id_t(index->table->space_id, page_no),
-		page_size, RW_X_LATCH, NULL,
+		zip_size, RW_X_LATCH, NULL,
 		BUF_GET, __FILE__, __LINE__, mtr, &err);
 
 	ut_ad(block);
@@ -1561,14 +1546,13 @@ rtr_copy_buf(
 	matches->block.n_fields = block->n_fields;
 	matches->block.left_side = block->left_side;
 #if defined UNIV_AHI_DEBUG || defined UNIV_DEBUG
-	matches->block.n_pointers = block->n_pointers;
+	matches->block.n_pointers = 0;
 #endif /* UNIV_AHI_DEBUG || UNIV_DEBUG */
 	matches->block.curr_n_fields = block->curr_n_fields;
 	matches->block.curr_left_side = block->curr_left_side;
 	matches->block.index = block->index;
 #endif /* BTR_CUR_HASH_ADAPT */
-	ut_d(matches->block.debug_latch = block->debug_latch);
-
+	ut_d(matches->block.debug_latch = NULL);
 }
 
 /****************************************************************//**

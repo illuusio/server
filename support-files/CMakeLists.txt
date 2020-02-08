@@ -100,8 +100,18 @@ IF(UNIX)
   SET(scriptdir ${INSTALL_SCRIPTDIRABS})
   SET(libexecdir ${INSTALL_SBINDIRABS})
   SET(pkgdatadir ${INSTALL_MYSQLSHAREDIRABS})
-  SET(sysconfdir ${INSTALL_SYSCONFDIR})
-  SET(sysconf2dir ${INSTALL_SYSCONF2DIR})
+  IF(INSTALL_SYSCONFDIR)
+    SET(sysconfdir ${INSTALL_SYSCONFDIR})
+  ELSEIF(DEFAULT_SYSCONFDIR)
+    SET(sysconfdir ${DEFAULT_SYSCONFDIR})
+  ELSE()
+    SET(sysconfdir "/etc")
+  ENDIF()
+  IF(INSTALL_SYSCONF2DIR)
+    SET(sysconf2dir ${INSTALL_SYSCONF2DIR})
+  ELSE()
+    SET(sysconf2dir "${sysconfdir}/mysql")
+  ENDIF()
   CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/mysql.server.sh 
                  ${CMAKE_CURRENT_BINARY_DIR}/mysql.server @ONLY)
   INSTALL(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/mysql.server
@@ -158,9 +168,11 @@ IF(UNIX)
   IF (INSTALL_SYSCONFDIR)
     INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/mysql-log-rotate DESTINATION ${INSTALL_SYSCONFDIR}/logrotate.d
             RENAME mysql COMPONENT SupportFiles)
-    INSTALL(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/mysql.server
-            DESTINATION  ${INSTALL_SYSCONFDIR}/init.d
-            RENAME mysql COMPONENT SupportFiles)
+    IF(NOT HAVE_SYSTEMD)
+      INSTALL(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/mysql.server
+              DESTINATION  ${INSTALL_SYSCONFDIR}/init.d
+              RENAME mysql COMPONENT SupportFiles)
+    ENDIF()
 
     INSTALL(FILES rpm/my.cnf DESTINATION ${INSTALL_SYSCONFDIR}
             COMPONENT Common)

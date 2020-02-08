@@ -66,5 +66,3 @@ STOP SLAVE;
 RESET SLAVE ALL;
 
 CALL mtr.add_suppression('failed registering on master');
-
-

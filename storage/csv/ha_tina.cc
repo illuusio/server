@@ -1004,7 +1004,7 @@ int ha_tina::close(void)
   of the file and appends the data. In an error case it really should
   just truncate to the original position (this is not done yet).
 */
-int ha_tina::write_row(uchar * buf)
+int ha_tina::write_row(const uchar * buf)
 {
   int size;
   DBUG_ENTER("ha_tina::write_row");
@@ -1311,12 +1311,28 @@ int ha_tina::info(uint flag)
 int ha_tina::extra(enum ha_extra_function operation)
 {
   DBUG_ENTER("ha_tina::extra");
- if (operation == HA_EXTRA_MARK_AS_LOG_TABLE)
- {
-   mysql_mutex_lock(&share->mutex);
-   share->is_log_table= TRUE;
-   mysql_mutex_unlock(&share->mutex);
- }
+  switch (operation) {
+  case HA_EXTRA_MARK_AS_LOG_TABLE:
+  {
+    mysql_mutex_lock(&share->mutex);
+    share->is_log_table= TRUE;
+    mysql_mutex_unlock(&share->mutex);
+  }
+  break;
+  case HA_EXTRA_FLUSH:
+    mysql_mutex_lock(&share->mutex);
+    if (share->tina_write_opened)
+    {
+      (void)write_meta_file(share->meta_file, share->rows_recorded,
+                            share->crashed ? TRUE :FALSE);
+      mysql_file_close(share->tina_write_filedes, MYF(0));
+      share->tina_write_opened= FALSE;
+    }
+    mysql_mutex_unlock(&share->mutex);
+    break;
+  default:
+    break;
+  }
   DBUG_RETURN(0);
 }
 
@@ -1385,7 +1401,7 @@ int ha_tina::rnd_end()
         if (mysql_file_write(update_temp_file,
                              (uchar*) (file_buff->ptr() +
                                        (write_begin - file_buff->start())),
-                             (size_t)write_length, MYF_RW))
+                             (size_t)write_length, MYF(MY_WME+MY_NABP)))
           goto error;
         temp_file_length+= write_length;
       }
@@ -1571,7 +1587,7 @@ int ha_tina::repair(THD* thd, HA_CHECK_OPT* check_opt)
     write_end= MY_MIN(file_buff->end(), current_position);
     if ((write_end - write_begin) &&
         (mysql_file_write(repair_file, (uchar*)file_buff->ptr(),
-                          (size_t) (write_end - write_begin), MYF_RW)))
+                          (size_t) (write_end - write_begin), MYF(MY_WME+MY_NABP))))
       DBUG_RETURN(-1);
 
     write_begin= write_end;

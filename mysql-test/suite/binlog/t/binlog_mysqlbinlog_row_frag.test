@@ -7,7 +7,7 @@ CREATE TABLE t (a TEXT);
 # events of interest are guaranteed to stay in 000001 log
 RESET MASTER;
 --eval INSERT INTO t SET a=repeat('a', 1024)
-SELECT a from t into @a;
+SELECT a into @a from t;
 FLUSH LOGS;
 DELETE FROM t;
 

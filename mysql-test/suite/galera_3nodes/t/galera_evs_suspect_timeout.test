@@ -60,17 +60,17 @@ SELECT COUNT(*) FROM t1;
 
 # Reconnect node #3 so that MTR's end-of-test checks can run
 
---source include/galera_resume.inc
 --connection node_3
+--source include/galera_resume.inc
 --source include/wait_until_connected_again.inc
-
-CALL mtr.add_suppression("WSREP: gcs_caused.*");
-CALL mtr.add_suppression("WSREP: gcs/src/gcs_core.cpp:core_handle_uuid_msg.*");
 
 --disable_query_log
 --eval SET GLOBAL wsrep_cluster_address = '$wsrep_cluster_address_node3';
 --enable_query_log
---source include/wait_until_connected_again.inc
+--source include/galera_wait_ready.inc
+
+CALL mtr.add_suppression("WSREP: gcs_caused");
+CALL mtr.add_suppression("WSREP: gcs/src/gcs_core.cpp:core_handle_uuid_msg");
 
 SET SESSION wsrep_sync_wait = 15;
 SELECT COUNT(*) FROM t1;
@@ -79,4 +79,3 @@ SELECT COUNT(*) FROM t1;
 DROP TABLE t1;
 # Restore original auto_increment_offset values.
 --source ../galera/include/auto_increment_offset_restore.inc
-

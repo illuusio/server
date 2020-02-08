@@ -107,7 +107,7 @@ public:
   {
     return (HA_NO_TRANSACTIONS | HA_REC_NOT_IN_SEQ | HA_NO_AUTO_INCREMENT |
             HA_BINLOG_ROW_CAPABLE | HA_BINLOG_STMT_CAPABLE | HA_CAN_EXPORT |
-            HA_CAN_REPAIR);
+            HA_CAN_REPAIR | HA_SLOW_RND_POS);
   }
   ulong index_flags(uint idx, uint part, bool all_parts) const
   {
@@ -136,7 +136,7 @@ public:
 
   int open(const char *name, int mode, uint open_options);
   int close(void);
-  int write_row(uchar * buf);
+  int write_row(const uchar * buf);
   int update_row(const uchar * old_data, const uchar * new_data);
   int delete_row(const uchar * buf);
   int rnd_init(bool scan=1);

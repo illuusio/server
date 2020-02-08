@@ -173,7 +173,7 @@ bool get_type_attributes_for_tvc(THD *thd,
     Item *item;
     for (uint holder_pos= 0 ; (item= it++); holder_pos++)
     {
-      DBUG_ASSERT(item->fixed);
+      DBUG_ASSERT(item->is_fixed());
       holders[holder_pos].add_argument(item);
     }
   }
@@ -249,7 +249,6 @@ bool table_value_constr::prepare(THD *thd, SELECT_LEX *sl,
                       Item_type_holder(thd, item, holders[pos].type_handler(),
                                        &holders[pos]/*Type_all_attributes*/,
                                        holders[pos].get_maybe_null());
-    new_holder->fix_fields(thd, 0);
     sl->item_list.push_back(new_holder);
   }
   if (arena)
@@ -273,7 +272,7 @@ bool table_value_constr::prepare(THD *thd, SELECT_LEX *sl,
   for (; order; order=order->next)
   {
     Item *order_item= *order->item;
-    if (order_item->type() == Item::INT_ITEM && order_item->basic_const_item())
+    if (order_item->is_order_clause_position())
     {
       uint count= 0;
       if (order->counter_used)
@@ -325,7 +324,7 @@ int table_value_constr::save_explain_data_intern(THD *thd,
 
   explain->select_id= select_lex->select_number;
   explain->select_type= select_lex->type;
-  explain->linkage= select_lex->linkage;
+  explain->linkage= select_lex->get_linkage();
   explain->using_temporary= false;
   explain->using_filesort= false;
   /* Setting explain->message means that all other members are invalid */
@@ -600,8 +599,8 @@ static bool create_tvc_name(THD *thd, st_select_lex *parent_select,
 
 bool table_value_constr::to_be_wrapped_as_with_tail()
 {
-  return select_lex->master_unit()->first_select()->next_select() &&
-         select_lex->order_list.elements && select_lex->explicit_limit;
+  return  select_lex->master_unit()->first_select()->next_select() &&
+          select_lex->order_list.elements && select_lex->explicit_limit;
 }
 
 
@@ -645,7 +644,7 @@ st_select_lex *wrap_tvc(THD *thd, st_select_lex *tvc_sl,
   Item *item;
   SELECT_LEX *wrapper_sl;
   wrapper_sl= lex->current_select;
-  wrapper_sl->linkage= tvc_sl->linkage;
+  wrapper_sl->set_linkage(tvc_sl->get_linkage());
   wrapper_sl->parsing_place= SELECT_LIST;
   item= new (thd->mem_root) Item_field(thd, &wrapper_sl->context,
                                        NULL, NULL, &star_clex_str);
@@ -664,7 +663,7 @@ st_select_lex *wrap_tvc(THD *thd, st_select_lex *tvc_sl,
     goto err;
   tvc_select= lex->current_select;
   derived_unit= tvc_select->master_unit();
-  tvc_select->linkage= DERIVED_TABLE_TYPE;
+  tvc_select->set_linkage(DERIVED_TABLE_TYPE);
 
   lex->current_select= wrapper_sl;
 
@@ -920,7 +919,7 @@ Item *Item_func_in::in_predicate_to_in_subs_transformer(THD *thd,
   mysql_init_select(lex);
   tvc_select= lex->current_select;
   derived_unit= tvc_select->master_unit();
-  tvc_select->linkage= DERIVED_TABLE_TYPE;
+  tvc_select->set_linkage(DERIVED_TABLE_TYPE);
 
   /* Create TVC used in the transformation */
   if (create_value_list_for_tvc(thd, &values))

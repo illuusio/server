@@ -2453,7 +2453,7 @@ print_tz_leaps_as_sql(const TIME_ZONE_INFO *sp)
       printf("\\d |\n"
         "IF (select count(*) from information_schema.global_variables where\n"
         "variable_name='wsrep_on' and variable_value='ON') = 1 THEN\n"
-        "ALTER TABLE time_zone_leap_second ENGINE=MyISAM;\n"
+        "ALTER TABLE time_zone_leap_second ENGINE=Aria;\n"
         "END IF|\n"
         "\\d ;\n");
 
@@ -2777,14 +2777,14 @@ main(int argc, char **argv)
 
   if(!opt_skip_write_binlog)
   {
-      // Fall back to MyISAM
+      // Fall back to Aria
       printf("\\d |\n"
         "IF (select count(*) from information_schema.global_variables where\n"
         "variable_name='wsrep_on' and variable_value='ON') = 1 THEN\n"
-        "ALTER TABLE time_zone ENGINE=MyISAM;\n"
-        "ALTER TABLE time_zone_name ENGINE=MyISAM;\n"
-        "ALTER TABLE time_zone_transition ENGINE=MyISAM;\n"
-        "ALTER TABLE time_zone_transition_type ENGINE=MyISAM;\n"
+        "ALTER TABLE time_zone ENGINE=Aria;\n"
+        "ALTER TABLE time_zone_name ENGINE=Aria;\n"
+        "ALTER TABLE time_zone_transition ENGINE=Aria;\n"
+        "ALTER TABLE time_zone_transition_type ENGINE=Aria;\n"
         "END IF|\n"
         "\\d ;\n");
   }

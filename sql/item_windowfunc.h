@@ -129,6 +129,7 @@ public:
     return false;
   }
 
+  void reset_field() { DBUG_ASSERT(0); }
   void update_field() {}
 
   enum Sumfunctype sum_func() const
@@ -192,11 +193,8 @@ public:
     return cur_rank;
   }
 
+  void reset_field() { DBUG_ASSERT(0); }
   void update_field() {}
-  /*
-   void reset_field();
-    TODO: ^^ what does this do ? It is not called ever?
-  */
 
   enum Sumfunctype sum_func () const
   {
@@ -259,6 +257,7 @@ class Item_sum_dense_rank: public Item_sum_int
     first_add= true;
   }
   bool add();
+  void reset_field() { DBUG_ASSERT(0); }
   void update_field() {}
   longlong val_int()
   {
@@ -314,7 +313,10 @@ class Item_sum_hybrid_simple : public Item_sum_hybrid
   my_decimal *val_decimal(my_decimal *);
   void reset_field();
   String *val_str(String *);
-  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate);
+  bool val_native(THD *thd, Native *to);
+  bool get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate);
+  const Type_handler *type_handler() const
+  { return Type_handler_hybrid_field_type::type_handler(); }
   void update_field();
   Field *create_tmp_field(bool group, TABLE *table);
   void clear()
@@ -540,6 +542,8 @@ class Item_sum_percent_rank: public Item_sum_double,
 
   void setup_window_func(THD *thd, Window_spec *window_spec);
 
+  void reset_field() { DBUG_ASSERT(0); }
+
   void set_partition_row_count(ulonglong count)
   {
     Partition_row_count::set_partition_row_count(count);
@@ -624,6 +628,8 @@ class Item_sum_cume_dist: public Item_sum_double,
     return FALSE;
   }
   
+  void reset_field() { DBUG_ASSERT(0); }
+
   void set_partition_row_count(ulonglong count)
   {
     Partition_row_count::set_partition_row_count(count);
@@ -692,6 +698,8 @@ class Item_sum_ntile : public Item_sum_int,
 
   void update_field() {}
 
+  void reset_field() { DBUG_ASSERT(0); }
+
   void set_partition_row_count(ulonglong count)
   {
     Partition_row_count::set_partition_row_count(count);
@@ -759,7 +767,7 @@ public:
     return value->val_str(str);
   }
 
-  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+  bool get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate)
   {
     if (get_row_count() == 0 || get_arg(0)->is_null())
     {
@@ -767,7 +775,7 @@ public:
       return 0;
     }
     null_value= false;
-    return value->get_date(ltime, fuzzydate);
+    return value->get_date(thd, ltime, fuzzydate);
   }
 
   bool add()
@@ -840,6 +848,8 @@ public:
                     // requires.
     return FALSE;
   }
+
+  void reset_field() { DBUG_ASSERT(0); }
 
   void set_partition_row_count(ulonglong count)
   {
@@ -974,6 +984,8 @@ public:
                     // requires.
     return FALSE;
   }
+
+  void reset_field() { DBUG_ASSERT(0); }
 
   void set_partition_row_count(ulonglong count)
   {
@@ -1259,6 +1271,15 @@ public:
     return res;
   }
 
+  bool val_native(THD *thd, Native *to)
+  {
+    if (force_return_blank)
+      return null_value= true;
+    if (read_value_from_result_field)
+      return val_native_from_field(result_field, to);
+    return val_native_from_item(thd, window_func(), to);
+  }
+
   my_decimal* val_decimal(my_decimal* dec)
   {
     my_decimal *res;
@@ -1282,7 +1303,7 @@ public:
     return res;
   }
 
-  bool get_date(MYSQL_TIME *ltime, ulonglong fuzzydate)
+  bool get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzzydate)
   {
     bool res;
     if (force_return_blank)
@@ -1299,7 +1320,7 @@ public:
     }
     else
     {
-      res= window_func()->get_date(ltime, fuzzydate);
+      res= window_func()->get_date(thd, ltime, fuzzydate);
       null_value= window_func()->null_value;
     }
     return res;
