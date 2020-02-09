@@ -76,7 +76,7 @@ fresh install:
     - mariadb --version # Client version
     - service mysql status
     - mkdir -p debug # Ensure dir exists before using it
-    - find /var/lib/mysql -ls > debug/var-lib-mysql.list
+    - find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
     - cp -ra /etc/mysql debug/etc-mysql
     - cp -ra /var/log/mysql debug/var-log-mysql
     - mariadb --skip-column-names -e "select @@version, @@version_comment" # Show version
@@ -116,7 +116,7 @@ mariadb-10.4.x to mariadb-10.4.y upgrade:
     - mariadb --version # Client version
     - service mysql status
     - mkdir -p debug # Ensure dir exists before using it
-    - find /var/lib/mysql -ls > debug/var-lib-mysql.list
+    - find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
     - cp -ra /etc/mysql debug/etc-mysql
     - cp -ra /var/log/mysql debug/var-log-mysql
     - mariadb --skip-column-names -e "select @@version, @@version_comment" # Show version
@@ -160,7 +160,7 @@ mariadb-10.3.x buster to mariadb-10.4 upgrade:
     - mariadb --version # Client version
     - service mysql status
     - mkdir -p debug # Ensure dir exists before using it
-    - find /var/lib/mysql -ls > debug/var-lib-mysql.list
+    - find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
     - cp -ra /etc/mysql debug/etc-mysql
     - cp -ra /var/log/mysql debug/var-log-mysql
     - mariadb --skip-column-names -e "select @@version, @@version_comment" # Show version
@@ -204,7 +204,7 @@ mariadb-10.1 to mariadb-10.4 upgrade:
     - mariadb --version # Client version
     - service mysql status
     - mkdir -p debug # Ensure dir exists before using it
-    - find /var/lib/mysql -ls > debug/var-lib-mysql.list
+    - find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
     - cp -ra /etc/mysql debug/etc-mysql
     - cp -ra /var/log/mysql debug/var-log-mysql
     - mariadb --skip-column-names -e "select @@version, @@version_comment" # Show version
@@ -237,7 +237,7 @@ test basic features:
     - mariadb --version # Client version
     - service mysql status
     - mkdir -p debug # Ensure dir exists before using it
-    - find /var/lib/mysql -ls > debug/var-lib-mysql.list
+    - find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
     - cp -ra /etc/mysql debug/etc-mysql
     - cp -ra /var/log/mysql debug/var-log-mysql
     - echo 'SHOW DATABASES;' | mariadb # List databases
@@ -387,11 +387,11 @@ default-libmysqlclient-dev on buster upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-default-libmysqlclient-dev on buster upgrade:
+default-libmysqlclient-dev on stretch upgrade:
   stage: upgrade from Buster/Stretch/Jessie
   dependencies:
     - build
-  image: debian:buster
+  image: debian:stretch
   artifacts:
     when: always
     name: "$CI_BUILD_NAME"
@@ -415,11 +415,11 @@ default-libmysqlclient-dev on buster upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mariadb-connector-c on buster upgrade:
+mariadb-connector-c on stretch upgrade:
   stage: upgrade from Buster/Stretch/Jessie
   dependencies:
     - build
-  image: debian:buster
+  image: debian:stretch
   artifacts:
     when: always
     name: "$CI_BUILD_NAME"
@@ -475,7 +475,7 @@ mysql-5.5 to mariadb-10.4 upgrade:
     - mariadb --version # Client version
     - service mysql status
     - mkdir -p debug # Ensure dir exists before using it
-    - find /var/lib/mysql -ls > debug/var-lib-mysql.list
+    - find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
     - cp -ra /etc/mysql debug/etc-mysql
     - cp -ra /var/log/mysql debug/var-log-mysql
     - mariadb --skip-column-names -e "select @@version, @@version_comment" # Show version
@@ -518,7 +518,7 @@ mysql-5.7 to mariadb-10.4 upgrade:
     - mariadb --version # Client version
     - service mysql status
     - mkdir -p debug # Ensure dir exists before using it
-    - find /var/lib/mysql -ls > debug/var-lib-mysql.list
+    - find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
     - cp -ra /etc/mysql debug/etc-mysql
     - cp -ra /var/log/mysql debug/var-log-mysql
     - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
