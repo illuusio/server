@@ -41,7 +41,33 @@ build:
     - du -shc ${WORKING_DIR}/* # Show total file size of artifacts. Must stay are under 100 MB.
     - mv ${CCACHE_TMP_DIR} ${CCACHE_WORK_DIR}
 
-# @TODO: Add 10.4 for buster backports build here
+build buster-backports:
+  extends: .build-package
+  script:
+    # salsa-ci-team/pipeline#104
+    - rm -rf '$CI_PROJECT_DIR'
+    # salsa-ci-team/pipeline#107
+    - rm -rf ${CI_PROJECT_DIR}/debian/output/.ccache
+    - mkdir -p ${WORKING_DIR} ${CCACHE_WORK_DIR}
+    - mv ${CCACHE_WORK_DIR} ${CCACHE_TMP_DIR}
+    - gbp pull --ignore-branch --pristine-tar --track-missing
+    - |
+      mkdir -p ${WORKING_DIR}
+      # Check if we can obtain the orig from the git branches
+      if ! gbp export-orig --pristine-tar --tarball-dir=${WORKING_DIR}; then
+        # Fallback using origtargz
+        origtargz -dt
+        mv ../*.orig.* ${WORKING_DIR}
+      fi
+    - gbp buildpackage --git-ignore-branch --git-ignore-new --git-no-create-orig --git-overlay --git-export-dir=${WORKING_DIR} --git-builder="docker-build.sh ${SALSA_CI_IMAGES_DOCKERBUILDER}" | (head -n 5000 ; echo "==== Output supressed to avoid hitting Gitlab-CI 4 MB log limit ===="; tail -n 5000)
+    - du -shc ${WORKING_DIR}/* # Show total file size of artifacts. Must stay are under 100 MB.
+    - mv ${CCACHE_TMP_DIR} ${CCACHE_WORK_DIR}
+  variables:
+      RELEASE: buster-backports
+
+# Temporairly allow failure in the test above since there seems to be a bug in mtr
+autopkgtest:
+  extends: .test-autopkgtest
 
 piuparts:
   extends: .test-piuparts
