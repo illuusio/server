@@ -1,8 +1,19 @@
-mariadb-10.4 (1:10.4.12-1) UNRELEASED; urgency=medium
+mariadb-10.4 (1:10.4.12-1~exp1) experimental; urgency=medium
 
   * New upstream version 10.4.12
+    - Drop patches applied upstream in 10.4
+    - Sync debian/* improvements done in upstream MariaDB 10.4 release
+    - Update Galera to version 4
+    - Update debian/copyright for MariaDB 10.4
+    - Sync non-functional delta from upstream 10.4
+    - Sync AppArmor profile handling from MariaDB 10.4
+    - Sync server stopping logic from MariaDB 10.4 preinst/postinst/postrm
+    - Package PAM tool and user map introduced in upstream MariaDB 10.4
+    - Clean away versioned breaks/replaces on older generation packages
+    - Update maintainer and contributor docs for MariaDB 10.4
+    - Add patch from MDEV-21691 so mysql-test-run works out-of-source tree
 
- -- Otto Kekäläinen <otto@debian.org>  Sat, 08 Feb 2020 19:57:32 +0200
+ -- Otto Kekäläinen <otto@debian.org>  Tue, 18 Feb 2020 20:24:40 +0200
 
 mariadb-10.3 (1:10.3.22-1) unstable; urgency=medium
 
