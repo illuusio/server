@@ -1,0 +1,12 @@
+Subject: Temporary fix from https://jira.mariadb.org/browse/MDEV-21691 to get autopkgtest running.
+
+--- a/mysql-test/mysql-test-run.pl
++++ b/mysql-test/mysql-test-run.pl
+@@ -2824,6 +2824,7 @@ sub setup_vardir() {
+         set_plugin_var($pname);
+         $plugindir=dirname($_) unless $plugindir;
+       }
++      $plugindir= ($mysqld_variables{'plugin-dir'} || '.') unless $plugindir;
+     }
+   }
+ 
