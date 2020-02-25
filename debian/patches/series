@@ -21,3 +21,4 @@ mtr-plugin-path.patch
 1459.patch
 fix-systemd-alias.patch
 1612.patch
+prevent-executable-stack-due-to-objects-compiled-fro.patch
