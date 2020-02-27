@@ -72,6 +72,31 @@ If you want to run the build in parallel on 2 CPUs and have verbose output:
 The options above can also be combined freely to get desired behavior.
 
 
+### Using special build environments
+
+If you want to ensure all build dependencies are clean, you can build inside a
+Docker or sbuild (Debian tool) environment.
+
+#### Build in Docker
+
+First make a working directory for the build artifacts. Inside that directory
+clone the repository. Then start a Docker session using whatever Debian/Ubuntu
+image you want with the command:
+
+    docker run -it -v ${PWD}:/build -w /build debian:sid bash
+
+This will start a session, where you are as the root user in the path /build
+inside the Docker container. Here you can `cd` into the source directory,
+install dependencies and start the build. Note that when you exit the session,
+everything will be lost apart from the files you had inside the mounted volume
+in `/build`.
+
+#### Build using sbuild
+
+If you prefer sbuild, you can build with something like:
+
+    gbp buildpackage --git-builder=sbuild -A -v -d unstable
+
 ## Creating a feature or bugfix branch
 
 The repository has the following branch layout:
@@ -118,22 +143,32 @@ automated fashion.
 
 For an example of a patch adding commit see https://github.com/ottok/mariadb-10.0/commit/8d2a7c909
 
-# Using Docker
 
-First make a working directory for the build artifacts. Inside that directory
-clone the repository. Then start a Docker session using whatever Debian/Ubuntu
-image you want with the command:
+# Debug tips if build or test suite fails
 
-    docker run -it -v ${PWD}:/build -w /build debian:sid bash
+## Debug build
 
-This will start a session, where you are as the root user in the path /build
-inside the Docker container. Here you can `cd` into the source directory,
-install dependencies and start the build. Note that when you exit the session,
-everything will be lost apart from the files you had inside the mounted volume
-in `/build`.
+A debug build can be created by adding the following build flags:
 
-# Using sbuild
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DMYSQL_MAINTAINER_MODE=OFF \
 
-If you prefer sbuild, you can build with something like:
+The latter flag ensures build does not stop on warnings but continues to the end.
 
-    gbp buildpackage --git-builder=sbuild -A -v -d unstable
+## Debugging test suite failures
+
+If the test suite is failing on Launchpad or some other CI system where you
+don't have access to the build artifacts, you can extend the debian/rules file
+to print out valuable information with the commands:
+
+    cd $(BUILDDIR)/mysql-test && find var/log/ -ls || true
+    cd $(BUILDDIR)/mysql-test && cat var/log/*.err || true
+    cd $(BUILDDIR)/mysql-test && tail -n 1000 var/log/*.log || true
+
+The `cd` is required on every line since it is a Makefile and the actual command
+needs to run in the correct directory. Also, the `|| true` at the end ensures
+the build will complete and not abort if any of those debug steps fail.
+
+If there is a core dump file a stack trace can be produced with:
+
+    cd $(BUILDDIR)/mysql-test && gdb --batch --ex 'thr a a bt' var/log/*/mysqld.1/core || true

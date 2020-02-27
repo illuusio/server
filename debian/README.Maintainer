@@ -103,6 +103,10 @@ Alternatively you can use Docker with something like this:
 If needed, add commits or amend the ones you made until the package is in
 perfect shape.
 
+Let Lintian automatically check as much as possible:
+
+    lintian -EvIL +pedantic --color=always *.changes
+
 Then proceed to make a source only build:
 
     gbp buildpackage -S
@@ -132,7 +136,7 @@ After the upload, check that everything is OK at
 * https://tracker.debian.org/mariadb-10.4 (Debian)
 * https://launchpad.net/ubuntu/+source/mariadb-10.4 (Ubuntu)
 
-### Maintaining debian/copyright ###
+### Maintaining debian/copyright
 
 First install packages: `license-reconcile devscripts cdbs`
 
@@ -145,36 +149,9 @@ Create new copyright file:
     licensecheck --copyright -r . -c . | /usr/lib/cdbs/licensecheck2dep5 > /tmp/copyright
 
 ..but you need to do lots of manual work to merge the new file with the old, as
-licensecheck has a lot of crufts and the original copyright file already had
+`licensecheck` has a lot of cruft and the original copyright file already had
 those cleaned up.
 
-
-### Quality control
-
-Run wrap-and-sort to style contents in `debian/*`:
-
-    wrap-and-sort -a -v
-
-Once packages are done check their quality with Lintian:
-
-    lintian -EvIL +pedantic --color=always *.changes
-
-
-## Uploading to Ubuntu PPA for testing
-
-Make sure you have key ID set up in `~/.devscripts` to avoid using `-k` parameter:
-
-    DEBSIGN_KEYID=CEE8DA88
-
-These are good to have as environment variables (replace values with your own):
-
-    DEBEMAIL="otto@debian.org"
-    DEBFULLNAME="Otto Kekäläinen"
-    export DEBEMAIL DEBFULLNAME
-
-Then run the commands to automatically change version and upload:
-
-    backportpackage --yes -u ppa:mysql-ubuntu/$PKG -d focal -S ~`date '+%s'`.$COMMIT_ID $PKG*.dsc
 
 ### Launchpad testing matrix
 
