@@ -153,6 +153,9 @@ endif
 	rm -rf $(TMP)/usr/share/mysql/mysql-test/plugin/tokudb/tokudb/*.py
 	rm -rf $(TMP)/usr/share/mysql/mysql-test/plugin/tokudb/tokudb/t/*.py
 
+	# Delete private files from libraries so they don't get shipped in the -dev pacakges
+	rm -r $(TMP)/usr/include/mariadb/server/private
+
 	# Remove test plugins
 	rm -f $(TMP)/usr/lib/*/mariadb19/plugin/adt_null.so
 	rm -f $(TMP)/usr/lib/*/mariadb19/plugin/auth_0x0100.so
@@ -186,11 +189,6 @@ endif
 
 	# Install libmariadbclient18 compatibility links
 	ln -s libmariadb.so.3 $(TMP)/usr/lib/$(DEB_HOST_MULTIARCH)/libmariadbclient.so
-
-	# Install libmysqlclientclientXX compatibility links
-	ln -s libmariadb.so.3 $(TMP)/usr/lib/$(DEB_HOST_MULTIARCH)/libmysqlclient.so.18
-	ln -s libmariadb.so.3 $(TMP)/usr/lib/$(DEB_HOST_MULTIARCH)/libmysqlclient.so.19
-	ln -s libmariadb.so.3 $(TMP)/usr/lib/$(DEB_HOST_MULTIARCH)/libmysqlclient.so.20
 
 override_dh_installlogrotate-arch:
 	dh_installlogrotate --name mysql-server
