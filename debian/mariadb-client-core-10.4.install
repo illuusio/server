@@ -1,7 +1,6 @@
 usr/bin/mariadb
 usr/bin/mariadb-check
 usr/bin/mariadb-embedded
-usr/bin/mariadb-upgrade
 usr/bin/mysql
 usr/bin/mysql_embedded
 usr/bin/mysqlcheck
