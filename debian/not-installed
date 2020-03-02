@@ -25,6 +25,7 @@ usr/share/groonga/COPYING
 usr/share/groonga-normalizer-mysql/lgpl-2.0.txt
 usr/share/groonga-normalizer-mysql/README.md
 usr/share/groonga/README.md
+usr/share/man/man1/mariadb-config.1
 usr/share/man/man1/mysqlbug.1
 usr/share/man/man1/mysql.server.1
 usr/share/man/man1/wsrep_sst_xtrabackup.1
