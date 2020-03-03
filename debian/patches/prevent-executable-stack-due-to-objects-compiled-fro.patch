@@ -1,0 +1,99 @@
+From: =?utf-8?q?Christian_G=C3=B6ttsche?= <cgzones@googlemail.com>
+Date: Tue, 25 Feb 2020 10:21:06 +0100
+Subject: prevent executable stack due to objects compiled from assembly
+
+Forwarded: https://github.com/wolfSSL/wolfssl/pull/2831
+---
+ extra/wolfssl/wolfssl/wolfcrypt/src/aes_gcm_asm.S   | 4 ++++
+ extra/wolfssl/wolfssl/wolfcrypt/src/chacha_asm.S    | 4 ++++
+ extra/wolfssl/wolfssl/wolfcrypt/src/fe_x25519_asm.S | 4 ++++
+ extra/wolfssl/wolfssl/wolfcrypt/src/poly1305_asm.S  | 4 ++++
+ extra/wolfssl/wolfssl/wolfcrypt/src/sha256_asm.S    | 4 ++++
+ extra/wolfssl/wolfssl/wolfcrypt/src/sha512_asm.S    | 4 ++++
+ extra/wolfssl/wolfssl/wolfcrypt/src/sp_x86_64_asm.S | 4 ++++
+ 7 files changed, 28 insertions(+)
+
+diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/aes_gcm_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/aes_gcm_asm.S
+index 1ebedf8..9161f7d 100644
+--- a/extra/wolfssl/wolfssl/wolfcrypt/src/aes_gcm_asm.S
++++ b/extra/wolfssl/wolfssl/wolfcrypt/src/aes_gcm_asm.S
+@@ -8731,3 +8731,7 @@ L_AES_GCM_decrypt_avx2_cmp_tag_done:
+ .size	AES_GCM_decrypt_avx2,.-AES_GCM_decrypt_avx2
+ #endif /* __APPLE__ */
+ #endif /* HAVE_INTEL_AVX2 */
++
++#if defined(__ELF__) && defined(__linux__)
++	.section	.note.GNU-stack,"",%progbits
++#endif
+diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/chacha_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/chacha_asm.S
+index 0a1ee5d..9597df6 100644
+--- a/extra/wolfssl/wolfssl/wolfcrypt/src/chacha_asm.S
++++ b/extra/wolfssl/wolfssl/wolfcrypt/src/chacha_asm.S
+@@ -1418,3 +1418,7 @@ L_chacha20_avx2_end256:
+ .size	chacha_encrypt_avx2,.-chacha_encrypt_avx2
+ #endif /* __APPLE__ */
+ #endif /* HAVE_INTEL_AVX2 */
++
++#if defined(__ELF__) && defined(__linux__)
++	.section	.note.GNU-stack,"",%progbits
++#endif
+diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/fe_x25519_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/fe_x25519_asm.S
+index 0b8e9bd..f6ffc45 100644
+--- a/extra/wolfssl/wolfssl/wolfcrypt/src/fe_x25519_asm.S
++++ b/extra/wolfssl/wolfssl/wolfcrypt/src/fe_x25519_asm.S
+@@ -16428,3 +16428,7 @@ _fe_ge_sub_avx2:
+ .size	fe_ge_sub_avx2,.-fe_ge_sub_avx2
+ #endif /* __APPLE__ */
+ #endif /* HAVE_INTEL_AVX2 */
++
++#if defined(__ELF__) && defined(__linux__)
++	.section	.note.GNU-stack,"",%progbits
++#endif
+diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/poly1305_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/poly1305_asm.S
+index 5ed46f1..b522e2e 100644
+--- a/extra/wolfssl/wolfssl/wolfcrypt/src/poly1305_asm.S
++++ b/extra/wolfssl/wolfssl/wolfcrypt/src/poly1305_asm.S
+@@ -1103,3 +1103,7 @@ L_poly1305_avx2_final_cmp_copy:
+ .size	poly1305_final_avx2,.-poly1305_final_avx2
+ #endif /* __APPLE__ */
+ #endif /* HAVE_INTEL_AVX2 */
++
++#if defined(__ELF__) && defined(__linux__)
++	.section	.note.GNU-stack,"",%progbits
++#endif
+diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/sha256_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/sha256_asm.S
+index 5ea7e0a..798dff3 100644
+--- a/extra/wolfssl/wolfssl/wolfcrypt/src/sha256_asm.S
++++ b/extra/wolfssl/wolfssl/wolfcrypt/src/sha256_asm.S
+@@ -22651,3 +22651,7 @@ L_sha256_len_avx2_rorx_done:
+ .size	Transform_Sha256_AVX2_RORX_Len,.-Transform_Sha256_AVX2_RORX_Len
+ #endif /* __APPLE__ */
+ #endif /* HAVE_INTEL_AVX2 */
++
++#if defined(__ELF__) && defined(__linux__)
++	.section	.note.GNU-stack,"",%progbits
++#endif
+diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/sha512_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/sha512_asm.S
+index c0afb3d..cf55a26 100644
+--- a/extra/wolfssl/wolfssl/wolfcrypt/src/sha512_asm.S
++++ b/extra/wolfssl/wolfssl/wolfcrypt/src/sha512_asm.S
+@@ -10739,3 +10739,7 @@ L_sha512_len_avx2_rorx_done:
+ .size	Transform_Sha512_AVX2_RORX_Len,.-Transform_Sha512_AVX2_RORX_Len
+ #endif /* __APPLE__ */
+ #endif /* HAVE_INTEL_AVX2 */
++
++#if defined(__ELF__) && defined(__linux__)
++	.section	.note.GNU-stack,"",%progbits
++#endif
+diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/sp_x86_64_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/sp_x86_64_asm.S
+index 57248a5..ebd9d66 100644
+--- a/extra/wolfssl/wolfssl/wolfcrypt/src/sp_x86_64_asm.S
++++ b/extra/wolfssl/wolfssl/wolfcrypt/src/sp_x86_64_asm.S
+@@ -30464,3 +30464,7 @@ _sp_256_mont_reduce_avx2_4:
+ .size	sp_256_mont_reduce_avx2_4,.-sp_256_mont_reduce_avx2_4
+ #endif /* __APPLE__ */
+ #endif /* HAVE_INTEL_AVX2 */
++
++#if defined(__ELF__) && defined(__linux__)
++	.section	.note.GNU-stack,"",%progbits
++#endif
