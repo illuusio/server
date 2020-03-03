@@ -1,0 +1,44 @@
+Forwarded: https://github.com/MariaDB/server/pull/597
+From d8bc28a8fce35ed1e748167be71764ced119f307 Mon Sep 17 00:00:00 2001
+From: Daniel Black <grooverdan@users.sourceforge.net>
+Date: Sat, 10 Feb 2018 16:27:38 +1100
+Subject: [PATCH] MDEV-14340: mariadb.pc install should be arch dependent
+
+---
+ cmake/install_layout.cmake    | 4 ++--
+ debian/libmariadb-dev.install | 2 +-
+ debian/rules                  | 4 +---
+ support-files/CMakeLists.txt  | 2 +-
+ 4 files changed, 5 insertions(+), 7 deletions(-)
+
+--- a/cmake/install_layout.cmake
++++ b/cmake/install_layout.cmake
+@@ -174,7 +174,7 @@ SET(INSTALL_SCRIPTDIR_DEB
+ SET(INSTALL_SYSCONFDIR_DEB              "/etc")
+ SET(INSTALL_SYSCONF2DIR_DEB             "/etc/mysql/conf.d")
+ #
+-SET(INSTALL_LIBDIR_DEB                  "lib")
++SET(INSTALL_LIBDIR_DEB                  "lib/${CMAKE_CXX_LIBRARY_ARCHITECTURE}")
+ SET(INSTALL_PLUGINDIR_DEB               "lib/mysql/plugin")
+ #
+ SET(INSTALL_INCLUDEDIR_DEB              "include/mariadb")
+@@ -186,7 +186,7 @@ SET(INSTALL_INFODIR_DEB
+ #
+ SET(INSTALL_SHAREDIR_DEB                "share")
+ SET(INSTALL_MYSQLSHAREDIR_DEB           "share/mysql")
+-SET(INSTALL_MYSQLTESTDIR_DEB            "mysql-test")
++SET(INSTALL_MYSQLTESTDIR_DEB            "share/mysql/mysql-test")
+ SET(INSTALL_SQLBENCHDIR_DEB             ".")
+ SET(INSTALL_SUPPORTFILESDIR_DEB         "share/mysql")
+ #
+--- a/support-files/CMakeLists.txt
++++ b/support-files/CMakeLists.txt
+@@ -91,7 +91,7 @@ IF(UNIX)
+   ENDIF()
+ 
+   CONFIGURE_FILE(mariadb.pc.in ${CMAKE_CURRENT_BINARY_DIR}/mariadb.pc @ONLY)
+-  INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/mariadb.pc DESTINATION ${INSTALL_SHAREDIR}/pkgconfig COMPONENT Development)
++  INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/mariadb.pc DESTINATION ${INSTALL_LIBDIR}/pkgconfig COMPONENT Development)
+ 
+   INSTALL(FILES mysql.m4 DESTINATION ${INSTALL_SHAREDIR}/aclocal COMPONENT Development)
+   
