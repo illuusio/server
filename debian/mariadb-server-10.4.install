@@ -118,7 +118,6 @@ usr/share/man/man1/wsrep_sst_mysqldump.1
 usr/share/man/man1/wsrep_sst_rsync.1
 usr/share/man/man1/wsrep_sst_rsync_wan.1
 usr/share/mysql/errmsg-utf8.txt
-usr/share/mysql/mysql-log-rotate
 usr/share/mysql/mysql.server
 usr/share/mysql/mysqld_multi.server
 usr/share/mysql/policy/apparmor/README
