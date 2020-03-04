@@ -14,7 +14,6 @@ usr/bin/mariadb-fix-extensions
 usr/bin/mariadb-import
 usr/bin/mariadb-plugin
 usr/bin/mariadb-slap
-usr/bin/mariadb-tzinfo-to-sql
 usr/bin/mariadb-waitpid
 usr/bin/mysql_find_rows
 usr/bin/mysql_fix_extensions

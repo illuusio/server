@@ -25,6 +25,7 @@ usr/bin/mariadb-hotcopy
 usr/bin/mariadb-secure-installation
 usr/bin/mariadb-setpermission
 usr/bin/mariadb-show
+usr/bin/mariadb-tzinfo-to-sql
 usr/bin/mariadbd-multi
 usr/bin/mariadbd-safe
 usr/bin/mariadbd-safe-helper
