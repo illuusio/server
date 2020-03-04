@@ -1,0 +1,164 @@
+Forwarded: https://github.com/MariaDB/server/pull/1460
+From: =?UTF-8?q?Otto=20Kek=C3=A4l=C3=A4inen?= <otto@kekalainen.net>
+Date: Wed, 4 Mar 2020 21:34:56 +0200
+Subject: [PATCH 1/5] Add missing man pages for myrocks_hotbackup
+
+---
+ man/CMakeLists.txt      |  8 ++--
+ man/myrocks_hotbackup.1 | 82 +++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 86 insertions(+), 4 deletions(-)
+ create mode 100644 man/myrocks_hotbackup.1
+
+
+--- /dev/null
++++ b/man/myrocks_hotbackup.1
+@@ -0,0 +1,82 @@
++.TH MYROCKS_HOTBACKUP "1" "March 2020" "MariaDB 10\&.5" "MariaDB Database System"
++.SH NAME
++myrocks_hotbackup \- streaming backup for MariaDB MyRocks
++.SH DESCRIPTION
++Usage:
++.PP
++Backup: set \fB\-o\fR pipefail; myrocks_hotbackup \fB\-\-user\fR=\fI\,root\/\fR \fB\-\-password\fR=\fI\,pw\/\fR \fB\-\-port\fR=\fI\,3306\/\fR \fB\-\-checkpoint_dir=\fR<directory where temporary backup hard links are created> | ssh \fB\-o\fR NoneEnabled=yes remote_server 'tar \fB\-xi\fR \fB\-C\fR <directory on remote server where backups will be sent>' . You need to execute backup command on a server where you take backups.
++.PP
++Backup using WDT: myrocks_hotbackup \fB\-\-user\fR=\fI\,root\/\fR \fB\-\-password\fR=\fI\,pw\/\fR \fB\-\-stream\fR=\fI\,wdt\/\fR \fB\-\-checkpoint_dir=\fR<directory where temporary backup hard links are created> \fB\-\-destination=\fR<remote host name> \fB\-\-backup_dir=\fR<remote directory name>. This has to be executed at the src host.
++.PP
++Move\-Back: myrocks_hotbackup \fB\-\-move_back\fR \fB\-\-datadir=\fR<dest mysql datadir> \fB\-\-rocksdb_datadir=\fR<dest rocksdb datadir> \fB\-\-rocksdb_waldir=\fR<dest rocksdb wal dir> \fB\-\-backup_dir=\fR<where backup files are stored> . You need to execute move\-back command on a server where backup files are sent.
++.SH OPTIONS
++.TP
++\fB\-h\fR, \fB\-\-help\fR
++show this help message and exit
++.TP
++\fB\-i\fR CHECKPOINT_INTERVAL, \fB\-\-interval\fR=\fI\,CHECKPOINT_INTERVAL\/\fR
++Number of seconds to renew checkpoint
++.TP
++\fB\-c\fR CHECKPOINT_DIRECTORY, \fB\-\-checkpoint_dir\fR=\fI\,CHECKPOINT_DIRECTORY\/\fR
++Local directory name where checkpoints will be
++created.
++.TP
++\fB\-d\fR DATADIR, \fB\-\-datadir\fR=\fI\,DATADIR\/\fR
++backup mode: src MySQL datadir. move_back mode: dest
++MySQL datadir
++.TP
++\fB\-s\fR OUTPUT_STREAM, \fB\-\-stream\fR=\fI\,OUTPUT_STREAM\/\fR
++Setting streaming backup options. Currently tar, WDT
++and xbstream are supported. Default is tar
++.TP
++\fB\-\-destination\fR=\fI\,DESTINATION\/\fR
++Remote server name. Only used for WDT mode so far.
++.TP
++\fB\-\-avg_mbytes_per_sec\fR=\fI\,AVG_MBYTES_PER_SEC\/\fR
++Average backup rate in MBytes/sec. WDT only.
++.TP
++\fB\-\-extra_wdt_sender_options\fR=\fI\,EXTRA_WDT_SENDER_OPTIONS\/\fR
++Extra options for WDT sender
++.TP
++\fB\-\-extra_wdt_receiver_options\fR=\fI\,EXTRA_WDT_RECEIVER_OPTIONS\/\fR
++Extra options for WDT receiver
++.TP
++\fB\-u\fR MYSQL_USER, \fB\-\-user\fR=\fI\,MYSQL_USER\/\fR
++MySQL user name
++.TP
++\fB\-p\fR MYSQL_PASSWORD, \fB\-\-password\fR=\fI\,MYSQL_PASSWORD\/\fR
++MySQL password name
++.TP
++\fB\-P\fR MYSQL_PORT, \fB\-\-port\fR=\fI\,MYSQL_PORT\/\fR
++MySQL port number
++.TP
++\fB\-S\fR MYSQL_SOCKET, \fB\-\-socket\fR=\fI\,MYSQL_SOCKET\/\fR
++MySQL socket path. Takes precedence over \fB\-\-port\fR.
++.TP
++\fB\-m\fR, \fB\-\-move_back\fR
++Moving MyRocks backup files to proper locations.
++.TP
++\fB\-r\fR ROCKSDB_DATADIR, \fB\-\-rocksdb_datadir\fR=\fI\,ROCKSDB_DATADIR\/\fR
++RocksDB target data directory where backup data files
++will be moved. Must be empty.
++.TP
++\fB\-w\fR ROCKSDB_WALDIR, \fB\-\-rocksdb_waldir\fR=\fI\,ROCKSDB_WALDIR\/\fR
++RocksDB target data directory where backup wal files
++will be moved. Must be empty.
++.TP
++\fB\-b\fR BACKUPDIR, \fB\-\-backup_dir\fR=\fI\,BACKUPDIR\/\fR
++backup mode for WDT: Remote directory to store backup.
++move_back mode: Locations where backup files are
++stored.
++.TP
++\fB\-f\fR, \fB\-\-skip_check_frm_timestamp\fR
++skipping to check if frm files are updated after
++starting backup.
++.TP
++\fB\-D\fR DEBUG_SIGNAL_FILE, \fB\-\-debug_signal_file\fR=\fI\,DEBUG_SIGNAL_FILE\/\fR
++debugging purpose: waiting until the specified file is
++created
++.SH "SEE ALSO"
++For more information, please refer to the MariaDB Knowledge Base, available online at https://mariadb.com/kb/
++.SH AUTHOR
++MariaDB Foundation (http://www.mariadb.org/).
+--- a/man/mysql-test-run.pl.1
++++ b/man/mysql-test-run.pl.1
+@@ -242,10 +242,7 @@ T}
+ T{
+ MTR_VERSION
+ T}:T{
+-If set to 1, will run the older version 1 of
+-                \fBmysql\-test\-run\&.pl\fR\&. This will affect
+-                what functionailty is available and what command line
+-                options are supported\&.
++If set to 1, will run the older version 1 of \fBmysql\-test\-run\&.pl\fR\&. This will affect what functionailty is available and what command line options are supported\&.
+ T}
+ T{
+ MTR_MEM
+@@ -273,14 +270,7 @@ T}
+ T{
+ MTR_\fINAME\fR_TIMEOUT
+ T}:T{
+-Setting of a timeout in minutes or seconds, corresponding to command
+-                line option
+-                \fB\-\-\fR\fB\fIname\fR\fR\fB\-timeout\fR\&.
+-                Available timeout names are TESTCASE,
+-                SUITE (both in minutes) and
+-                START, SHUTDOWN
+-                (both in seconds)\&. These variables are supported from
+-                MySQL 5\&.1\&.44\&.
++Setting of a timeout in minutes or seconds, corresponding to command line option \fB\-\-\fR\fB\fIname\fR\fR\fB\-timeout\fR\&. Available timeout names are TESTCASE, SUITE (both in minutes) and START, SHUTDOWN (both in seconds)\&. These variables are supported from MySQL 5\&.1\&.44\&.
+ T}
+ T{
+ MYSQL_TEST
+--- /dev/null
++++ b/man/mytop.1
+@@ -0,0 +1,7 @@
++.TH MYTOP "1" "March 2020" "MariaDB 10\&.5" "MariaDB Database System"
++.SH NAME
++mytop \- display MariaDB server performance info like 'top'
++.SH "SEE ALSO"
++For more information, please refer to the MariaDB Knowledge Base, available online at https://mariadb.com/kb/
++.SH AUTHOR
++MariaDB Foundation (http://www.mariadb.org/).
+--- a/man/CMakeLists.txt
++++ b/man/CMakeLists.txt
+@@ -26,13 +26,13 @@ SET(MAN1_SERVER innochecksum.1 my_print_
+ 		mysqld_safe_helper.1 tokuftdump.1 wsrep_sst_common.1
+ 		wsrep_sst_mysqldump.1 wsrep_sst_rsync.1
+ 		galera_recovery.1 galera_new_cluster.1 tokuft_logprint.1
+-		mysql_ldb.1
++		mysql_ldb.1 myrocks_hotbackup.1
+ 		wsrep_sst_mariabackup.1 mbstream.1 mariabackup.1
+ 		wsrep_sst_rsync_wan.1)
+ SET(MAN8_SERVER mysqld.8)
+ SET(MAN1_CLIENT msql2mysql.1 mysql.1 mysql_find_rows.1 mysql_waitpid.1
+ 		mysqlaccess.1 mysqladmin.1 mysqlbinlog.1 mysqlcheck.1
+-		mysqldump.1 mysqlimport.1 mysqlshow.1 mysqlslap.1
++		mysqldump.1 mysqlimport.1 mysqlshow.1 mysqlslap.1 mytop.1
+                 mysql_plugin.1 mysql_embedded.1)
+ SET(MAN1_DEVEL mysql_config.1)
+ SET(MAN1_TEST mysql-stress-test.pl.1 mysql-test-run.pl.1 mysql_client_test.1
+@@ -79,7 +79,7 @@ endmacro(MARIADB_SYMLINK_MANPAGE)
+ macro(MARIADB_SYMLINK_MANPAGE_CREATE mysqlname index mannr dir comp)
+   LIST(GET MARIADB_SYMLINK_TOS ${index} _mariadbname)
+   SET(dest "${CMAKE_CURRENT_BINARY_DIR}/${_mariadbname}.${mannr}")
+-  FILE(WRITE ${dest} ".so ${mysqlname}.${mannr}")
++  FILE(WRITE ${dest} ".so man${mannr}/${mysqlname}.${mannr}")
+   INSTALL(FILES ${dest} DESTINATION ${INSTALL_MANDIR}/${dir} COMPONENT ${comp})
+ endmacro(MARIADB_SYMLINK_MANPAGE_CREATE)
+ 

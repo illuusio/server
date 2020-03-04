@@ -21,3 +21,4 @@ wolfssl-javascript-prettify.patch
 mtr-plugin-path.patch
 prevent-executable-stack-due-to-objects-compiled-fro.patch
 mariadb-pc-arch-dependent.patch
+1460.patch
