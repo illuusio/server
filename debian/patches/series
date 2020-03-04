@@ -22,3 +22,4 @@ mtr-plugin-path.patch
 prevent-executable-stack-due-to-objects-compiled-fro.patch
 mariadb-pc-arch-dependent.patch
 1460.patch
+1459.patch

@@ -1,0 +1,750 @@
+Forwarded: https://github.com/MariaDB/server/pull/1459
+From: =?UTF-8?q?Otto=20Kek=C3=A4l=C3=A4inen?= <otto@kekalainen.net>
+Date: Wed, 4 Mar 2020 18:30:08 +0200
+Subject: [PATCH 1/3] Fix various spelling errors in server base
+
+e.g.
+- dont -> don't
+- occurence -> occurrence
+- succesfully -> successfully
+
+Also remove trailing space in selected files.
+---
+ mysql-test/include/function_defaults.inc      |  2 +-
+ mysql-test/main/function_defaults.result      |  4 +--
+ .../main/function_defaults_innodb.result      |  4 +--
+ mysql-test/main/trigger.test                  |  2 +-
+ .../suite/rpl/t/rpl_slow_query_log.test       |  4 +--
+ sql/field_conv.cc                             |  2 +-
+ sql/filesort_utils.cc                         |  2 +-
+ sql/item_sum.h                                |  4 +--
+ sql/multi_range_read.cc                       |  2 +-
+ sql/opt_range.cc                              |  2 +-
+ sql/opt_subselect.cc                          |  2 +-
+ sql/rpl_parallel.cc                           |  2 +-
+ sql/sp.cc                                     |  2 +-
+ sql/sp_cache.cc                               | 18 +++++-----
+ sql/sp_head.cc                                |  2 +-
+ sql/sql_class.cc                              |  2 +-
+ sql/sql_class.h                               |  4 +--
+ sql/sql_expression_cache.h                    |  2 +-
+ sql/sql_lex.cc                                |  2 +-
+ sql/sql_select.cc                             | 36 +++++++++----------
+ sql/sys_vars.cc                               |  2 +-
+ sql/wsrep_trans_observer.h                    |  2 +-
+ storage/maria/ma_range.c                      |  2 +-
+ 23 files changed, 53 insertions(+), 53 deletions(-)
+
+--- a/mysql-test/include/function_defaults.inc
++++ b/mysql-test/include/function_defaults.inc
+@@ -1,7 +1,7 @@
+ SET TIME_ZONE = "+00:00";
+ 
+ --echo #
+---echo # Test of errors for column data types that dont support function
++--echo # Test of errors for column data types that don't support function
+ --echo # defaults.
+ --echo #
+ 
+--- a/mysql-test/main/function_defaults.result
++++ b/mysql-test/main/function_defaults.result
+@@ -6,7 +6,7 @@
+ #
+ SET TIME_ZONE = "+00:00";
+ #
+-# Test of errors for column data types that dont support function
++# Test of errors for column data types that don't support function
+ # defaults.
+ #
+ CREATE OR REPLACE TABLE t1( a BIT DEFAULT CURRENT_TIMESTAMP );
+@@ -1552,7 +1552,7 @@ DROP TABLE t1;
+ #
+ SET TIME_ZONE = "+00:00";
+ #
+-# Test of errors for column data types that dont support function
++# Test of errors for column data types that don't support function
+ # defaults.
+ #
+ CREATE OR REPLACE TABLE t1( a BIT DEFAULT CURRENT_TIMESTAMP(6) );
+--- a/mysql-test/main/function_defaults_innodb.result
++++ b/mysql-test/main/function_defaults_innodb.result
+@@ -7,7 +7,7 @@ set default_storage_engine=innodb;
+ #
+ SET TIME_ZONE = "+00:00";
+ #
+-# Test of errors for column data types that dont support function
++# Test of errors for column data types that don't support function
+ # defaults.
+ #
+ CREATE OR REPLACE TABLE t1( a BIT DEFAULT CURRENT_TIMESTAMP );
+@@ -1553,7 +1553,7 @@ DROP TABLE t1;
+ #
+ SET TIME_ZONE = "+00:00";
+ #
+-# Test of errors for column data types that dont support function
++# Test of errors for column data types that don't support function
+ # defaults.
+ #
+ CREATE OR REPLACE TABLE t1( a BIT DEFAULT CURRENT_TIMESTAMP(6) );
+--- a/mysql-test/main/trigger.test
++++ b/mysql-test/main/trigger.test
+@@ -2616,7 +2616,7 @@ DROP TABLE t1, t2;
+ --echo # End of 5.3 tests.
+ 
+ #
+-# MDEV-4829 BEFORE INSERT triggers dont issue 1406 error
++# MDEV-4829 BEFORE INSERT triggers don't issue 1406 error
+ # Also check timestamp for trigger
+ #
+ 
+--- a/mysql-test/suite/rpl/t/rpl_slow_query_log.test
++++ b/mysql-test/suite/rpl/t/rpl_slow_query_log.test
+@@ -12,9 +12,9 @@
+ #    iii) On master, do one short time query and one long time query, on slave
+ #         and check that slow query is logged to slow query log but fast query 
+ #         is not.
+-#     iv) On slave, check that slow queries go into the slow log and fast dont,
++#     iv) On slave, check that slow queries go into the slow log and fast don't,
+ #         when issued through a regular client connection
+-#      v) On slave, check that slow queries go into the slow log and fast dont
++#      v) On slave, check that slow queries go into the slow log and fast don't
+ #         when we use SET TIMESTAMP= 1 on a regular client connection.
+ #     vi) check that when setting slow_query_log= OFF in a connection 'extra2'
+ #         prevents logging slow queries in a connection 'extra'
+--- a/sql/field_conv.cc
++++ b/sql/field_conv.cc
+@@ -230,7 +230,7 @@ static void do_skip(Copy_field *copy __a
+ 
+   note: if the record we're copying from is NULL-complemetned (i.e. 
+   from_field->table->null_row==1), it will also have all NULLable columns to be
+-  set to NULLs, so we dont need to check table->null_row here.
++  set to NULLs, so we don't need to check table->null_row here.
+ */
+ 
+ static void do_copy_null(Copy_field *copy)
+--- a/sql/item_sum.h
++++ b/sql/item_sum.h
+@@ -1311,7 +1311,7 @@ struct st_sp_security_context;
+   Item_sum_sp handles STORED AGGREGATE FUNCTIONS
+ 
+   Each Item_sum_sp represents a custom aggregate function. Inside the
+-  function's body, we require at least one occurence of FETCH GROUP NEXT ROW
++  function's body, we require at least one occurrence of FETCH GROUP NEXT ROW
+   instruction. This cursor is what makes custom stored aggregates possible.
+ 
+   During computation the function's add method is called. This in turn performs
+@@ -1339,7 +1339,7 @@ struct st_sp_security_context;
+   group is already set in the argument x. This behaviour is done so when
+   a user writes a function, he should "logically" include FETCH GROUP NEXT ROW
+   before any "add" instructions in the stored function. This means however that
+-  internally, the first occurence doesn't stop the function. See the
++  internally, the first occurrence doesn't stop the function. See the
+   implementation of FETCH GROUP NEXT ROW for details as to how it happens.
+ 
+   Either way, one should assume that after calling "Item_sum_sp::add()" that
+--- a/sql/multi_range_read.cc
++++ b/sql/multi_range_read.cc
+@@ -1240,7 +1240,7 @@ int DsMrr_impl::setup_two_handlers()
+       scans.
+ 
+       Calling primary_file->index_end() will invoke dsmrr_close() for this object,
+-      which will delete secondary_file. We need to keep it, so put it away and dont
++      which will delete secondary_file. We need to keep it, so put it away and don't
+       let it be deleted:
+     */
+     if (primary_file->inited == handler::INDEX)
+--- a/sql/opt_range.cc
++++ b/sql/opt_range.cc
+@@ -5745,7 +5745,7 @@ bool prepare_search_best_index_intersect
+     {
+       idx_scan.add("chosen", true);
+       if (!*scan_ptr)
+-        idx_scan.add("cause", "first occurence of index prefix");
++        idx_scan.add("cause", "first occurrence of index prefix");
+       else
+         idx_scan.add("cause", "better cost for same idx prefix");
+       *scan_ptr= *index_scan;
+--- a/sql/opt_subselect.cc
++++ b/sql/opt_subselect.cc
+@@ -2204,7 +2204,7 @@ int pull_out_semijoin_tables(JOIN *join)
+     /*
+       Don't do table pull-out for nested joins (if we get nested joins here, it
+       means these are outer joins. It is theoretically possible to do pull-out
+-      for some of the outer tables but we dont support this currently.
++      for some of the outer tables but we don't support this currently.
+     */
+     bool have_join_nest_children= FALSE;
+ 
+--- a/sql/rpl_parallel.cc
++++ b/sql/rpl_parallel.cc
+@@ -793,7 +793,7 @@ do_retry:
+     else
+     {
+       /*
+-        A failure of a preceeding "parent" transaction may not be
++        A failure of a preceding "parent" transaction may not be
+         seen by the current one through its own worker_error.
+         Such induced error gets set by ourselves now.
+       */
+--- a/sql/sp.cc
++++ b/sql/sp.cc
+@@ -2761,7 +2761,7 @@ int Sroutine_hash_entry::sp_cache_routin
+   @param[out] sp    Pointer to sp_head object for routine, NULL if routine was
+                     not found.
+ 
+-  @retval 0      Either routine is found and was succesfully loaded into cache
++  @retval 0      Either routine is found and was successfully loaded into cache
+                  or it does not exist.
+   @retval non-0  Error while loading routine from mysql,proc table.
+ */
+--- a/sql/sp_cache.cc
++++ b/sql/sp_cache.cc
+@@ -27,7 +27,7 @@ static ulong volatile Cversion= 1;
+ 
+ 
+ /*
+-  Cache of stored routines. 
++  Cache of stored routines.
+ */
+ 
+ class sp_cache
+@@ -149,8 +149,8 @@ void sp_cache_end()
+     sp_cache_insert()
+      cp  The cache to put routine into
+      sp  Routine to insert.
+-      
+-  TODO: Perhaps it will be more straightforward if in case we returned an 
++
++  TODO: Perhaps it will be more straightforward if in case we returned an
+         error from this function when we couldn't allocate sp_cache. (right
+         now failure to put routine into cache will cause a 'SP not found'
+         error to be reported at some later time)
+@@ -173,18 +173,18 @@ void sp_cache_insert(sp_cache **cp, sp_h
+ }
+ 
+ 
+-/* 
++/*
+   Look up a routine in the cache.
+   SYNOPSIS
+     sp_cache_lookup()
+       cp    Cache to look into
+       name  Name of rutine to find
+-      
++
+   NOTE
+     An obsolete (but not more obsolete then since last
+     sp_cache_flush_obsolete call) routine may be returned.
+ 
+-  RETURN 
++  RETURN
+     The routine or
+     NULL if the routine not found.
+ */
+@@ -204,7 +204,7 @@ sp_head *sp_cache_lookup(sp_cache **cp,
+ 
+   SYNOPSIS
+     sp_cache_invalidate()
+-      
++
+   NOTE
+     This is called when a VIEW definition is created or modified (and in some
+     other contexts). We can't destroy sp_head objects here as one may modify
+@@ -225,7 +225,7 @@ void sp_cache_invalidate()
+   @param[in] sp  SP to remove.
+ 
+   @note This invalidates pointers to sp_head objects this thread
+-  uses. In practice that means 'dont call this function when
++  uses. In practice that means don't call this function when
+   inside SP'.
+ */
+ 
+@@ -264,7 +264,7 @@ sp_cache_enforce_limit(sp_cache *c, ulon
+ }
+ 
+ /*************************************************************************
+-  Internal functions 
++  Internal functions
+  *************************************************************************/
+ 
+ extern "C" uchar *hash_get_key_for_sp_head(const uchar *ptr, size_t *plen,
+--- a/sql/sp_head.cc
++++ b/sql/sp_head.cc
+@@ -1396,7 +1396,7 @@ sp_head::execute(THD *thd, bool merge_da
+ 
+         /*
+           Reset the return code to zero if the transaction was
+-          replayed succesfully.
++          replayed successfully.
+         */
+         if (must_replay && !wsrep_current_error(thd))
+         {
+--- a/sql/sql_class.cc
++++ b/sql/sql_class.cc
+@@ -6708,7 +6708,7 @@ void THD::binlog_prepare_row_images(TABL
+ 
+   /**
+     if there is a primary key in the table (ie, user declared PK or a
+-    non-null unique index) and we dont want to ship the entire image,
++    non-null unique index) and we don't want to ship the entire image,
+     and the handler involved supports this.
+    */
+   if (table->s->primary_key < MAX_KEY &&
+--- a/sql/sql_class.h
++++ b/sql/sql_class.h
+@@ -4550,7 +4550,7 @@ public:
+    information to decide the logging format. So that cases we call decide_logging_format_2
+    at later stages in execution.
+    One example would be binlog format for IODKU but column with unique key is not inserted.
+-   We dont have inserted columns info when we call decide_logging_format so on later stage we call
++   We don't have inserted columns info when we call decide_logging_format so on later stage we call
+    decide_logging_format_low
+ 
+    @returns 0 if no format is changed
+@@ -5214,7 +5214,7 @@ public:
+   
+   It is aimed at capturing SHOW EXPLAIN output, so:
+   - Unlike select_result class, we don't assume that the sent data is an 
+-    output of a SELECT_LEX_UNIT (and so we dont apply "LIMIT x,y" from the
++    output of a SELECT_LEX_UNIT (and so we don't apply "LIMIT x,y" from the
+     unit)
+   - We don't try to convert the target table to MyISAM 
+ */
+--- a/sql/sql_expression_cache.h
++++ b/sql/sql_expression_cache.h
+@@ -152,7 +152,7 @@ private:
+   Item *val;
+   /* hit/miss counters */
+   ulong hit, miss;
+-  /* Set on if the object has been succesfully initialized with init() */
++  /* Set on if the object has been successfully initialized with init() */
+   bool inited;
+ };
+ 
+--- a/sql/sql_lex.cc
++++ b/sql/sql_lex.cc
+@@ -5195,7 +5195,7 @@ int st_select_lex_unit::save_union_expla
+     eu->connection_type= Explain_node::EXPLAIN_NODE_DERIVED;
+   /* 
+     Note: Non-merged semi-joins cannot be made out of UNIONs currently, so we
+-    dont ever set EXPLAIN_NODE_NON_MERGED_SJ.
++    don't ever set EXPLAIN_NODE_NON_MERGED_SJ.
+   */
+   for (SELECT_LEX *sl= first; sl; sl= sl->next_select())
+     eu->add_select(sl->select_number);
+--- a/sql/sql_select.cc
++++ b/sql/sql_select.cc
+@@ -6395,18 +6395,18 @@ max_part_bit(key_part_map bits)
+ /**
+   Add a new keuse to the specified array of KEYUSE objects
+ 
+-  @param[in,out]  keyuse_array  array of keyuses to be extended 
++  @param[in,out]  keyuse_array  array of keyuses to be extended
+   @param[in]      key_field     info on the key use occurrence
+   @param[in]      key           key number for the keyse to be added
+   @param[in]      part          key part for the keyuse to be added
+ 
+   @note
+   The function builds a new KEYUSE object for a key use utilizing the info
+-  on the left and right parts of the given key use  extracted from the 
+-  structure key_field, the key number and key part for this key use. 
++  on the left and right parts of the given key use  extracted from the
++  structure key_field, the key number and key part for this key use.
+   The built object is added to the dynamic array keyuse_array.
+ 
+-  @retval         0             the built object is succesfully added 
++  @retval         0             the built object is successfully added
+   @retval         1             otherwise
+ */
+ 
+@@ -14877,28 +14877,28 @@ bool Item_func_eq::check_equality(THD *t
+                                left_item, right_item, cond_equal);
+ }
+ 
+-                          
++
+ /**
+   Item_xxx::build_equal_items()
+-  
++
+   Replace all equality predicates in a condition referenced by "this"
+   by multiple equality items.
+ 
+     At each 'and' level the function detects items for equality predicates
+     and replaced them by a set of multiple equality items of class Item_equal,
+-    taking into account inherited equalities from upper levels. 
++    taking into account inherited equalities from upper levels.
+     If an equality predicate is used not in a conjunction it's just
+     replaced by a multiple equality predicate.
+     For each 'and' level the function set a pointer to the inherited
+     multiple equalities in the cond_equal field of the associated
+-    object of the type Item_cond_and.   
++    object of the type Item_cond_and.
+     The function also traverses the cond tree and and for each field reference
+     sets a pointer to the multiple equality item containing the field, if there
+     is any. If this multiple equality equates fields to a constant the
+-    function replaces the field reference by the constant in the cases 
++    function replaces the field reference by the constant in the cases
+     when the field is not of a string type or when the field reference is
+     just an argument of a comparison predicate.
+-    The function also determines the maximum number of members in 
++    The function also determines the maximum number of members in
+     equality lists of each Item_cond_and object assigning it to
+     thd->lex->current_select->max_equal_elems.
+ 
+@@ -14912,7 +14912,7 @@ bool Item_func_eq::check_equality(THD *t
+     in a conjuction for a minimal set of multiple equality predicates.
+     This set can be considered as a canonical representation of the
+     sub-conjunction of the equality predicates.
+-    E.g. (t1.a=t2.b AND t2.b>5 AND t1.a=t3.c) is replaced by 
++    E.g. (t1.a=t2.b AND t2.b>5 AND t1.a=t3.c) is replaced by
+     (=(t1.a,t2.b,t3.c) AND t2.b>5), not by
+     (=(t1.a,t2.b) AND =(t1.a,t3.c) AND t2.b>5);
+     while (t1.a=t2.b AND t2.b>5 AND t3.c=t4.d) is replaced by
+@@ -14923,16 +14923,16 @@ bool Item_func_eq::check_equality(THD *t
+     The function performs the substitution in a recursive descent by
+     the condtion tree, passing to the next AND level a chain of multiple
+     equality predicates which have been built at the upper levels.
+-    The Item_equal items built at the level are attached to other 
++    The Item_equal items built at the level are attached to other
+     non-equality conjucts as a sublist. The pointer to the inherited
+     multiple equalities is saved in the and condition object (Item_cond_and).
+-    This chain allows us for any field reference occurence easyly to find a 
+-    multiple equality that must be held for this occurence.
++    This chain allows us for any field reference occurrence easyly to find a
++    multiple equality that must be held for this occurrence.
+     For each AND level we do the following:
+     - scan it for all equality predicate (=) items
+     - join them into disjoint Item_equal() groups
+-    - process the included OR conditions recursively to do the same for 
+-      lower AND levels. 
++    - process the included OR conditions recursively to do the same for
++      lower AND levels.
+ 
+     We need to do things in this order as lower AND levels need to know about
+     all possible Item_equal objects in upper levels.
+@@ -14968,7 +14968,7 @@ COND *Item_cond_and::build_equal_items(T
+   /*
+      Retrieve all conjuncts of this level detecting the equality
+      that are subject to substitution by multiple equality items and
+-     removing each such predicate from the conjunction after having 
++     removing each such predicate from the conjunction after having
+      found/created a multiple equality whose inference the predicate is.
+  */
+   while ((item= li++))
+@@ -25506,7 +25506,7 @@ void free_underlaid_joins(THD *thd, SELE
+ ****************************************************************************/
+ 
+ /**
+-  Replace occurences of group by fields in an expression by ref items.
++  Replace occurrences of group by fields in an expression by ref items.
+ 
+   The function replaces occurrences of group by fields in expr
+   by ref objects for these fields unless they are under aggregate
+--- a/sql/sys_vars.cc
++++ b/sql/sys_vars.cc
+@@ -3390,7 +3390,7 @@ export sql_mode_t expand_sql_mode(sql_mo
+   if (sql_mode & MODE_ANSI)
+   {
+     /*
+-      Note that we dont set
++      Note that we don't set
+       MODE_NO_KEY_OPTIONS | MODE_NO_TABLE_OPTIONS | MODE_NO_FIELD_OPTIONS
+       to allow one to get full use of MySQL in this mode.
+ 
+--- a/sql/wsrep_trans_observer.h
++++ b/sql/wsrep_trans_observer.h
+@@ -123,7 +123,7 @@ static inline bool wsrep_streaming_enabl
+ }
+ 
+ /*
+-  Return number of fragments succesfully certified for the
++  Return number of fragments successfully certified for the
+   current statement.
+  */
+ static inline size_t wsrep_fragments_certified_for_stmt(THD* thd)
+--- a/storage/maria/ma_range.c
++++ b/storage/maria/ma_range.c
+@@ -252,7 +252,7 @@ static double _ma_search_pos(MARIA_HA *i
+       pages we are counting keys.
+ 
+       If this is a node then we have to search backwards to find the
+-      first occurence of the key.  The row position in a node tree
++      first occurrence of the key.  The row position in a node tree
+       is keynr (starting from 0) + offset for sub tree.  If there is
+       no sub tree to search, then we are at start of next sub tree.
+ 
+--- a/storage/connect/plgdbutl.cpp
++++ b/storage/connect/plgdbutl.cpp
+@@ -426,7 +426,7 @@ char *ExtractFromPath(PGLOBAL g, char *p
+   } // end of PlgExtractFromPath
+ 
+ /***********************************************************************/
+-/*  Check the occurence and matching of a pattern against a string.    */
++/*  Check the occurrence and matching of a pattern against a string.    */
+ /*  Because this function is only used for catalog name checking,      */
+ /*  it must be case insensitive.                                       */
+ /***********************************************************************/
+@@ -569,7 +569,7 @@ bool EvalLikePattern(LPCSTR sp, LPCSTR t
+     b = (t || !*sp);                  /*   true if %  or void strg.    */
+   else if (!t) {
+     /*******************************************************************/
+-    /*  No character to skip, check occurence of <subtring-specifier>  */
++    /*  No character to skip, check occurrence of <subtring-specifier>  */
+     /*  at the very beginning of remaining string.                     */
+     /*******************************************************************/
+     if (p) {
+@@ -583,7 +583,7 @@ bool EvalLikePattern(LPCSTR sp, LPCSTR t
+     if (p)
+       /*****************************************************************/
+       /*  Here is the case explaining why we need a recursive routine. */
+-      /*  The test must be done not only against the first occurence   */
++      /*  The test must be done not only against the first occurrence   */
+       /*  of the <substring-specifier> in the remaining string,        */
+       /*  but also with all eventual succeeding ones.                  */
+       /*****************************************************************/
+--- a/storage/connect/taboccur.cpp
++++ b/storage/connect/taboccur.cpp
+@@ -292,7 +292,7 @@ TDBOCCUR::TDBOCCUR(POCCURDEF tdp) : TDBP
+ 	Col = NULL;                        // To source column blocks array
+ 	Mult = PrepareColist(Colist);      // Multiplication factor
+ 	N = 0;									           // The current table index
+-	M = 0;                             // The occurence rank
++	M = 0;                             // The occurrence rank
+ 	RowFlag = 0;    				           // 0: Ok, 1: Same, 2: Skip
+   } // end of TDBOCCUR constructor
+ 
+@@ -431,7 +431,7 @@ int TDBOCCUR::GetMaxSize(PGLOBAL g)
+ 
+ /***********************************************************************/
+ /*  In this sample, ROWID will be the (virtual) row number,            */
+-/*  while ROWNUM will be the occurence rank in the multiple column.    */
++/*  while ROWNUM will be the occurrence rank in the multiple column.    */
+ /***********************************************************************/
+ int TDBOCCUR::RowNumber(PGLOBAL, bool b)
+ 	{
+--- a/storage/connect/taboccur.h
++++ b/storage/connect/taboccur.h
+@@ -35,7 +35,7 @@ class OCCURDEF : public PRXDEF {
+  protected:
+   // Members
+ 	char   *Colist;						 /* The source column list                 */
+-  char   *Xcol;              /* The multiple occurence column          */
++  char   *Xcol;              /* The multiple occurrence column          */
+   char   *Rcol;              /* The rank column                        */
+   }; // end of OCCURDEF
+ 
+@@ -76,12 +76,12 @@ class TDBOCCUR : public TDBPRX {
+ 	PCOL     *Col;									  // To source multiple columns
+ 	int       Mult;										// Multiplication factor
+ 	int       N;											// The current table index
+-	int		    M;                      // The occurence rank
++	int		    M;                      // The occurrence rank
+ 	BYTE      RowFlag;								// 0: Ok, 1: Same, 2: Skip
+   }; // end of class TDBOCCUR
+ 
+ /***********************************************************************/
+-/*  Class OCCURCOL: for the multiple occurence column.                 */
++/*  Class OCCURCOL: for the multiple occurrence column.                 */
+ /***********************************************************************/
+ class OCCURCOL : public COLBLK {
+  public:
+@@ -106,7 +106,7 @@ class OCCURCOL : public COLBLK {
+   }; // end of class OCCURCOL
+ 
+ /***********************************************************************/
+-/*  Class RANKCOL: for the multiple occurence column ranking.          */
++/*  Class RANKCOL: for the multiple occurrence column ranking.          */
+ /***********************************************************************/
+ class RANKCOL : public COLBLK {
+  public:
+--- a/storage/connect/tabpivot.cpp
++++ b/storage/connect/tabpivot.cpp
+@@ -405,7 +405,7 @@ TDBPIVOT::TDBPIVOT(PPIVOTDEF tdp) : TDBP
+   Accept = tdp->Accept;
+   Mult = -1;                // Estimated table size
+   N = 0;                    // The current table index
+-  M = 0;                    // The occurence rank
++  M = 0;                    // The occurrence rank
+   FileStatus = 0;           // Logical End-of-File
+   RowFlag = 0;              // 0: Ok, 1: Same, 2: Skip
+   } // end of TDBPIVOT constructor
+@@ -645,7 +645,7 @@ int TDBPIVOT::GetMaxSize(PGLOBAL g __att
+ 
+ /***********************************************************************/
+ /*  In this sample, ROWID will be the (virtual) row number,            */
+-/*  while ROWNUM will be the occurence rank in the multiple column.    */
++/*  while ROWNUM will be the occurrence rank in the multiple column.    */
+ /***********************************************************************/
+ int TDBPIVOT::RowNumber(PGLOBAL, bool b)
+   {
+--- a/storage/connect/tabpivot.h
++++ b/storage/connect/tabpivot.h
+@@ -138,7 +138,7 @@ class TDBPIVOT : public TDBPRX {
+   int     Mult;                   // Multiplication factor
+   int     Ncol;                   // The number of generated columns
+   int     N;                      // The current table index
+-  int     M;                      // The occurence rank
++  int     M;                      // The occurrence rank
+   int     Port;                   // MySQL port number 
+   BYTE    FileStatus;             // 0: First 1: Rows 2: End-of-File
+   BYTE    RowFlag;                // 0: Ok, 1: Same, 2: Skip
+--- a/storage/connect/tabutil.cpp
++++ b/storage/connect/tabutil.cpp
+@@ -536,7 +536,7 @@ int TDBPRX::GetMaxSize(PGLOBAL g)
+ 
+ /***********************************************************************/
+ /*  In this sample, ROWID will be the (virtual) row number,            */
+-/*  while ROWNUM will be the occurence rank in the multiple column.    */
++/*  while ROWNUM will be the occurrence rank in the multiple column.    */
+ /***********************************************************************/
+ int TDBPRX::RowNumber(PGLOBAL g, bool b)
+ 	{
+--- a/storage/connect/tabxcl.cpp
++++ b/storage/connect/tabxcl.cpp
+@@ -103,7 +103,7 @@ TDBXCL::TDBXCL(PXCLDEF tdp) : TDBPRX(tdp
+ 	Xcolp = NULL;										// To the XCLCOL column
+ 	Mult = tdp->Mult;								// Multiplication factor
+ 	N = 0;													// The current table index
+-	M = 0;                          // The occurence rank
++	M = 0;                          // The occurrence rank
+ 	RowFlag = 0;    								// 0: Ok, 1: Same, 2: Skip
+ 	New = TRUE;						          // TRUE for new line
+ 	Sep = tdp->Sep;                 // The Xcol separator
+@@ -142,7 +142,7 @@ int TDBXCL::GetMaxSize(PGLOBAL g)
+ 
+ /***********************************************************************/
+ /*  For this table type, ROWID is the (virtual) row number,            */
+-/*  while ROWNUM is be the occurence rank in the multiple column.      */
++/*  while ROWNUM is be the occurrence rank in the multiple column.      */
+ /***********************************************************************/
+ int TDBXCL::RowNumber(PGLOBAL, bool b)
+ 	{
+--- a/storage/connect/tabxcl.h
++++ b/storage/connect/tabxcl.h
+@@ -72,7 +72,7 @@ class TDBXCL : public TDBPRX {
+ 	PXCLCOL Xcolp;									// To the XCVCOL column
+ 	int     Mult;										// Multiplication factor
+ 	int     N;											// The current table index
+-	int			M;                      // The occurence rank
++	int			M;                      // The occurrence rank
+ 	BYTE    RowFlag;								// 0: Ok, 1: Same, 2: Skip
+ 	bool    New;						        // TRUE for new line
+ 	char    Sep;										// The Xcol separator
+--- a/storage/innobase/fts/fts0fts.cc
++++ b/storage/innobase/fts/fts0fts.cc
+@@ -1454,7 +1454,7 @@ fts_drop_table(
+ 
+ 		dict_table_close(table, TRUE, FALSE);
+ 
+-		/* Pass nonatomic=false (dont allow data dict unlock),
++		/* Pass nonatomic=false (don't allow data dict unlock),
+ 		because the transaction may hold locks on SYS_* tables from
+ 		previous calls to fts_drop_table(). */
+ 		error = row_drop_table_for_mysql(table_name, trx,
+--- a/storage/innobase/fts/fts0opt.cc
++++ b/storage/innobase/fts/fts0opt.cc
+@@ -576,7 +576,7 @@ fts_zip_read_word(
+ 		/* Finished decompressing block. */
+ 		if (zip->zp->avail_in == 0) {
+ 
+-			/* Free the block thats been decompressed. */
++			/* Free the block that's been decompressed. */
+ 			if (zip->pos > 0) {
+ 				ulint	prev = zip->pos - 1;
+ 
+--- a/storage/oqgraph/ha_oqgraph.cc
++++ b/storage/oqgraph/ha_oqgraph.cc
+@@ -567,7 +567,7 @@ int ha_oqgraph::open(const char *name, i
+ 
+   // What I think this code is doing:
+   // * Our OQGRAPH table is `database_blah/name`
+-  // * We point p --> /name (or if table happened to be simply `name`, to `name`, dont know if this is possible)
++  // * We point p --> /name (or if table happened to be simply `name`, to `name`, don't know if this is possible)
+   // * plen seems to be then set to length of `database_blah/options_data_table_name`
+   // * then we set share->normalized_path.str and share->path.str to `database_blah/options_data_table_name`
+   // * I assume that this verbiage is needed so  the memory used by share->path.str is set in the share mem root
+--- a/storage/oqgraph/mysql-test/oqgraph/boundary_conditions.result
++++ b/storage/oqgraph/mysql-test/oqgraph/boundary_conditions.result
+@@ -142,7 +142,7 @@ SELECT * FROM graph WHERE latch='-1' and
+ latch	origid	destid	weight	seq	linkid
+ Warnings:
+ Warning	1210	Incorrect arguments to OQGRAPH latch
+-# Make sure we dont crash if someone passed in a UTF string
++# Make sure we don't crash if someone passed in a UTF string
+ SELECT * FROM graph WHERE latch='Ω Ohms Tennis Ball 〄';
+ latch	origid	destid	weight	seq	linkid
+ SELECT * FROM graph WHERE latch='Ω Ohms Tennis Ball 〄' and destid=2 and origid=1;
+--- a/storage/oqgraph/mysql-test/oqgraph/boundary_conditions.test
++++ b/storage/oqgraph/mysql-test/oqgraph/boundary_conditions.test
+@@ -91,7 +91,7 @@ SELECT * FROM graph WHERE latch='-1' and
+ SELECT * FROM graph WHERE latch='-1' and origid=666;
+ SELECT * FROM graph WHERE latch='-1' and origid is NULL;
+ 
+---echo # Make sure we dont crash if someone passed in a UTF string
++--echo # Make sure we don't crash if someone passed in a UTF string
+ #-- Note the next line couter-intuitively produces no warning
+ SELECT * FROM graph WHERE latch='Ω Ohms Tennis Ball 〄';
+ SELECT * FROM graph WHERE latch='Ω Ohms Tennis Ball 〄' and destid=2 and origid=1;
+@@ -125,7 +125,7 @@ FLUSH TABLES;
+ 
+ TRUNCATE TABLE graph_base;
+ #-- Uncomment the following after fixing https://bugs.launchpad.net/oqgraph/+bug/xxxxxxx - Causes the later select to not fail!
+-#-- For now dont report a separate bug as it may be a manifestation of https://bugs.launchpad.net/oqgraph/+bug/1195735
++#-- For now don't report a separate bug as it may be a manifestation of https://bugs.launchpad.net/oqgraph/+bug/1195735
+ SELECT * FROM graph;
+ 
+ #-- Expect error if we pull the table out from under
+--- a/storage/oqgraph/mysql-test/oqgraph/create_attr_legacy.test
++++ b/storage/oqgraph/mysql-test/oqgraph/create_attr_legacy.test
+@@ -26,7 +26,7 @@ CREATE TABLE backing (
+ # Here we enable scaffolding to let us create a deprecated table
+ # so we can check that the new code will still allow queries to be performed
+ # on a legacy database
+-# It should still generate a warning (1287) - but I dont know how to test for that
++# It should still generate a warning (1287) - but I don't know how to test for that
+ #
+ #   latch SMALLINT UNSIGNED NULL' is deprecated and will be removed in a future
+ #   release. Please use 'latch VARCHAR(32) NULL' instead
+--- a/storage/oqgraph/mysql-test/oqgraph/legacy_upgrade.test
++++ b/storage/oqgraph/mysql-test/oqgraph/legacy_upgrade.test
+@@ -13,7 +13,7 @@ CREATE TABLE graph_base (
+ # Backwards compatibility test
+ # First we ensure the scaffolding is disabled (default situation)
+ # and check we cant create a table with an integer latch
+-# Assume this is the default, so dont explicity set false yet:
++# Assume this is the default, so don't explicity set false yet:
+ # SET GLOBAL oqgraph_allow_create_integer_latch=false;
+ --echo The next error 140 + 1005 is expected
+ --error 140
+@@ -32,7 +32,7 @@ CREATE TABLE graph (
+ # Here we enable scaffolding to let us create a deprecated table
+ # so we can check that the new code will still allow queries to be performed
+ # on a legacy database
+-# It should still generate a warning (1287) - but I dont know how to test for that
++# It should still generate a warning (1287) - but I don't know how to test for that
+ #
+ #   latch SMALLINT UNSIGNED NULL' is deprecated and will be removed in a future
+ #   release. Please use 'latch VARCHAR(32) NULL' instead
+--- a/storage/sphinx/ha_sphinx.cc
++++ b/storage/sphinx/ha_sphinx.cc
+@@ -199,7 +199,7 @@ enum ESphRankMode
+ 	SPH_RANK_PROXIMITY_BM25		= 0,	///< default mode, phrase proximity major factor and BM25 minor one
+ 	SPH_RANK_BM25				= 1,	///< statistical mode, BM25 ranking only (faster but worse quality)
+ 	SPH_RANK_NONE				= 2,	///< no ranking, all matches get a weight of 1
+-	SPH_RANK_WORDCOUNT			= 3,	///< simple word-count weighting, rank is a weighted sum of per-field keyword occurence counts
++	SPH_RANK_WORDCOUNT			= 3,	///< simple word-count weighting, rank is a weighted sum of per-field keyword occurrence counts
+ 	SPH_RANK_PROXIMITY			= 4,	///< phrase proximity
+ 	SPH_RANK_MATCHANY			= 5,	///< emulate old match-any weighting
+ 	SPH_RANK_FIELDMASK			= 6,	///< sets bits where there were matches
+--- a/storage/tokudb/PerconaFT/third_party/snappy-1.1.2/aclocal.m4
++++ b/storage/tokudb/PerconaFT/third_party/snappy-1.1.2/aclocal.m4
+@@ -8681,7 +8681,7 @@ fi[]dnl
+ # to PKG_CHECK_MODULES(), but does not set variables or print errors.
+ #
+ # Please remember that m4 expands AC_REQUIRE([PKG_PROG_PKG_CONFIG])
+-# only at the first occurence in configure.ac, so if the first place
++# only at the first occurrence in configure.ac, so if the first place
+ # it's called might be skipped (such as if it is within an "if", you
+ # have to call PKG_CHECK_EXISTS manually
+ # --------------------------------------------------------------
