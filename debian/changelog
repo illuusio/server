@@ -1,8 +1,34 @@
-mariadb-10.4 (1:10.4.12-1~exp2) UNRELEASED; urgency=medium
+mariadb-10.4 (1:10.4.12-1~exp2) experimental; urgency=medium
 
-  * Open new changelog entry. This will be replaced with `gbp dch -vR`.
+  [ Christian Göttsche ]
+  * Prevent executable stack due to objects compiled from assembly
 
- -- Otto Kekäläinen <otto@debian.org>  Thu, 27 Feb 2020 20:07:39 +0200
+  [ Bastian Germann ]
+  * Link with libedit instead of readline5 (Closes: #940879)
+
+  [ Otto Kekäläinen ]
+  * Fix mysqld crash on s390x that stemmed from WolfSSL
+  * Extend contributor README with debugging tips
+  * Clean up -dev packages from excess private files
+  * Make full contents, also header files, explicit in -dev packages
+  * Remove entire sql-bench in debian/rules to simplify not-installed listings
+  * Remove obsolete AUTH_SOCKET build flag
+  * Add missing mariadb-ldb to mariadb-plugin-rocksdb
+  * Install files that belong to mariadb-test instead of not-installed
+  * Ignore mariadb-config.1 since there is no mariadb-config binary
+  * Enforce --fail-missing in debian/rules to not miss any uninstalled files
+  * Unify server preinst and postrm server stopping function
+  * Move mariadb-upgrade to same package as mysql-upgrade and manpage
+  * Update package to use debhelper level 10
+  * Install arch dependent mariadb.pc in lib/ with patch from upstream
+  * Move binary mariadb-tzinfo-to-sql to server package like upstream has
+  * Don't install useless extra logrotate script or test config helper
+  * Add patch for man page fixes from upstream 10.5 pull request
+  * Add patch to backport spelling fixes from upstream 10.5 pull request
+  * Include new man pages for mytop and myrocks_hotbackup in packaging
+  * Use https protected nluug.nl server for upstream repo to watch
+
+ -- Otto Kekäläinen <otto@debian.org>  Tue, 17 Mar 2020 15:05:39 +0200
 
 mariadb-10.4 (1:10.4.12-1~exp1) experimental; urgency=medium
 
