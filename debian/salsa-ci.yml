@@ -12,12 +12,22 @@ variables:
   SALSA_CI_DISABLE_RC_BUGS: 0
 
 stages:
+  - pre-test
   - build
   - test
   - upgrade in Sid
   - upgrade from Buster/Stretch/Jessie
   - test extras
   - publish # Stage referenced by Salsa-CI template aptly stanza, so must exist even though not used
+
+gnitpick:
+  stage: pre-test
+  image: debian:sid
+  script:
+    # Actual Gnitpick part
+    - apt-get update -qq && apt-get -qq install --no-install-recommends --yes ca-certificates curl python3-minimal git # Bare minimal (<4MB) for apt-key and gnitpick to work
+    - curl -sS https://raw.githubusercontent.com/Seravo/gnitpick/master/gnitpick.py -o /usr/bin/gnitpick; chmod +x /usr/bin/gnitpick
+    - gnitpick --target-repository https://salsa.debian.org/mariadb-team/mariadb-10.4.git
 
 build:
   extends: .build-package
