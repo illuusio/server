@@ -1,0 +1,18 @@
+Description: fix systemd aliases 932289 / MDEV-15526
+  Aliases are not recommended in systemd unit files:
+  https://wiki.debian.org/Teams/pkg-systemd/Packaging#systemd_unit_files_naming_and_installation
+  Instead it is recommended to create static symlinks at post-installation step.
+Forwarded: https://jira.mariadb.org/browse/MDEV-15526
+Author: Faustin Lammler <faustin@fala.red>
+
+--- a/support-files/mariadb.service.in
++++ b/support-files/mariadb.service.in
+@@ -20,8 +20,6 @@
+
+ [Install]
+ WantedBy=multi-user.target
+-Alias=mysql.service
+-Alias=mysqld.service
+
+
+ [Service]
