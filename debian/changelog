@@ -1,8 +1,13 @@
-mariadb-10.4 (1:10.4.12-1) UNRELEASED; urgency=medium
+mariadb-10.4 (1:10.4.12-1~exp3) experimental; urgency=medium
 
-  * Open new changelog entry. This will be replaced with `gbp dch -vR`.
+  [ Otto Kekäläinen ]
+  * Make mariadb-client-10.4 Recommends libdbd-mariadb-perl as primary option
+  * Detect MySQL 8.0 based on undo_001 file as *.flag is buggy in mysql-8.0
 
- -- Otto Kekäläinen <otto@debian.org>  Tue, 17 Mar 2020 20:59:17 +0200
+  [ Faustin Lammler ]
+  * Fix systemd aliases (Closes: #932289)
+
+ -- Otto Kekäläinen <otto@debian.org>  Fri, 10 Apr 2020 11:03:02 +0300
 
 mariadb-10.4 (1:10.4.12-1~exp2) experimental; urgency=medium
 
