@@ -1,6 +1,9 @@
 From: =?utf-8?q?Ond=C5=99ej_Sur=C3=BD?= <ondrej@debian.org>
 Date: Wed, 22 Nov 2017 06:05:45 +0000
 Subject: Revert to using system pcre library
+Forwarded: https://jira.mariadb.org/browse/MDEV-22892
+
+This can be deleted in MariaDB 10.5 as it will become obsolete.
 
 ---
  cmake/pcre.cmake | 16 ++--------------

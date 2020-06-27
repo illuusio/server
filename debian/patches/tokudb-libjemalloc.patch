@@ -7,6 +7,8 @@ Description: tokudb: fix linking with jemalloc
  libjemalloc generated.
 Author: Adrian Bunk <bunk@debian.org>
 
+This can be deleted in MariaDB 10.5 as TokuDB has been removed.
+
 --- a/storage/tokudb/CMakeLists.txt
 +++ b/storage/tokudb/CMakeLists.txt
 @@ -69,7 +69,7 @@ ELSEIF(LIBJEMALLOC STREQUAL jemalloc)

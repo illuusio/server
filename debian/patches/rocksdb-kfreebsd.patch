@@ -1,3 +1,6 @@
+Forwarded: https://github.com/facebook/rocksdb/pull/6992
+Forwarded: https://jira.mariadb.org/browse/MDEV-19251
+
 --- a/storage/rocksdb/build_rocksdb.cmake
 +++ b/storage/rocksdb/build_rocksdb.cmake
 @@ -93,6 +93,8 @@ elseif(CMAKE_SYSTEM_NAME MATCHES "Linux"
