@@ -7,12 +7,12 @@ Author: Faustin Lammler <faustin@fala.red>
 
 --- a/support-files/mariadb.service.in
 +++ b/support-files/mariadb.service.in
-@@ -20,8 +20,6 @@
-
+@@ -26,8 +26,6 @@ After=network.target
+ 
  [Install]
  WantedBy=multi-user.target
 -Alias=mysql.service
 -Alias=mysqld.service
-
-
+ 
+ 
  [Service]

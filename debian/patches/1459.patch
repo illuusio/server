@@ -144,7 +144,7 @@ Also remove trailing space in selected files.
    Either way, one should assume that after calling "Item_sum_sp::add()" that
 --- a/sql/multi_range_read.cc
 +++ b/sql/multi_range_read.cc
-@@ -1240,7 +1240,7 @@ int DsMrr_impl::setup_two_handlers()
+@@ -1186,7 +1186,7 @@ int DsMrr_impl::setup_two_handlers()
        scans.
  
        Calling primary_file->index_end() will invoke dsmrr_close() for this object,
@@ -155,7 +155,7 @@ Also remove trailing space in selected files.
      if (primary_file->inited == handler::INDEX)
 --- a/sql/opt_range.cc
 +++ b/sql/opt_range.cc
-@@ -5745,7 +5745,7 @@ bool prepare_search_best_index_intersect
+@@ -5776,7 +5776,7 @@ bool prepare_search_best_index_intersect
      {
        idx_scan.add("chosen", true);
        if (!*scan_ptr)
@@ -281,7 +281,7 @@ Also remove trailing space in selected files.
          {
 --- a/sql/sql_class.cc
 +++ b/sql/sql_class.cc
-@@ -6708,7 +6708,7 @@ void THD::binlog_prepare_row_images(TABL
+@@ -6706,7 +6706,7 @@ void THD::binlog_prepare_row_images(TABL
  
    /**
      if there is a primary key in the table (ie, user declared PK or a
@@ -292,7 +292,7 @@ Also remove trailing space in selected files.
    if (table->s->primary_key < MAX_KEY &&
 --- a/sql/sql_class.h
 +++ b/sql/sql_class.h
-@@ -4550,7 +4550,7 @@ public:
+@@ -4553,7 +4553,7 @@ public:
     information to decide the logging format. So that cases we call decide_logging_format_2
     at later stages in execution.
     One example would be binlog format for IODKU but column with unique key is not inserted.
@@ -301,7 +301,7 @@ Also remove trailing space in selected files.
     decide_logging_format_low
  
     @returns 0 if no format is changed
-@@ -5214,7 +5214,7 @@ public:
+@@ -5218,7 +5218,7 @@ public:
    
    It is aimed at capturing SHOW EXPLAIN output, so:
    - Unlike select_result class, we don't assume that the sent data is an 
@@ -323,7 +323,7 @@ Also remove trailing space in selected files.
  
 --- a/sql/sql_lex.cc
 +++ b/sql/sql_lex.cc
-@@ -5195,7 +5195,7 @@ int st_select_lex_unit::save_union_expla
+@@ -5206,7 +5206,7 @@ int st_select_lex_unit::save_union_expla
      eu->connection_type= Explain_node::EXPLAIN_NODE_DERIVED;
    /* 
      Note: Non-merged semi-joins cannot be made out of UNIONs currently, so we
@@ -334,7 +334,7 @@ Also remove trailing space in selected files.
      eu->add_select(sl->select_number);
 --- a/sql/sql_select.cc
 +++ b/sql/sql_select.cc
-@@ -6395,18 +6395,18 @@ max_part_bit(key_part_map bits)
+@@ -6409,18 +6409,18 @@ max_part_bit(key_part_map bits)
  /**
    Add a new keuse to the specified array of KEYUSE objects
  
@@ -357,7 +357,7 @@ Also remove trailing space in selected files.
    @retval         1             otherwise
  */
  
-@@ -14877,28 +14877,28 @@ bool Item_func_eq::check_equality(THD *t
+@@ -14905,28 +14905,28 @@ bool Item_func_eq::check_equality(THD *t
                                 left_item, right_item, cond_equal);
  }
  
@@ -392,7 +392,7 @@ Also remove trailing space in selected files.
      equality lists of each Item_cond_and object assigning it to
      thd->lex->current_select->max_equal_elems.
  
-@@ -14912,7 +14912,7 @@ bool Item_func_eq::check_equality(THD *t
+@@ -14940,7 +14940,7 @@ bool Item_func_eq::check_equality(THD *t
      in a conjuction for a minimal set of multiple equality predicates.
      This set can be considered as a canonical representation of the
      sub-conjunction of the equality predicates.
@@ -401,7 +401,7 @@ Also remove trailing space in selected files.
      (=(t1.a,t2.b,t3.c) AND t2.b>5), not by
      (=(t1.a,t2.b) AND =(t1.a,t3.c) AND t2.b>5);
      while (t1.a=t2.b AND t2.b>5 AND t3.c=t4.d) is replaced by
-@@ -14923,16 +14923,16 @@ bool Item_func_eq::check_equality(THD *t
+@@ -14951,16 +14951,16 @@ bool Item_func_eq::check_equality(THD *t
      The function performs the substitution in a recursive descent by
      the condtion tree, passing to the next AND level a chain of multiple
      equality predicates which have been built at the upper levels.
@@ -423,7 +423,7 @@ Also remove trailing space in selected files.
  
      We need to do things in this order as lower AND levels need to know about
      all possible Item_equal objects in upper levels.
-@@ -14968,7 +14968,7 @@ COND *Item_cond_and::build_equal_items(T
+@@ -14996,7 +14996,7 @@ COND *Item_cond_and::build_equal_items(T
    /*
       Retrieve all conjuncts of this level detecting the equality
       that are subject to substitution by multiple equality items and
@@ -432,7 +432,7 @@ Also remove trailing space in selected files.
       found/created a multiple equality whose inference the predicate is.
   */
    while ((item= li++))
-@@ -25506,7 +25506,7 @@ void free_underlaid_joins(THD *thd, SELE
+@@ -25534,7 +25534,7 @@ void free_underlaid_joins(THD *thd, SELE
  ****************************************************************************/
  
  /**
@@ -485,7 +485,7 @@ Also remove trailing space in selected files.
  /*  Because this function is only used for catalog name checking,      */
  /*  it must be case insensitive.                                       */
  /***********************************************************************/
-@@ -569,7 +569,7 @@ bool EvalLikePattern(LPCSTR sp, LPCSTR t
+@@ -571,7 +571,7 @@ bool EvalLikePattern(LPCSTR sp, LPCSTR t
      b = (t || !*sp);                  /*   true if %  or void strg.    */
    else if (!t) {
      /*******************************************************************/
@@ -494,7 +494,7 @@ Also remove trailing space in selected files.
      /*  at the very beginning of remaining string.                     */
      /*******************************************************************/
      if (p) {
-@@ -583,7 +583,7 @@ bool EvalLikePattern(LPCSTR sp, LPCSTR t
+@@ -585,7 +585,7 @@ bool EvalLikePattern(LPCSTR sp, LPCSTR t
      if (p)
        /*****************************************************************/
        /*  Here is the case explaining why we need a recursive routine. */
@@ -633,7 +633,7 @@ Also remove trailing space in selected files.
  	char    Sep;										// The Xcol separator
 --- a/storage/innobase/fts/fts0fts.cc
 +++ b/storage/innobase/fts/fts0fts.cc
-@@ -1454,7 +1454,7 @@ fts_drop_table(
+@@ -1447,7 +1447,7 @@ fts_drop_table(
  
  		dict_table_close(table, TRUE, FALSE);
  

@@ -1,8 +1,9 @@
-mariadb-10.4 (1:10.4.12-1~exp4) UNRELEASED; urgency=medium
+mariadb-10.4 (1:10.4.13-1~exp1) UNRELEASED; urgency=medium
 
   * Open new changelog entry. This will be replaced with `gbp dch -vR`.
+  * New upstream version 10.4.13
 
- -- Otto Kekäläinen <otto@debian.org>  Sat, 27 Jun 2020 16:27:26 +0300
+ -- Otto Kekäläinen <otto@debian.org>  Sat, 27 Jun 2020 16:44:32 +0300
 
 mariadb-10.4 (1:10.4.12-1~exp3) experimental; urgency=medium
 

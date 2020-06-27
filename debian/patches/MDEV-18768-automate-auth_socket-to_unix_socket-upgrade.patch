@@ -5,9 +5,9 @@ Last-Update: 2019-04-18
 
 --- a/scripts/mysql_system_tables_fix.sql
 +++ b/scripts/mysql_system_tables_fix.sql
-@@ -171,6 +171,13 @@ ALTER TABLE user
- ALTER TABLE user
-   ADD Password char(41) character set latin1 collate latin1_bin NOT NULL default '' AFTER User;
+@@ -179,6 +179,13 @@ UPDATE user
+ DELETE FROM plugin
+   WHERE name='auth_socket';
  
 +# In MySQL the Unix socket authentication plugin has a different name than in MariaDB
 +# and thus the references to if needs to be renamed in the user table.

@@ -138,9 +138,9 @@ Subject: [PATCH 1/5] Add missing man pages for myrocks_hotbackup
 --- a/man/CMakeLists.txt
 +++ b/man/CMakeLists.txt
 @@ -26,13 +26,13 @@ SET(MAN1_SERVER innochecksum.1 my_print_
- 		mysqld_safe_helper.1 tokuftdump.1 wsrep_sst_common.1
+ 		mysqld_safe_helper.1 wsrep_sst_common.1
  		wsrep_sst_mysqldump.1 wsrep_sst_rsync.1
- 		galera_recovery.1 galera_new_cluster.1 tokuft_logprint.1
+ 		galera_recovery.1 galera_new_cluster.1
 -		mysql_ldb.1
 +		mysql_ldb.1 myrocks_hotbackup.1
  		wsrep_sst_mariabackup.1 mbstream.1 mariabackup.1
@@ -153,7 +153,7 @@ Subject: [PATCH 1/5] Add missing man pages for myrocks_hotbackup
                  mysql_plugin.1 mysql_embedded.1)
  SET(MAN1_DEVEL mysql_config.1)
  SET(MAN1_TEST mysql-stress-test.pl.1 mysql-test-run.pl.1 mysql_client_test.1
-@@ -79,7 +79,7 @@ endmacro(MARIADB_SYMLINK_MANPAGE)
+@@ -80,7 +80,7 @@ endmacro(MARIADB_SYMLINK_MANPAGE)
  macro(MARIADB_SYMLINK_MANPAGE_CREATE mysqlname index mannr dir comp)
    LIST(GET MARIADB_SYMLINK_TOS ${index} _mariadbname)
    SET(dest "${CMAKE_CURRENT_BINARY_DIR}/${_mariadbname}.${mannr}")
