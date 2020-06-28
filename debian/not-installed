@@ -10,6 +10,8 @@ usr/bin/sst_dump
 usr/bin/test-connect-t
 usr/bin/wsrep_sst_xtrabackup
 usr/bin/wsrep_sst_xtrabackup-v2
+usr/lib/sysusers.d/mariadb.conf
+usr/lib/tmpfiles.d/mariadb.conf
 usr/sbin/rcmysql
 usr/share/doc/mariadb-server-10.4/COPYING
 usr/share/doc/mariadb-server-10.4/COPYING.AGPLv3
