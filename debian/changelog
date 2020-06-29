@@ -1,6 +1,5 @@
-mariadb-10.4 (1:10.4.13-1~exp1) UNRELEASED; urgency=medium
+mariadb-10.4 (1:10.4.13-1~exp1) experimental; urgency=medium
 
-  * Open new changelog entry. This will be replaced with `gbp dch -vR`.
   * New upstream version 10.4.13. Includes security fixes for:
     - CVE-2020-2752
     - CVE-2020-2760
@@ -9,8 +8,12 @@ mariadb-10.4 (1:10.4.13-1~exp1) UNRELEASED; urgency=medium
     - CVE-2020-13249
   - Inludes fix for MDEV-21586: Server does not start if lc_messages setting
     was not English (Closes: #951059)
+  * Restructure and extend d/copyright to cover libmariadb (Closes: #962541)
+  * Simplify autopkgtest 'smoke' to be easier to debug
+  * Add patch to fix RocksDB detection of ZSTD
+  * Update libmariadb symbols for upstream release 3.1.8
 
- -- Otto Kekäläinen <otto@debian.org>  Sat, 27 Jun 2020 16:44:32 +0300
+ -- Otto Kekäläinen <otto@debian.org>  Mon, 29 Jun 2020 09:47:07 +0300
 
 mariadb-10.4 (1:10.4.12-1~exp3) experimental; urgency=medium
 
