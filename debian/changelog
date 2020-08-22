@@ -17,7 +17,7 @@ mariadb-10.4 (1:10.4.13-1~exp1) experimental; urgency=medium
     - CVE-2020-2812
     - CVE-2020-2814
     - CVE-2020-13249
-  - Inludes fix for MDEV-21586: Server does not start if lc_messages setting
+  - Includes fix for MDEV-21586: Server does not start if lc_messages setting
     was not English (Closes: #951059)
   * Restructure and extend d/copyright to cover libmariadb (Closes: #962541)
   * Simplify autopkgtest 'smoke' to be easier to debug

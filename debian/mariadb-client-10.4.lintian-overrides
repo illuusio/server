@@ -1,3 +1,0 @@
-# The .so strings inside the file are part of the text body, not man page includes.
-bad-so-link-within-manual-page usr/share/man/man1/mariadb-binlog.1.gz
-bad-so-link-within-manual-page usr/share/man/man1/mariadb-plugin.1.gz
