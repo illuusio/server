@@ -13,8 +13,6 @@ Forwarded: https://github.com/wolfSSL/wolfssl/pull/2831
  extra/wolfssl/wolfssl/wolfcrypt/src/sp_x86_64_asm.S | 4 ++++
  7 files changed, 28 insertions(+)
 
-diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/aes_gcm_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/aes_gcm_asm.S
-index e878690..59ea5e7 100644
 --- a/extra/wolfssl/wolfssl/wolfcrypt/src/aes_gcm_asm.S
 +++ b/extra/wolfssl/wolfssl/wolfcrypt/src/aes_gcm_asm.S
 @@ -8731,3 +8731,7 @@ L_AES_GCM_decrypt_avx2_cmp_tag_done:
@@ -25,8 +23,6 @@ index e878690..59ea5e7 100644
 +#if defined(__ELF__) && defined(__linux__)
 +	.section	.note.GNU-stack,"",%progbits
 +#endif
-diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/chacha_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/chacha_asm.S
-index f9d5fff..eee5dec 100644
 --- a/extra/wolfssl/wolfssl/wolfcrypt/src/chacha_asm.S
 +++ b/extra/wolfssl/wolfssl/wolfcrypt/src/chacha_asm.S
 @@ -1418,3 +1418,7 @@ L_chacha20_avx2_end256:
@@ -37,8 +33,6 @@ index f9d5fff..eee5dec 100644
 +#if defined(__ELF__) && defined(__linux__)
 +	.section	.note.GNU-stack,"",%progbits
 +#endif
-diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/fe_x25519_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/fe_x25519_asm.S
-index 6d0f638..521d6bb 100644
 --- a/extra/wolfssl/wolfssl/wolfcrypt/src/fe_x25519_asm.S
 +++ b/extra/wolfssl/wolfssl/wolfcrypt/src/fe_x25519_asm.S
 @@ -16540,3 +16540,7 @@ _fe_ge_sub_avx2:
@@ -49,8 +43,6 @@ index 6d0f638..521d6bb 100644
 +#if defined(__ELF__) && defined(__linux__)
 +	.section	.note.GNU-stack,"",%progbits
 +#endif
-diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/poly1305_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/poly1305_asm.S
-index 9571107..f934a53 100644
 --- a/extra/wolfssl/wolfssl/wolfcrypt/src/poly1305_asm.S
 +++ b/extra/wolfssl/wolfssl/wolfcrypt/src/poly1305_asm.S
 @@ -1103,3 +1103,7 @@ L_poly1305_avx2_final_cmp_copy:
@@ -61,8 +53,6 @@ index 9571107..f934a53 100644
 +#if defined(__ELF__) && defined(__linux__)
 +	.section	.note.GNU-stack,"",%progbits
 +#endif
-diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/sha256_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/sha256_asm.S
-index c433d34..e12773b 100644
 --- a/extra/wolfssl/wolfssl/wolfcrypt/src/sha256_asm.S
 +++ b/extra/wolfssl/wolfssl/wolfcrypt/src/sha256_asm.S
 @@ -22651,3 +22651,7 @@ L_sha256_len_avx2_rorx_done:
@@ -73,8 +63,6 @@ index c433d34..e12773b 100644
 +#if defined(__ELF__) && defined(__linux__)
 +	.section	.note.GNU-stack,"",%progbits
 +#endif
-diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/sha512_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/sha512_asm.S
-index 6a27ce4..761f802 100644
 --- a/extra/wolfssl/wolfssl/wolfcrypt/src/sha512_asm.S
 +++ b/extra/wolfssl/wolfssl/wolfcrypt/src/sha512_asm.S
 @@ -10739,3 +10739,7 @@ L_sha512_len_avx2_rorx_done:
@@ -85,8 +73,6 @@ index 6a27ce4..761f802 100644
 +#if defined(__ELF__) && defined(__linux__)
 +	.section	.note.GNU-stack,"",%progbits
 +#endif
-diff --git a/extra/wolfssl/wolfssl/wolfcrypt/src/sp_x86_64_asm.S b/extra/wolfssl/wolfssl/wolfcrypt/src/sp_x86_64_asm.S
-index c6941f1..c807345 100644
 --- a/extra/wolfssl/wolfssl/wolfcrypt/src/sp_x86_64_asm.S
 +++ b/extra/wolfssl/wolfssl/wolfcrypt/src/sp_x86_64_asm.S
 @@ -41828,3 +41828,7 @@ _sp_384_mul_d_avx2_6:

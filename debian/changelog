@@ -1,8 +1,13 @@
-mariadb-10.4 (1:10.4.13-1~exp2) UNRELEASED; urgency=medium
+mariadb-10.4 (1:10.4.14-1~exp1) UNRELEASED; urgency=medium
 
-  * Open new changelog entry. This will be replaced with `gbp dch -vR`.
+  [ Otto Kekäläinen ]
+  * New upstream version 10.4.14
+  * Extend Salsa-CI with Gnitpick
 
- -- Otto Kekäläinen <otto@debian.org>  Wed, 01 Jul 2020 08:35:22 +0300
+  [ Christian Göttsche ]
+  * Prevent executable stack due to objects compiled from assembly
+
+ -- Otto Kekäläinen <otto@debian.org>  Sat, 22 Aug 2020 11:47:24 +0300
 
 mariadb-10.4 (1:10.4.13-1~exp1) experimental; urgency=medium
 

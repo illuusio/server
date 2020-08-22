@@ -13,11 +13,9 @@ mips-compilation-failure-__bss_start-symbol-miss.patch
 tokudb-libjemalloc.patch
 MDEV-18768-automate-auth_socket-to_unix_socket-upgrade.patch
 rocksdb-kfreebsd.patch
-libmariadb-kfreebsd.patch
 mroonga-path-reproducible-build.patch
 mtr-plugin-path.patch
 1460.patch
 1459.patch
 fix-systemd-alias.patch
-1612.patch
 prevent-executable-stack-due-to-objects-compiled-fro.patch

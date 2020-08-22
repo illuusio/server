@@ -111,17 +111,6 @@ Also remove trailing space in selected files.
  #         when we use SET TIMESTAMP= 1 on a regular client connection.
  #     vi) check that when setting slow_query_log= OFF in a connection 'extra2'
  #         prevents logging slow queries in a connection 'extra'
---- a/sql/field_conv.cc
-+++ b/sql/field_conv.cc
-@@ -230,7 +230,7 @@ static void do_skip(Copy_field *copy __a
- 
-   note: if the record we're copying from is NULL-complemetned (i.e. 
-   from_field->table->null_row==1), it will also have all NULLable columns to be
--  set to NULLs, so we dont need to check table->null_row here.
-+  set to NULLs, so we don't need to check table->null_row here.
- */
- 
- static void do_copy_null(Copy_field *copy)
 --- a/sql/item_sum.h
 +++ b/sql/item_sum.h
 @@ -1311,7 +1311,7 @@ struct st_sp_security_context;
@@ -155,7 +144,7 @@ Also remove trailing space in selected files.
      if (primary_file->inited == handler::INDEX)
 --- a/sql/opt_range.cc
 +++ b/sql/opt_range.cc
-@@ -5776,7 +5776,7 @@ bool prepare_search_best_index_intersect
+@@ -5793,7 +5793,7 @@ bool prepare_search_best_index_intersect
      {
        idx_scan.add("chosen", true);
        if (!*scan_ptr)
@@ -166,7 +155,7 @@ Also remove trailing space in selected files.
        *scan_ptr= *index_scan;
 --- a/sql/opt_subselect.cc
 +++ b/sql/opt_subselect.cc
-@@ -2204,7 +2204,7 @@ int pull_out_semijoin_tables(JOIN *join)
+@@ -2203,7 +2203,7 @@ int pull_out_semijoin_tables(JOIN *join)
      /*
        Don't do table pull-out for nested joins (if we get nested joins here, it
        means these are outer joins. It is theoretically possible to do pull-out
@@ -177,7 +166,7 @@ Also remove trailing space in selected files.
  
 --- a/sql/rpl_parallel.cc
 +++ b/sql/rpl_parallel.cc
-@@ -793,7 +793,7 @@ do_retry:
+@@ -813,7 +813,7 @@ do_retry:
      else
      {
        /*
@@ -197,80 +186,9 @@ Also remove trailing space in selected files.
                   or it does not exist.
    @retval non-0  Error while loading routine from mysql,proc table.
  */
---- a/sql/sp_cache.cc
-+++ b/sql/sp_cache.cc
-@@ -27,7 +27,7 @@ static ulong volatile Cversion= 1;
- 
- 
- /*
--  Cache of stored routines. 
-+  Cache of stored routines.
- */
- 
- class sp_cache
-@@ -149,8 +149,8 @@ void sp_cache_end()
-     sp_cache_insert()
-      cp  The cache to put routine into
-      sp  Routine to insert.
--      
--  TODO: Perhaps it will be more straightforward if in case we returned an 
-+
-+  TODO: Perhaps it will be more straightforward if in case we returned an
-         error from this function when we couldn't allocate sp_cache. (right
-         now failure to put routine into cache will cause a 'SP not found'
-         error to be reported at some later time)
-@@ -173,18 +173,18 @@ void sp_cache_insert(sp_cache **cp, sp_h
- }
- 
- 
--/* 
-+/*
-   Look up a routine in the cache.
-   SYNOPSIS
-     sp_cache_lookup()
-       cp    Cache to look into
-       name  Name of rutine to find
--      
-+
-   NOTE
-     An obsolete (but not more obsolete then since last
-     sp_cache_flush_obsolete call) routine may be returned.
- 
--  RETURN 
-+  RETURN
-     The routine or
-     NULL if the routine not found.
- */
-@@ -204,7 +204,7 @@ sp_head *sp_cache_lookup(sp_cache **cp,
- 
-   SYNOPSIS
-     sp_cache_invalidate()
--      
-+
-   NOTE
-     This is called when a VIEW definition is created or modified (and in some
-     other contexts). We can't destroy sp_head objects here as one may modify
-@@ -225,7 +225,7 @@ void sp_cache_invalidate()
-   @param[in] sp  SP to remove.
- 
-   @note This invalidates pointers to sp_head objects this thread
--  uses. In practice that means 'dont call this function when
-+  uses. In practice that means don't call this function when
-   inside SP'.
- */
- 
-@@ -264,7 +264,7 @@ sp_cache_enforce_limit(sp_cache *c, ulon
- }
- 
- /*************************************************************************
--  Internal functions 
-+  Internal functions
-  *************************************************************************/
- 
- extern "C" uchar *hash_get_key_for_sp_head(const uchar *ptr, size_t *plen,
 --- a/sql/sp_head.cc
 +++ b/sql/sp_head.cc
-@@ -1396,7 +1396,7 @@ sp_head::execute(THD *thd, bool merge_da
+@@ -1399,7 +1399,7 @@ sp_head::execute(THD *thd, bool merge_da
  
          /*
            Reset the return code to zero if the transaction was
@@ -281,7 +199,7 @@ Also remove trailing space in selected files.
          {
 --- a/sql/sql_class.cc
 +++ b/sql/sql_class.cc
-@@ -6706,7 +6706,7 @@ void THD::binlog_prepare_row_images(TABL
+@@ -6729,7 +6729,7 @@ void THD::binlog_prepare_row_images(TABL
  
    /**
      if there is a primary key in the table (ie, user declared PK or a
@@ -292,7 +210,7 @@ Also remove trailing space in selected files.
    if (table->s->primary_key < MAX_KEY &&
 --- a/sql/sql_class.h
 +++ b/sql/sql_class.h
-@@ -4553,7 +4553,7 @@ public:
+@@ -4565,7 +4565,7 @@ public:
     information to decide the logging format. So that cases we call decide_logging_format_2
     at later stages in execution.
     One example would be binlog format for IODKU but column with unique key is not inserted.
@@ -301,15 +219,6 @@ Also remove trailing space in selected files.
     decide_logging_format_low
  
     @returns 0 if no format is changed
-@@ -5218,7 +5218,7 @@ public:
-   
-   It is aimed at capturing SHOW EXPLAIN output, so:
-   - Unlike select_result class, we don't assume that the sent data is an 
--    output of a SELECT_LEX_UNIT (and so we dont apply "LIMIT x,y" from the
-+    output of a SELECT_LEX_UNIT (and so we don't apply "LIMIT x,y" from the
-     unit)
-   - We don't try to convert the target table to MyISAM 
- */
 --- a/sql/sql_expression_cache.h
 +++ b/sql/sql_expression_cache.h
 @@ -152,7 +152,7 @@ private:
@@ -323,7 +232,7 @@ Also remove trailing space in selected files.
  
 --- a/sql/sql_lex.cc
 +++ b/sql/sql_lex.cc
-@@ -5206,7 +5206,7 @@ int st_select_lex_unit::save_union_expla
+@@ -5213,7 +5213,7 @@ int st_select_lex_unit::save_union_expla
      eu->connection_type= Explain_node::EXPLAIN_NODE_DERIVED;
    /* 
      Note: Non-merged semi-joins cannot be made out of UNIONs currently, so we
@@ -332,118 +241,9 @@ Also remove trailing space in selected files.
    */
    for (SELECT_LEX *sl= first; sl; sl= sl->next_select())
      eu->add_select(sl->select_number);
---- a/sql/sql_select.cc
-+++ b/sql/sql_select.cc
-@@ -6409,18 +6409,18 @@ max_part_bit(key_part_map bits)
- /**
-   Add a new keuse to the specified array of KEYUSE objects
- 
--  @param[in,out]  keyuse_array  array of keyuses to be extended 
-+  @param[in,out]  keyuse_array  array of keyuses to be extended
-   @param[in]      key_field     info on the key use occurrence
-   @param[in]      key           key number for the keyse to be added
-   @param[in]      part          key part for the keyuse to be added
- 
-   @note
-   The function builds a new KEYUSE object for a key use utilizing the info
--  on the left and right parts of the given key use  extracted from the 
--  structure key_field, the key number and key part for this key use. 
-+  on the left and right parts of the given key use  extracted from the
-+  structure key_field, the key number and key part for this key use.
-   The built object is added to the dynamic array keyuse_array.
- 
--  @retval         0             the built object is succesfully added 
-+  @retval         0             the built object is successfully added
-   @retval         1             otherwise
- */
- 
-@@ -14905,28 +14905,28 @@ bool Item_func_eq::check_equality(THD *t
-                                left_item, right_item, cond_equal);
- }
- 
--                          
-+
- /**
-   Item_xxx::build_equal_items()
--  
-+
-   Replace all equality predicates in a condition referenced by "this"
-   by multiple equality items.
- 
-     At each 'and' level the function detects items for equality predicates
-     and replaced them by a set of multiple equality items of class Item_equal,
--    taking into account inherited equalities from upper levels. 
-+    taking into account inherited equalities from upper levels.
-     If an equality predicate is used not in a conjunction it's just
-     replaced by a multiple equality predicate.
-     For each 'and' level the function set a pointer to the inherited
-     multiple equalities in the cond_equal field of the associated
--    object of the type Item_cond_and.   
-+    object of the type Item_cond_and.
-     The function also traverses the cond tree and and for each field reference
-     sets a pointer to the multiple equality item containing the field, if there
-     is any. If this multiple equality equates fields to a constant the
--    function replaces the field reference by the constant in the cases 
-+    function replaces the field reference by the constant in the cases
-     when the field is not of a string type or when the field reference is
-     just an argument of a comparison predicate.
--    The function also determines the maximum number of members in 
-+    The function also determines the maximum number of members in
-     equality lists of each Item_cond_and object assigning it to
-     thd->lex->current_select->max_equal_elems.
- 
-@@ -14940,7 +14940,7 @@ bool Item_func_eq::check_equality(THD *t
-     in a conjuction for a minimal set of multiple equality predicates.
-     This set can be considered as a canonical representation of the
-     sub-conjunction of the equality predicates.
--    E.g. (t1.a=t2.b AND t2.b>5 AND t1.a=t3.c) is replaced by 
-+    E.g. (t1.a=t2.b AND t2.b>5 AND t1.a=t3.c) is replaced by
-     (=(t1.a,t2.b,t3.c) AND t2.b>5), not by
-     (=(t1.a,t2.b) AND =(t1.a,t3.c) AND t2.b>5);
-     while (t1.a=t2.b AND t2.b>5 AND t3.c=t4.d) is replaced by
-@@ -14951,16 +14951,16 @@ bool Item_func_eq::check_equality(THD *t
-     The function performs the substitution in a recursive descent by
-     the condtion tree, passing to the next AND level a chain of multiple
-     equality predicates which have been built at the upper levels.
--    The Item_equal items built at the level are attached to other 
-+    The Item_equal items built at the level are attached to other
-     non-equality conjucts as a sublist. The pointer to the inherited
-     multiple equalities is saved in the and condition object (Item_cond_and).
--    This chain allows us for any field reference occurence easyly to find a 
--    multiple equality that must be held for this occurence.
-+    This chain allows us for any field reference occurrence easyly to find a
-+    multiple equality that must be held for this occurrence.
-     For each AND level we do the following:
-     - scan it for all equality predicate (=) items
-     - join them into disjoint Item_equal() groups
--    - process the included OR conditions recursively to do the same for 
--      lower AND levels. 
-+    - process the included OR conditions recursively to do the same for
-+      lower AND levels.
- 
-     We need to do things in this order as lower AND levels need to know about
-     all possible Item_equal objects in upper levels.
-@@ -14996,7 +14996,7 @@ COND *Item_cond_and::build_equal_items(T
-   /*
-      Retrieve all conjuncts of this level detecting the equality
-      that are subject to substitution by multiple equality items and
--     removing each such predicate from the conjunction after having 
-+     removing each such predicate from the conjunction after having
-      found/created a multiple equality whose inference the predicate is.
-  */
-   while ((item= li++))
-@@ -25534,7 +25534,7 @@ void free_underlaid_joins(THD *thd, SELE
- ****************************************************************************/
- 
- /**
--  Replace occurences of group by fields in an expression by ref items.
-+  Replace occurrences of group by fields in an expression by ref items.
- 
-   The function replaces occurrences of group by fields in expr
-   by ref objects for these fields unless they are under aggregate
 --- a/sql/sys_vars.cc
 +++ b/sql/sys_vars.cc
-@@ -3390,7 +3390,7 @@ export sql_mode_t expand_sql_mode(sql_mo
+@@ -3401,7 +3401,7 @@ export sql_mode_t expand_sql_mode(sql_mo
    if (sql_mode & MODE_ANSI)
    {
      /*
@@ -578,17 +378,6 @@ Also remove trailing space in selected files.
  /***********************************************************************/
  int TDBPIVOT::RowNumber(PGLOBAL, bool b)
    {
---- a/storage/connect/tabpivot.h
-+++ b/storage/connect/tabpivot.h
-@@ -138,7 +138,7 @@ class TDBPIVOT : public TDBPRX {
-   int     Mult;                   // Multiplication factor
-   int     Ncol;                   // The number of generated columns
-   int     N;                      // The current table index
--  int     M;                      // The occurence rank
-+  int     M;                      // The occurrence rank
-   int     Port;                   // MySQL port number 
-   BYTE    FileStatus;             // 0: First 1: Rows 2: End-of-File
-   BYTE    RowFlag;                // 0: Ok, 1: Same, 2: Skip
 --- a/storage/connect/tabutil.cpp
 +++ b/storage/connect/tabutil.cpp
 @@ -536,7 +536,7 @@ int TDBPRX::GetMaxSize(PGLOBAL g)
@@ -633,7 +422,7 @@ Also remove trailing space in selected files.
  	char    Sep;										// The Xcol separator
 --- a/storage/innobase/fts/fts0fts.cc
 +++ b/storage/innobase/fts/fts0fts.cc
-@@ -1447,7 +1447,7 @@ fts_drop_table(
+@@ -1450,7 +1450,7 @@ fts_drop_table(
  
  		dict_table_close(table, TRUE, FALSE);
  

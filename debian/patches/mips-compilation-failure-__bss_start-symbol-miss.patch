@@ -20,7 +20,7 @@ and will correctly detect if __bss_start will be available or not.
 
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -339,6 +339,8 @@ ELSE()
+@@ -343,6 +343,8 @@ ELSE()
    SET(DEFAULT_TMPDIR "\"${TMPDIR}\"")
  ENDIF()
  
@@ -29,7 +29,7 @@ and will correctly detect if __bss_start will be available or not.
  # Run platform tests
  INCLUDE(configure.cmake)
  
-@@ -370,8 +372,6 @@ SET(MALLOC_LIBRARY "system")
+@@ -374,8 +376,6 @@ SET(MALLOC_LIBRARY "system")
  
  CHECK_PCRE()
  
@@ -52,7 +52,7 @@ and will correctly detect if __bss_start will be available or not.
        IF(PKG_CONFIG_FOUND)
 --- a/configure.cmake
 +++ b/configure.cmake
-@@ -134,6 +134,9 @@ IF(UNIX)
+@@ -139,6 +139,9 @@ IF(UNIX)
  
    SET(CMAKE_REQUIRED_LIBRARIES 
      ${LIBM} ${LIBNSL} ${LIBBIND} ${LIBCRYPT} ${LIBSOCKET} ${LIBDL} ${CMAKE_THREAD_LIBS_INIT} ${LIBRT} ${LIBEXECINFO})
