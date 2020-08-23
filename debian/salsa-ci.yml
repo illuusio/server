@@ -110,7 +110,7 @@ fresh install:
     # Verify installation of MariaDB built in this commit
     - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
     - mariadb --version # Client version
-    - service mysql status
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.5
     - mkdir -p debug # Ensure dir exists before using it
     - find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
     - cp -ra /etc/mysql debug/etc-mysql
@@ -271,7 +271,7 @@ test basic features:
     # Verify installation of MariaDB built in this commit
     - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
     - mariadb --version # Client version
-    - service mysql status
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.5
     - mkdir -p debug # Ensure dir exists before using it
     - find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
     - cp -ra /etc/mysql debug/etc-mysql
@@ -364,7 +364,8 @@ libmysql* to libmariadb* upgrade:
     - pkg-config --list-all
     - pkg-config --cflags --libs mysqlclient
     - pkg-config --cflags --libs libmariadb
-    - pkg-config --cflags --libs mariadb
+    # Disable until https://jira.mariadb.org/browse/MDEV-23538 is resolved
+    # - pkg-config --cflags --libs mariadb
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
@@ -390,7 +391,8 @@ default-libmysqlclient-dev upgrade:
     - pkg-config --list-all
     - pkg-config --cflags --libs mysqlclient
     - pkg-config --cflags --libs libmariadb
-    - pkg-config --cflags --libs mariadb
+    # Disable until https://jira.mariadb.org/browse/MDEV-23538 is resolved
+    # - pkg-config --cflags --libs mariadb
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
@@ -418,7 +420,8 @@ default-libmysqlclient-dev on buster upgrade:
     - pkg-config --list-all
     - pkg-config --cflags --libs mysqlclient
     - pkg-config --cflags --libs libmariadb
-    - pkg-config --cflags --libs mariadb
+    # Disable until https://jira.mariadb.org/browse/MDEV-23538 is resolved
+    # - pkg-config --cflags --libs mariadb
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
@@ -446,7 +449,8 @@ default-libmysqlclient-dev on stretch upgrade:
     - pkg-config --list-all
     - pkg-config --cflags --libs mysqlclient
     - pkg-config --cflags --libs libmariadb
-    - pkg-config --cflags --libs mariadb
+    # Disable until https://jira.mariadb.org/browse/MDEV-23538 is resolved
+    # - pkg-config --cflags --libs mariadb
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
@@ -474,7 +478,8 @@ mariadb-connector-c on stretch upgrade:
     - pkg-config --list-all
     - pkg-config --cflags --libs mysqlclient
     - pkg-config --cflags --libs libmariadb
-    - pkg-config --cflags --libs mariadb
+    # Disable until https://jira.mariadb.org/browse/MDEV-23538 is resolved
+    # - pkg-config --cflags --libs mariadb
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/

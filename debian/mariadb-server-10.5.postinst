@@ -18,20 +18,46 @@ ERR_LOGGER="logger -p daemon.err -t mariadb-server-$MAJOR_VER.postinst -i"
 # the install, rather than failing silently and leaving a broken install.
 set -o pipefail
 
-MYSQL_BOOTSTRAP="/usr/sbin/mysqld --bootstrap --user=mysql --disable-log-bin --skip-grant-tables --default-storage-engine=myisam"
-
 case "$1" in
   configure)
-    # This is needed because mysql_install_db removes the pid file in /var/run
+    # This is needed because mysql_install_db removes the pid file in /run
     # and because changed configuration options should take effect immediately.
     # In case the server wasn't running at all it should be ok if the stop
-    # script fails. I can't tell at this point because of the cleaned /var/run.
-    set +e; invoke-rc.d mysql stop; set -e
+    # script fails. I can't tell at this point because of the cleaned /run.
+    set +e; invoke-rc.d mariadb stop; set -e
+
+    # An existing /etc/init.d/mysql might be on the system if there was a
+    # previous MySQL or MariaDB installation, since /etc/init.d files are
+    # considered config files and stay around even after the package is removed.
+    #
+    # The install step of this package adds a new /etc/init.d/mariadb file. As
+    # we also want to ensure that there are no old (and potentially outdated)
+    # versions of /etc/init.d/mysql we simply replace it using a copy of the
+    # latest 'mariadb' file. This has also the added benefit that anything that
+    # invokes traditional sysv init with either 'mysql' or 'mariadb' will end up
+    # controlling this newly installed MariaDB, and thus we maintain better
+    # backwards compatiblity.
+    #
+    # Note that the 'Provides' line is also updated to avoid 'insserv' exiting
+    # on failure (when it is run by update-rc.d) because of duplicate service
+    # names.
+    if [ -f "/etc/init.d/mysql" ] && [ -f "/etc/init.d/mariadb" ]
+    then
+      # Copy init file and rename the service name and filename on the fly
+      sed 's/Provides:          mariadb/Provides:          mysql/g' /etc/init.d/mariadb > /etc/init.d/mysql
+      # NOTE: Number of spaces/tabs is important here!
+      # Confirm if the sed worked
+      if ! grep --quiet "Provides:          mysql" /etc/init.d/mysql
+      then
+        # If not, then delete the file to avoid failures later on
+        rm -f /etc/init.d/mysql
+        echo "Warning! Failed creating a mysql named copy of mariadb init.d file"
+      fi
+    fi
 
     mysql_statedir=/usr/share/mysql
     mysql_datadir=/var/lib/mysql
     mysql_logdir=/var/log/mysql
-    mysql_rundir=/var/run/mysqld
     mysql_cfgdir=/etc/mysql
     mysql_upgradedir=/var/lib/mysql-upgrade
 
@@ -94,11 +120,24 @@ EOF
     chmod 2750 $mysql_logdir
     set -e
 
-    # Set the correct filesystem ownership for the PAM v2 plugin
-    # eg. /usr/lib/x86_64-linux-gnu/mariadb19/plugin/auth_pam_tool_dir/
-    chown mysql /usr/lib/*/*/plugin/auth_pam_tool_dir
-    chmod 0700 /usr/lib/*/*/plugin/auth_pam_tool_dir/auth_pam_tool
-    chmod 04755 /usr/lib/*/*/plugin/auth_pam_tool_dir/auth_pam_tool
+    ## Set the correct filesystem ownership for the PAM v2 plugin
+    # eg. /usr/lib/x86_64-linux-gnu/mysql/plugin/auth_pam_tool_dir/
+    # NOTE! This is security sensitive, don't allow for a race condition.
+    #
+    # 1. Drop privileges of directory
+    # -> At this point only root can see and execute auth_pam_tool
+    chmod 0700 /usr/lib/mysql/plugin/auth_pam_tool_dir
+    #
+    # 2. Make binary setuid
+    # -> At this point only root can run the setuid binary so no escalation here yet
+    chmod 04755 /usr/lib/mysql/plugin/auth_pam_tool_dir/auth_pam_tool
+    #
+    # 3. Allow user 'mysql' to see and execute auth_pam_tool
+    # -> Now user mysql owns the directory and can see and execute the binary inside
+    # -> Since the binary is setuid, user mysql gets limited root powers here to
+    #    run the PAM authetications, which need root (e.g. to validate passwords
+    #    against /etc/shadow)
+    chown mysql /usr/lib/mysql/plugin/auth_pam_tool_dir
 
     # This is important to avoid dataloss when there is a removed
     # mysql-server version from Woody lying around which used the same
@@ -108,20 +147,22 @@ EOF
     # Clean up old flags before setting new one
     rm -f $mysql_datadir/debian-*.flag
     # Flag data dir to avoid downgrades
-    touch $mysql_datadir/debian-$MAJOR_VER.flag
+    touch "$mysql_datadir/debian-$MAJOR_VER.flag"
 
     # initiate databases. Output is not allowed by debconf :-(
     # This will fail if we are upgrading an existing database; in this case
-    # mysql_upgrade, called from the /etc/init.d/mysql start script, will
+    # mysql_upgrade, called from the /etc/init.d/mariadb start script, will
     # handle things.
     # Debian: beware of the bashisms...
     # Debian: can safely run on upgrades with existing databases
     set +e
-    bash /usr/bin/mysql_install_db --auth-root-authentication-method=socket \
-                                   --rpm --cross-bootstrap --user=mysql \
+    bash /usr/bin/mysql_install_db --rpm --cross-bootstrap --user=mysql \
                                    --disable-log-bin  --skip-test-db 2>&1 | \
                                    $ERR_LOGGER
     set -e
+
+    # To avoid downgrades.
+    touch "$mysql_statedir/debian-$MAJOR_VER.flag"
 
     # On new installations root user can connect via unix_socket.
     # But on upgrades, scripts rely on debian-sys-maint user and
@@ -135,20 +176,8 @@ EOF
       install -o 0 -g 0 -m 0755 -d $mysql_cfgdir
     fi
     if [ ! -e "$dc" ]; then
-      umask 066
-      cat /dev/null > $dc
-      umask 022
-      echo "# Automatically generated for Debian scripts. DO NOT TOUCH!" >>$dc
-      echo "[client]"                                                    >>$dc
-      echo "host     = localhost"                                        >>$dc
-      echo "user     = root"                                             >>$dc
-      echo "password = "                                                 >>$dc
-      echo "socket   = $mysql_rundir/mysqld.sock"                        >>$dc
-      echo "[mysql_upgrade]"                                             >>$dc
-      echo "host     = localhost"                                        >>$dc
-      echo "user     = root"                                             >>$dc
-      echo "password = "                                                 >>$dc
-      echo "socket   = $mysql_rundir/mysqld.sock"                        >>$dc
+        cat /dev/null > $dc
+        echo "# Automatically generated for Debian scripts. DO NOT TOUCH!" >>$dc
     fi
     # Keep it only root-readable, as it always was
     chown 0:0 $dc
@@ -160,17 +189,26 @@ EOF
     # This allows upgrade from old versions (that have an apparmor profile
     # on by default) to work both to disable a default profile, and to keep
     # any profile installed and maintained by users themselves.
-    profile="/etc/apparmor.d/usr.sbin.mysqld"
+    profile="/etc/apparmor.d/usr.sbin.mariadbd"
     if [ -f "$profile" ] && aa-status --enabled 2>/dev/null; then
-        if grep -q /usr/sbin/mysqld "$profile" 2>/dev/null ; then
-            apparmor_parser -r "$profile" || true
-        else
-            echo "/usr/sbin/mysqld { }" | apparmor_parser --remove 2>/dev/null || true
-	fi
+      if grep -q /usr/sbin/mariadbd "$profile" 2>/dev/null ; then
+        apparmor_parser -r "$profile" || true
+      else
+        echo "/usr/sbin/mariadbd { }" | apparmor_parser --remove 2>/dev/null || true
+      fi
     fi
+
   ;;
 
   abort-upgrade|abort-remove|abort-configure)
+  ;;
+
+  triggered)
+    if [ -x "$(command -v systemctl)" ]; then
+      systemctl daemon-reload
+    else
+      invoke-rc.d mariadb restart
+    fi
   ;;
 
   *)
@@ -181,7 +219,7 @@ esac
 
 db_stop # in case invoke failes
 
-# dh_systemd_start doesn't emit anything since we still ship /etc/init.d/mysql.
+# dh_systemd_start doesn't emit anything since we still ship /etc/init.d/mariadb.
 # Thus MariaDB server is started via init.d script, which in turn redirects to
 # systemctl. If we upgrade from MySQL mysql.service may be masked, which also
 # means init.d script is disabled. Unmask mysql service explicitly.
@@ -192,15 +230,13 @@ fi
 
 #DEBHELPER#
 
-# Modified dh_systemd_start snippet that's not added automatically due /etc/init.d/mysql
+# Modified dh_systemd_start snippet that's not added automatically
 if [ -d /run/systemd/system ]; then
 	systemctl --system daemon-reload >/dev/null || true
 	deb-systemd-invoke start mariadb.service >/dev/null || true
 # Modified dh_installinit snippet to only run with sysvinit
-elif [ -x "/etc/init.d/mysql" ]; then
+elif [ -x "/etc/init.d/mariadb" ]; then
 	if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ]; then
-		invoke-rc.d mysql start || exit $?
+		invoke-rc.d mariadb start || exit $?
 	fi
 fi
-
-exit 0

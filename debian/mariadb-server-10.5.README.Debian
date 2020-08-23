@@ -157,7 +157,7 @@ You might get lucky downgrading a few minor versions without issued. Take a
 backup first. If you break it you get to keep both pieces. Do a restore from
 backup or upgrade to the previous version.
 
-If doing a major version downgrade, take a mysqldump/mariabackup consistent
+If doing a major version downgrade, take a mysqldump/maria-backup consistent
 backup using the current version and reload after downgrading and purging
 existing databases.
 

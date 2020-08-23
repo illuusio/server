@@ -26,14 +26,17 @@ mysql_upgradedir=/var/lib/mysql-upgrade
 
 # Try to stop the server in a sane way. If it does not success let the admin
 # do it himself. No database directories should be removed while the server
-# is running! Another mysqld in e.g. a different chroot is fine for us.
+# is running! Another mariadbd in e.g. a different chroot is fine for us.
 stop_server() {
     # Return immediately if there are no mysql processes running
     # as there is no point in trying to shutdown in that case.
-    if ! pgrep -x mysqld > /dev/null; then return; fi
+    if ! pgrep -x --ns $$ mariadbd > /dev/null; then return; fi
+    # Compatibility with versions that ran 'mysqld'
+    if ! pgrep -x --ns $$ mysqld > /dev/null; then return; fi
 
     set +e
-    invoke-rc.d mysql stop
+    invoke-rc.d mariadb stop
+    invoke-rc.d mysql stop # Backwards compatibility
     errno=$?
     set -e
 
@@ -122,7 +125,7 @@ fi
 # Instead simply move the old datadir and create a new for this_version.
 if [ ! -z "$downgrade_detected" ]
 then
-  db_input critical mariadb-server-$MAJOR_VER/old_data_directory_saved || true
+  db_input critical "mariadb-server-$MAJOR_VER/old_data_directory_saved" || true
   db_go
   echo "The file $mysql_datadir/debian-$found_version.flag indicates a" 1>&2
   echo "version that cannot automatically be upgraded. Therefore the" 1>&2
@@ -181,18 +184,18 @@ set -e
 # if there's a symlink, let's store where it's pointing, because otherwise
 # it's going to be lost in some situations
 for dir in DATADIR LOGDIR; do
-    checkdir=$(eval echo "$"$dir)
-    if [ -L "$checkdir" ]; then
-	# Use mkdir option 'Z' to create with correct SELinux context.
-	mkdir -pZ "$mysql_upgradedir"
-	cp -dT "$checkdir" "$mysql_upgradedir/$dir.link"
-    fi
+  checkdir=$(eval echo "$"$dir)
+  if [ -L "$checkdir" ]; then
+    # Use mkdir option 'Z' to create with correct SELinux context.
+    mkdir -pZ "$mysql_upgradedir"
+    cp -dT "$checkdir" "$mysql_upgradedir/$dir.link"
+  fi
 done
 
 # creating mysql home directory
 if [ ! -d $mysql_datadir ] && [ ! -L $mysql_datadir ]; then
 	# Use mkdir option 'Z' to create with correct SELinux context.
- 	mkdir -Z $mysql_datadir
+  mkdir -Z $mysql_datadir
 fi
 
 # checking disc space
@@ -219,5 +222,3 @@ set -e
 db_stop
 
 #DEBHELPER#
-
-exit 0

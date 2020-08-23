@@ -1,6 +1,5 @@
 #
-# NOTE: This file is read only by the traditional SysV init script and has been
-# available only in Ubuntu 16.04 and 16.10 and never in a official Debian release.
+# NOTE: This file is read only by the traditional SysV init script.
 # Debian 9 and Ubuntu 17.04 onwards do not normally read this file as they use
 # systemd by default.
 #

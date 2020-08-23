@@ -1,4 +1,6 @@
+# sha256_password not supported by GnuTLS due to missing OAEP padding
 usr/lib/*/libmariadb.so.*
-usr/lib/*/mariadb19/plugin/client_ed25519.so
-usr/lib/*/mariadb19/plugin/dialog.so
-usr/lib/*/mariadb19/plugin/mysql_clear_password.so
+usr/lib/*/libmariadb3/plugin/caching_sha2_password.so
+usr/lib/*/libmariadb3/plugin/client_ed25519.so
+usr/lib/*/libmariadb3/plugin/dialog.so
+usr/lib/*/libmariadb3/plugin/mysql_clear_password.so

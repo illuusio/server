@@ -15,6 +15,7 @@ Build-Depends: bison,
                libarchive-dev,
                libboost-dev,
                libcrack2-dev (>= 2.9.0),
+               libcurl4-openssl-dev | libcurl4-dev,
                libedit-dev,
                libgnutls28-dev (>= 3.3.24),
                libjemalloc-dev [linux-any],
@@ -22,8 +23,9 @@ Build-Depends: bison,
                libkrb5-dev,
                liblz4-dev,
                libncurses5-dev (>= 5.0-6~),
+               libnuma-dev [!armhf],
                libpam0g-dev,
-               libpcre3-dev (>= 2:8.35-3.2~),
+               libpcre2-dev,
                libsnappy-dev,
                libsystemd-dev [linux-any],
                libxml2-dev,
@@ -33,6 +35,7 @@ Build-Depends: bison,
                po-debconf,
                psmisc,
                unixodbc-dev,
+               uuid-dev,
                zlib1g-dev (>= 1:1.1.3-5~)
 Rules-Requires-Root: no
 Standards-Version: 4.5.0
@@ -181,7 +184,8 @@ Description: MariaDB common metapackage
 
 Package: mariadb-client-core-10.5
 Architecture: any
-Depends: mariadb-common (>= ${source:Version}),
+Depends: libmariadb3 (>= 10.5.4),
+         mariadb-common (>= ${source:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
 Conflicts: mysql-client-5.5,
@@ -270,7 +274,7 @@ Description: MariaDB database client binaries
  ease of use.
  .
  This package includes the client binaries and the additional tools
- innotop and mysqlreport.
+ innotop and mariadb-report (mysqlreport).
 
 Package: mariadb-server-core-10.5
 Architecture: any
@@ -458,7 +462,6 @@ Description: Backup tool for MariaDB server
 
 Package: mariadb-plugin-connect
 Architecture: any
-Multi-Arch: same
 Depends: libxml2,
          mariadb-server-10.5,
          unixodbc,
@@ -480,12 +483,23 @@ Description: Connect storage engine for MariaDB
  other interesting features.
  This package contains the Connect plugin for MariaDB.
 
+Package: mariadb-plugin-s3
+Architecture: any
+Depends: libcurl4,
+         mariadb-server-10.5 (= ${binary:Version}),
+         ${misc:Depends},
+         ${shlibs:Depends}
+Description: Amazon S3 archival storage engine for MariaDB
+ The S3 storage engine allows one to archive MariaDB tables in Amazon S3 (or any
+ third-party public or private cloud that implements S3 API), but still have
+ them accessible in MariaDB in read-only mode.
+
 Package: mariadb-plugin-rocksdb
 Architecture: amd64 arm64 mips64el ppc64el
 Depends: mariadb-server-10.5 (= ${binary:Version}),
+         python3,
          rocksdb-tools,
          ${misc:Depends},
-         ${python:Depends},
          ${shlibs:Depends}
 Breaks: mariadb-rocksdb-engine-10.2,
         mariadb-rocksdb-engine-10.3
@@ -499,7 +513,6 @@ Description: RocksDB storage engine for MariaDB
 
 Package: mariadb-plugin-oqgraph
 Architecture: any
-Multi-Arch: same
 Depends: libjudydebian1,
          mariadb-server-10.5,
          ${misc:Depends},
@@ -518,21 +531,6 @@ Description: OQGraph storage engine for MariaDB
  The OQGraph engine is a computation engine plugin for handling hierarchies
  (trees) and graphs (friend-of-a-friend, etc) cleanly through standard SQL.
  This package contains the OQGraph plugin for MariaDB.
-
-Package: mariadb-plugin-tokudb
-Architecture: amd64
-Depends: mariadb-server-10.5 (= ${binary:Version}),
-         ${misc:Depends},
-         ${shlibs:Depends}
-Breaks: mariadb-server-10.0,
-        mariadb-server-10.1
-Replaces: mariadb-server-10.0,
-          mariadb-server-10.1
-Description: TokuDB storage engine for MariaDB
- The TokuDB storage engine is for use in high-performance and write-intensive
- environments, offering increased compression and better performance based
- on fractal indexes.
- This package contains the TokuDB plugin for MariaDB.
 
 Package: mariadb-plugin-mroonga
 Architecture: any-alpha any-amd64 any-arm any-arm64 any-i386 any-ia64 any-mips64el any-mips64r6el any-mipsel any-mipsr6el any-nios2 any-powerpcel any-ppc64el any-sh3 any-sh4 any-tilegx
@@ -565,7 +563,6 @@ Description: Spider storage engine for MariaDB
 
 Package: mariadb-plugin-gssapi-server
 Architecture: any
-Multi-Arch: same
 Depends: libgssapi-krb5-2,
          mariadb-server-10.5,
          ${misc:Depends},
@@ -599,7 +596,6 @@ Description: GSSAPI authentication plugin for MariaDB client
 
 Package: mariadb-plugin-cracklib-password-check
 Architecture: any
-Multi-Arch: same
 Depends: libcrack2 (>= 2.9.0),
          mariadb-server-10.5,
          ${misc:Depends},
@@ -646,7 +642,9 @@ Description: MariaDB database regression test suite
 Package: mariadb-test-data
 Architecture: all
 Multi-Arch: foreign
-Depends: ${misc:Depends}
+Depends: ${misc:Depends},
+         ${perl:Depends},
+         ${shlibs:Depends}
 Breaks: mariadb-test-10.0,
         mariadb-test-10.1,
         mariadb-test-5.5,
