@@ -93,6 +93,7 @@ endif
 
 	# Remove -DWITH_SSL=bundle if you want to use system OpenSSL, otherwise
 	# the server will use YaSSL and Connector/C will use GnuTLS.
+	# Don't build ColumnStore, not mature enough for Debian yet.
 	mkdir -p $(BUILDDIR) && cd $(BUILDDIR) && \
 	sh -c  'PATH=$${MYSQL_BUILD_PATH:-"/usr/lib/ccache:/usr/local/bin:/usr/bin:/bin"} \
 	    	CC=${CC} \
@@ -110,6 +111,7 @@ endif
 	    -DPLUGIN_TOKUDB=NO \
 	    -DPLUGIN_CASSANDRA=NO \
 	    -DPLUGIN_AWS_KEY_MANAGEMENT=NO \
+	    -DPLUGIN_COLUMNSTORE=NO \
 	    -DWITH_INNODB_SNAPPY=ON \
 	    -DDEB=$(DEB_VENDOR) ..'
 
