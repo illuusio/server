@@ -1,17 +1,62 @@
 etc/columnstore/storagemanager.cnf.example # Copy of etc/columnstore/storagemanager.cnf that is installed
+etc/logrotate.d/mysql
+etc/my.cnf
+etc/mysql/mariadb.conf.d/client.cnf
+etc/mysql/mariadb.conf.d/enable_encryption.preset
+etc/mysql/mariadb.conf.d/mysql-clients.cnf
+etc/mysql/mariadb.conf.d/server.cnf
 lib/systemd/system/mariadb.service # Installed by rules file
 lib/systemd/system/mariadb@.service # Installed by rules file
+usr/bin/mariabackup
+usr/bin/mariadb-embedded
+usr/bin/mysql
+usr/bin/mysqlaccess
+usr/bin/mysqladmin
+usr/bin/mysqlbinlog
+usr/bin/mysqlcheck
+usr/bin/mysql_client_test
+usr/bin/mysql_client_test_embedded
 usr/bin/mysql_config # We already have the MariaDB variant
+usr/bin/mysql_convert_table_format
+usr/bin/mysqld_multi
+usr/bin/mysqld_safe
+usr/bin/mysqld_safe_helper
+usr/bin/mysqldump
+usr/bin/mysqldumpslow
+usr/bin/mysql_embedded
+usr/bin/mysql_find_rows
+usr/bin/mysql_fix_extensions
+usr/bin/mysqlhotcopy
+usr/bin/mysqlimport
+usr/bin/mysql_install_db
+usr/bin/mysql_ldb
+usr/bin/mysql_plugin
+usr/bin/mysql_secure_installation
+usr/bin/mysql_setpermission
+usr/bin/mysqlshow
+usr/bin/mysqlslap
+usr/bin/mysqltest
+usr/bin/mysqltest_embedded
+usr/bin/mysql_tzinfo_to_sql
+usr/bin/mysql_upgrade
+usr/bin/mysql_waitpid
 usr/bin/mytop # Mytop is distributed from a separate source package
 usr/bin/sst_dump # Use the one from rocksdb-tools package
-usr/lib/mysql/plugin/JavaWrappers.jar # These are only built if JNI/libjawt.so is installed from e.g. openjdk-8-jre-headless
-usr/lib/mysql/plugin/JdbcInterface.jar # These are only built if JNI/libjawt.so is installed from e.g. openjdk-8-jre-headless
-usr/lib/sysusers.d/sysusers.conf
-usr/lib/tmpfiles.d/tmpfiles.conf
+usr/bin/test-connect-t
 usr/lib/*/libdbbc.a # ColumnStore header file
 usr/lib/*/libidbboot.a # ColumnStore header file
 usr/lib/*/libprocessor.a # ColumnStore header file
 usr/lib/*/libwe_xml.a # ColumnStore header file
+usr/lib/mysql/plugin/JavaWrappers.jar # These are only built if JNI/libjawt.so is installed from e.g. openjdk-8-jre-headless
+usr/lib/mysql/plugin/JdbcInterface.jar # These are only built if JNI/libjawt.so is installed from e.g. openjdk-8-jre-headless
+usr/lib/mysql/plugin/type_test.so
+usr/lib/sysusers.d/mariadb.conf
+usr/lib/sysusers.d/sysusers.conf
+usr/lib/tmpfiles.d/mariadb.conf
+usr/lib/tmpfiles.d/tmpfiles.conf
+usr/lib/*/pkgconfig/mariadb.pc # Server (not client) helper has confusing naming https://jira.mariadb.org/browse/MDEV-23538
+usr/sbin/mysqld
+usr/sbin/rcmysql
 usr/share/doc/mariadb-server-10.5/COPYING
 usr/share/doc/mariadb-server-10.5/COPYING.AGPLv3
 usr/share/doc/mariadb-server-10.5/COPYING.GPLv2
@@ -20,12 +65,16 @@ usr/share/doc/mariadb-server-10.5/CREDITS
 usr/share/doc/mariadb-server-10.5/EXCEPTIONS-CLIENT
 usr/share/doc/mariadb-server-10.5/INSTALL-BINARY
 usr/share/doc/mariadb-server-10.5/PATENTS
+usr/share/doc/mariadb-server-10.5/README.md
 usr/share/doc/mariadb-server-10.5/README-wsrep
+usr/share/doc/mariadb-server-10.5/THIRDPARTY
 usr/share/groonga/COPYING
 usr/share/groonga-normalizer-mysql/lgpl-2.0.txt
 usr/share/groonga-normalizer-mysql/README.md
 usr/share/groonga/README.md
+usr/share/man/man1/mariadb-embedded.1
 usr/share/man/man1/my_safe_process.1
+usr/share/man/man1/mysql_embedded.1
 usr/share/man/man1/mysql.server.1
 usr/share/mysql/binary-configure
 usr/share/mysql/magic
@@ -33,6 +82,8 @@ usr/share/mysql/maria_add_gis_sp.sql
 usr/share/mysql/mysqld_multi.server
 usr/share/mysql/mysql-log-rotate
 usr/share/mysql/mysql.server
+usr/share/mysql/mysql-test/asan.supp
+usr/share/mysql/mysql-test/lsan.supp
 usr/share/mysql/mysql-test/mtr # Already created by mariadb-test.links
 usr/share/mysql/mysql-test/mysql-test-run # Already created by mariadb-test.links
 usr/share/mysql/mysql_to_mariadb.sql
@@ -45,5 +96,7 @@ usr/share/mysql/policy/selinux/mariadb.te # In MariaDB we don't want to use SELi
 usr/share/mysql/policy/selinux/README # In MariaDB we don't want to use SELinux at the moment
 usr/share/mysql/systemd/mariadb.service # Installed by rules file
 usr/share/mysql/systemd/mariadb@.service # Installed by rules file
+usr/share/mysql/systemd/mysqld.service
+usr/share/mysql/systemd/mysql.service
 usr/share/mysql/systemd/use_galera_new_cluster.conf
 usr/share/mysql/wsrep.cnf
