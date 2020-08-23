@@ -2,11 +2,11 @@ Subject: Temporary fix from https://jira.mariadb.org/browse/MDEV-21691 to get au
 
 --- a/mysql-test/mysql-test-run.pl
 +++ b/mysql-test/mysql-test-run.pl
-@@ -2694,6 +2694,7 @@ sub setup_vardir() {
-         set_plugin_var($pname);
-         $plugindir=dirname($_) unless $plugindir;
+@@ -2706,6 +2706,7 @@ sub setup_vardir() {
+           set_plugin_var($pname);
+         }
        }
 +      $plugindir= ($mysqld_variables{'plugin-dir'} || '.') unless $plugindir;
      }
-   }
- 
+     else
+     {
