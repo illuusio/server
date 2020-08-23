@@ -1,13 +1,14 @@
-mariadb-10.4 (1:10.4.14-1~exp1) UNRELEASED; urgency=medium
+mariadb-10.4 (1:10.4.14-1~exp1) experimental; urgency=medium
 
   [ Otto Kekäläinen ]
   * New upstream version 10.4.14
-  * Extend Salsa-CI with Gnitpick
+    - Includes fix for RocksDB build failure on arch riscv64
+  * Add Breaks/Replaces for mysql-client-core-8.0 that ships myisam_ftdump
 
   [ Christian Göttsche ]
   * Prevent executable stack due to objects compiled from assembly
 
- -- Otto Kekäläinen <otto@debian.org>  Sat, 22 Aug 2020 11:47:24 +0300
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 23 Aug 2020 13:20:04 +0300
 
 mariadb-10.4 (1:10.4.13-1~exp1) experimental; urgency=medium
 
