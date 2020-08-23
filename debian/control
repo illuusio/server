@@ -1,4 +1,4 @@
-Source: mariadb-10.4
+Source: mariadb-10.5
 Section: database
 Priority: optional
 Maintainer: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
@@ -37,8 +37,8 @@ Build-Depends: bison,
 Rules-Requires-Root: no
 Standards-Version: 4.5.0
 Homepage: https://mariadb.org/
-Vcs-Browser: https://salsa.debian.org/mariadb-team/mariadb-10.4
-Vcs-Git: https://salsa.debian.org/mariadb-team/mariadb-10.4.git
+Vcs-Browser: https://salsa.debian.org/mariadb-team/mariadb-10.5
+Vcs-Git: https://salsa.debian.org/mariadb-team/mariadb-10.5.git
 
 Package: libmariadb-dev
 Architecture: any
@@ -180,7 +180,7 @@ Description: MariaDB common metapackage
  language in the world. The main goals of MariaDB are speed, robustness and
  ease of use.
 
-Package: mariadb-client-core-10.4
+Package: mariadb-client-core-10.5
 Architecture: any
 Depends: mariadb-common (>= ${source:Version}),
          ${misc:Depends},
@@ -220,11 +220,11 @@ Description: MariaDB database core client binaries
  .
  This package includes the core client files, as used by Akonadi.
 
-Package: mariadb-client-10.4
+Package: mariadb-client-10.5
 Architecture: any
 Depends: debianutils (>=1.6),
          libconfig-inifiles-perl,
-         mariadb-client-core-10.4 (>= ${source:Version}),
+         mariadb-client-core-10.5 (>= ${source:Version}),
          ${misc:Depends},
          ${perl:Depends},
          ${shlibs:Depends}
@@ -269,7 +269,7 @@ Description: MariaDB database client binaries
  This package includes the client binaries and the additional tools
  innotop and mysqlreport.
 
-Package: mariadb-server-core-10.4
+Package: mariadb-server-core-10.5
 Architecture: any
 Depends: mariadb-common (>= ${source:Version}),
          ${misc:Depends},
@@ -322,7 +322,7 @@ Description: MariaDB database core server files
  .
  This package includes the core server files, as used by Akonadi.
 
-Package: mariadb-server-10.4
+Package: mariadb-server-10.5
 Architecture: any
 Suggests: mailx,
           mariadb-test,
@@ -338,8 +338,8 @@ Depends: galera-4 (>=26.4),
          libdbi-perl,
          lsb-base (>= 3.0-10),
          lsof [linux-any],
-         mariadb-client-10.4 (>= ${source:Version}),
-         mariadb-server-core-10.4 (>= ${binary:Version}),
+         mariadb-client-10.5 (>= ${source:Version}),
+         mariadb-server-core-10.5 (>= ${binary:Version}),
          passwd,
          perl (>= 5.6),
          psmisc,
@@ -404,11 +404,11 @@ Description: MariaDB database server binaries
 
 Package: mariadb-server
 Architecture: all
-Depends: mariadb-server-10.4 (>= ${source:Version}),
+Depends: mariadb-server-10.5 (>= ${source:Version}),
          ${misc:Depends}
 Description: MariaDB database server (metapackage depending on the latest version)
  This is an empty package that depends on the current "best" version of
- mariadb-server (currently mariadb-server-10.4), as determined by the MariaDB
+ mariadb-server (currently mariadb-server-10.5), as determined by the MariaDB
  maintainers. Install this package if in doubt about which MariaDB
  version you need. That will install the version recommended by the
  package maintainers.
@@ -420,11 +420,11 @@ Description: MariaDB database server (metapackage depending on the latest versio
 
 Package: mariadb-client
 Architecture: all
-Depends: mariadb-client-10.4 (>= ${source:Version}),
+Depends: mariadb-client-10.5 (>= ${source:Version}),
          ${misc:Depends}
 Description: MariaDB database client (metapackage depending on the latest version)
  This is an empty package that depends on the current "best" version of
- mariadb-client (currently mariadb-client-10.4), as determined by the MariaDB
+ mariadb-client (currently mariadb-client-10.5), as determined by the MariaDB
  maintainers.  Install this package if in doubt about which MariaDB version
  you want, as this is the one considered to be in the best shape.
 
@@ -438,7 +438,7 @@ Replaces: mariadb-backup-10.1,
           mariadb-backup-10.2,
           mariadb-backup-10.3,
           mariadb-client-10.1
-Depends: mariadb-client-core-10.4 (= ${binary:Version}),
+Depends: mariadb-client-core-10.5 (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
 Description: Backup tool for MariaDB server
@@ -452,7 +452,7 @@ Package: mariadb-plugin-connect
 Architecture: any
 Multi-Arch: same
 Depends: libxml2,
-         mariadb-server-10.4,
+         mariadb-server-10.5,
          unixodbc,
          ${misc:Depends},
          ${shlibs:Depends}
@@ -474,7 +474,7 @@ Description: Connect storage engine for MariaDB
 
 Package: mariadb-plugin-rocksdb
 Architecture: amd64 arm64 mips64el ppc64el
-Depends: mariadb-server-10.4 (= ${binary:Version}),
+Depends: mariadb-server-10.5 (= ${binary:Version}),
          rocksdb-tools,
          ${misc:Depends},
          ${python:Depends},
@@ -493,7 +493,7 @@ Package: mariadb-plugin-oqgraph
 Architecture: any
 Multi-Arch: same
 Depends: libjudydebian1,
-         mariadb-server-10.4,
+         mariadb-server-10.5,
          ${misc:Depends},
          ${shlibs:Depends}
 Conflicts: mariadb-oqgraph-engine-10.0,
@@ -513,7 +513,7 @@ Description: OQGraph storage engine for MariaDB
 
 Package: mariadb-plugin-tokudb
 Architecture: amd64
-Depends: mariadb-server-10.4 (= ${binary:Version}),
+Depends: mariadb-server-10.5 (= ${binary:Version}),
          ${misc:Depends},
          ${shlibs:Depends}
 Breaks: mariadb-server-10.0,
@@ -528,7 +528,7 @@ Description: TokuDB storage engine for MariaDB
 
 Package: mariadb-plugin-mroonga
 Architecture: any-alpha any-amd64 any-arm any-arm64 any-i386 any-ia64 any-mips64el any-mips64r6el any-mipsel any-mipsr6el any-nios2 any-powerpcel any-ppc64el any-sh3 any-sh4 any-tilegx
-Depends: mariadb-server-10.4,
+Depends: mariadb-server-10.5,
          ${misc:Depends},
          ${shlibs:Depends}
 Breaks: mariadb-server-10.0,
@@ -542,7 +542,7 @@ Description: Mroonga storage engine for MariaDB
 
 Package: mariadb-plugin-spider
 Architecture: any
-Depends: mariadb-server-10.4,
+Depends: mariadb-server-10.5,
          ${misc:Depends},
          ${shlibs:Depends}
 Breaks: mariadb-server-10.0,
@@ -559,7 +559,7 @@ Package: mariadb-plugin-gssapi-server
 Architecture: any
 Multi-Arch: same
 Depends: libgssapi-krb5-2,
-         mariadb-server-10.4,
+         mariadb-server-10.5,
          ${misc:Depends},
          ${shlibs:Depends}
 Breaks: mariadb-gssapi-server-10.1,
@@ -576,7 +576,7 @@ Package: mariadb-plugin-gssapi-client
 Architecture: any
 Multi-Arch: same
 Depends: libgssapi-krb5-2,
-         mariadb-client-10.4,
+         mariadb-client-10.5,
          ${misc:Depends},
          ${shlibs:Depends}
 Breaks: mariadb-gssapi-client-10.1,
@@ -593,7 +593,7 @@ Package: mariadb-plugin-cracklib-password-check
 Architecture: any
 Multi-Arch: same
 Depends: libcrack2 (>= 2.9.0),
-         mariadb-server-10.4,
+         mariadb-server-10.5,
          ${misc:Depends},
          ${shlibs:Depends}
 Description: CrackLib Password Validation Plugin for MariaDB
@@ -604,8 +604,8 @@ Description: CrackLib Password Validation Plugin for MariaDB
 
 Package: mariadb-test
 Architecture: any
-Depends: mariadb-client-10.4 (= ${binary:Version}),
-         mariadb-server-10.4 (= ${binary:Version}),
+Depends: mariadb-client-10.5 (= ${binary:Version}),
+         mariadb-server-10.5 (= ${binary:Version}),
          mariadb-test-data (= ${source:Version}),
          virtual-mysql-testsuite,
          ${misc:Depends},

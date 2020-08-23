@@ -64,7 +64,7 @@ https://mariadb.com/kb/en/mariadb/development/release-notes/
 
 Download new source package:
 
-    cd pkg-mariadb-10.4
+    cd pkg-mariadb-10.5
     gbp import-orig --uscan --no-interactive --verbose
 
 Refresh patches:
@@ -114,7 +114,7 @@ Then proceed to make a source only build:
 Test more with upload to Launchpad:
 
     COMMIT_ID=`git log -n 1 --oneline | cut -d ' ' -f 1`
-    PKG=mariadb-10.4
+    PKG=mariadb-10.5
     backportpackage --yes -u ppa:mysql-ubuntu/$PKG -d focal -S ~`date '+%s'`.$COMMIT_ID $PKG*.dsc
 
 When done, push to Salsa:
@@ -133,8 +133,8 @@ Once you are sure there are no regressions, finally upload to Debian:
     dput ftp-master *.changes
 
 After the upload, check that everything is OK at
-* https://tracker.debian.org/mariadb-10.4 (Debian)
-* https://launchpad.net/ubuntu/+source/mariadb-10.4 (Ubuntu)
+* https://tracker.debian.org/mariadb-10.5 (Debian)
+* https://launchpad.net/ubuntu/+source/mariadb-10.5 (Ubuntu)
 
 ### Maintaining debian/copyright
 

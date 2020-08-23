@@ -27,7 +27,7 @@ gnitpick:
     # Actual Gnitpick part
     - apt-get update -qq && apt-get -qq install --no-install-recommends --yes ca-certificates curl python3-minimal git # Bare minimal (<4MB) for apt-key and gnitpick to work
     - curl -sS https://raw.githubusercontent.com/Seravo/gnitpick/master/gnitpick.py -o /usr/bin/gnitpick; chmod +x /usr/bin/gnitpick
-    - gnitpick --target-repository https://salsa.debian.org/mariadb-team/mariadb-10.4.git
+    - gnitpick --target-repository https://salsa.debian.org/mariadb-team/mariadb-10.5.git
 
 build:
   extends: .build-package
@@ -124,7 +124,7 @@ fresh install:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mariadb-10.4.x to mariadb-10.4.y upgrade:
+mariadb-10.3.x to mariadb-10.5.y upgrade:
   stage: upgrade in Sid
   dependencies:
     - build
@@ -164,7 +164,7 @@ mariadb-10.4.x to mariadb-10.4.y upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mariadb-10.3.x buster to mariadb-10.4 upgrade:
+mariadb-10.3.x buster to mariadb-10.5 upgrade:
   stage: upgrade from Buster/Stretch
   dependencies:
     - build
@@ -208,7 +208,7 @@ mariadb-10.3.x buster to mariadb-10.4 upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mariadb-10.1 to mariadb-10.4 upgrade:
+mariadb-10.1 to mariadb-10.5 upgrade:
   stage: upgrade from Buster/Stretch
   dependencies:
     - build
