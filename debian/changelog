@@ -1,8 +1,8 @@
-mariadb-10.5 (1:10.5.0-1) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.5-1~exp1) UNRELEASED; urgency=medium
 
-  * Introduce MariaDB 10.5 to Debian
+  * New upstream version 10.5.5 (Closes: #968895)
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 23 Aug 2020 15:02:55 +0300
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 23 Aug 2020 16:18:28 +0300
 
 mariadb-10.4 (1:10.4.14-1~exp1) experimental; urgency=medium
 
