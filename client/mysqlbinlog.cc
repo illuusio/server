@@ -62,20 +62,26 @@
 extern "C" unsigned char *mysql_net_store_length(unsigned char *packet, size_t length);
 #define net_store_length mysql_net_store_length
 
+#define key_memory_TABLE_RULE_ENT 0
+#define key_memory_rpl_filter 0
+
 Rpl_filter *binlog_filter= 0;
 
 #define BIN_LOG_HEADER_SIZE	4
 #define PROBE_HEADER_LEN	(EVENT_LEN_OFFSET+4)
 
 /* Needed for Rpl_filter */
-CHARSET_INFO* system_charset_info= &my_charset_utf8_general_ci;
+CHARSET_INFO* system_charset_info= &my_charset_utf8mb3_general_ci;
 
 /* Needed for Flashback */
 DYNAMIC_ARRAY binlog_events; // Storing the events output string
 DYNAMIC_ARRAY events_in_stmt; // Storing the events that in one statement
 String stop_event_string; // Storing the STOP_EVENT output string
 
+extern "C" {
 char server_version[SERVER_VERSION_LENGTH];
+}
+
 ulong server_id = 0;
 
 // needed by net_serv.c
@@ -91,7 +97,7 @@ static char *result_file_name= 0;
 static const char *output_prefix= "";
 
 #ifndef DBUG_OFF
-static const char *default_dbug_option = "d:t:o,/tmp/mysqlbinlog.trace";
+static const char *default_dbug_option = "d:t:o,/tmp/mariadb-binlog.trace";
 const char *current_dbug_option= default_dbug_option;
 #endif
 static const char *load_groups[]=
@@ -145,6 +151,7 @@ static const char* dirname_for_local_load= 0;
 static bool opt_skip_annotate_row_events= 0;
 
 static my_bool opt_flashback;
+static bool opt_print_table_metadata;
 #ifdef WHEN_FLASHBACK_REVIEW_READY
 static my_bool opt_flashback_review;
 static char *flashback_review_dbname, *flashback_review_tablename;
@@ -196,7 +203,7 @@ Log_event* read_remote_annotate_event(uchar* net_buf, ulong event_len,
   uchar *event_buf;
   Log_event* event;
 
-  if (!(event_buf= (uchar*) my_malloc(event_len + 1, MYF(MY_WME))))
+  if (!(event_buf= (uchar*) my_malloc(PSI_NOT_INSTRUMENTED, event_len + 1, MYF(MY_WME))))
   {
     error("Out of memory");
     return 0;
@@ -308,7 +315,7 @@ public:
 
   int init()
   {
-    return my_init_dynamic_array(&file_names, sizeof(File_name_record),
+    return my_init_dynamic_array(PSI_NOT_INSTRUMENTED, &file_names, sizeof(File_name_record),
                                  100, 100, MYF(0));
   }
 
@@ -543,7 +550,7 @@ Exit_status Load_log_processor::process_first_event(const char *bname,
   File_name_record rec;
   DBUG_ENTER("Load_log_processor::process_first_event");
 
-  if (!(fname= (char*) my_malloc(full_len,MYF(MY_WME))))
+  if (!(fname= (char*) my_malloc(PSI_NOT_INSTRUMENTED, full_len,MYF(MY_WME))))
   {
     error("Out of memory.");
     delete ce;
@@ -1096,6 +1103,7 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
       print_event_info->hexdump_from= pos;
 
     print_event_info->base64_output_mode= opt_base64_output_mode;
+    print_event_info->print_table_metadata= opt_print_table_metadata;
 
     DBUG_PRINT("debug", ("event_type: %s", ev->get_type_str()));
 
@@ -1789,6 +1797,10 @@ Example: rewrite-db='from->to'.",
    (uchar**) &opt_skip_annotate_row_events,
    (uchar**) &opt_skip_annotate_row_events,
    0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"print-table-metadata", OPT_PRINT_TABLE_METADATA,
+   "Print metadata stored in Table_map_log_event",
+   &opt_print_table_metadata, &opt_print_table_metadata, 0,
+   GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -1927,11 +1939,10 @@ static my_time_t convert_str_to_timestamp(const char* str)
 
 
 extern "C" my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-	       char *argument)
+get_one_option(const struct my_option *opt, char *argument, const char *)
 {
   bool tty_password=0;
-  switch (optid) {
+  switch (opt->id) {
 #ifndef DBUG_OFF
   case '#':
     if (!argument)
@@ -1954,7 +1965,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     {
       my_free(pass);
       char *start=argument;
-      pass= my_strdup(argument,MYF(MY_FAE));
+      pass= my_strdup(PSI_NOT_INSTRUMENTED, argument,MYF(MY_FAE));
       while (*argument) *argument++= 'x';		/* Destroy argument */
       if (*start)
         start[1]=0;				/* Cut length of argument */
@@ -3040,10 +3051,10 @@ int main(int argc, char** argv)
 
   if (opt_flashback)
   {
-    my_init_dynamic_array(&binlog_events, sizeof(LEX_STRING), 1024, 1024,
-                          MYF(0));
-    my_init_dynamic_array(&events_in_stmt, sizeof(Rows_log_event*), 1024, 1024,
-                          MYF(0));
+    my_init_dynamic_array(PSI_NOT_INSTRUMENTED, &binlog_events,
+                          sizeof(LEX_STRING), 1024, 1024, MYF(0));
+    my_init_dynamic_array(PSI_NOT_INSTRUMENTED, &events_in_stmt,
+                          sizeof(Rows_log_event*), 1024, 1024, MYF(0));
   }
   if (opt_stop_never)
     to_last_remote_log= TRUE;
@@ -3091,7 +3102,7 @@ int main(int argc, char** argv)
       retval= ERROR_STOP;
       goto err;
     }
-    dirname_for_local_load= my_strdup(my_tmpdir(&tmpdir), MY_WME);
+    dirname_for_local_load= my_strdup(PSI_NOT_INSTRUMENTED, my_tmpdir(&tmpdir), MY_WME);
   }
 
   if (load_processor.init())
@@ -3249,6 +3260,7 @@ struct encryption_service_st encryption_handler=
 #include "../sql-common/my_time.c"
 #include "password.c"
 #include "log_event.cc"
+#include "log_event_client.cc"
 #include "log_event_old.cc"
 #include "rpl_utility.cc"
 #include "sql_string.cc"

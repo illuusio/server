@@ -142,7 +142,7 @@ xb_fil_cur_open(
 	int err;
 	/* Initialize these first so xb_fil_cur_close() handles them correctly
 	in case of error */
-	cursor->orig_buf = NULL;
+	cursor->buf = NULL;
 	cursor->node = NULL;
 
 	cursor->space_id = node->space->id;
@@ -238,10 +238,8 @@ xb_fil_cur_open(
 
 	/* Allocate read buffer */
 	cursor->buf_size = XB_FIL_CUR_PAGES * cursor->page_size;
-	cursor->orig_buf = static_cast<byte *>
-		(malloc(cursor->buf_size + srv_page_size));
-	cursor->buf = static_cast<byte *>
-		(ut_align(cursor->orig_buf, srv_page_size));
+	cursor->buf = static_cast<byte*>(aligned_malloc(cursor->buf_size,
+							srv_page_size));
 
 	cursor->buf_read = 0;
 	cursor->buf_npages = 0;
@@ -278,7 +276,7 @@ static bool page_is_corrupted(const byte *page, ulint page_no,
 	byte tmp_frame[UNIV_PAGE_SIZE_MAX];
 	byte tmp_page[UNIV_PAGE_SIZE_MAX];
 	const ulint page_size = cursor->page_size;
-	ulint page_type = mach_read_from_2(page + FIL_PAGE_TYPE);
+	uint16_t page_type = fil_page_get_type(page);
 
 	/* We ignore the doublewrite buffer pages.*/
 	if (cursor->space_id == TRX_SYS_SPACE
@@ -361,7 +359,7 @@ static bool page_is_corrupted(const byte *page, ulint page_no,
 	    || page_type == FIL_PAGE_PAGE_COMPRESSED_ENCRYPTED) {
 		ulint decomp = fil_page_decompress(tmp_frame, tmp_page,
 						   space->flags);
-		page_type = mach_read_from_2(tmp_page + FIL_PAGE_TYPE);
+		page_type = fil_page_get_type(tmp_page);
 
 		return (!decomp
 			|| (decomp != srv_page_size
@@ -494,7 +492,8 @@ xb_fil_cur_close(
 		cursor->read_filter->deinit(&cursor->read_filter_ctxt);
 	}
 
-	free(cursor->orig_buf);
+	aligned_free(cursor->buf);
+	cursor->buf = NULL;
 
 	if (cursor->node != NULL) {
 		xb_fil_node_close_file(cursor->node);

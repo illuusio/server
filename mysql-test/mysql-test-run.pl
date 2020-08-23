@@ -79,7 +79,6 @@ BEGIN {
 use lib "lib";
 
 use Cwd ;
-use Cwd 'realpath';
 use Getopt::Long;
 use My::File::Path; # Patched version of File::Path
 use File::Basename;
@@ -103,6 +102,8 @@ use mtr_results;
 use IO::Socket::INET;
 use IO::Select;
 use Time::HiRes qw(gettimeofday);
+
+sub realpath($) { (IS_WINDOWS) ? $_[0] : Cwd::realpath($_[0]) }
 
 require "mtr_process.pl";
 require "mtr_io.pl";
@@ -130,7 +131,7 @@ our $default_vardir;
 our $opt_vardir;                # Path to use for var/ dir
 our $plugindir;
 our $opt_xml_report;            # XML output
-
+our $client_plugindir;
 my $path_vardir_trace;          # unix formatted opt_vardir for trace files
 my $opt_tmpdir;                 # Path to use for tmp/ dir
 my $opt_tmpdir_pid;
@@ -174,6 +175,7 @@ my @DEFAULT_SUITES= qw(
     archive-
     binlog-
     binlog_encryption-
+    client-
     csv-
     compat/oracle-
     compat/mssql-
@@ -188,6 +190,7 @@ my @DEFAULT_SUITES= qw(
     innodb-
     innodb_fts-
     innodb_gis-
+    innodb_i_s-
     innodb_zip-
     json-
     maria-
@@ -217,6 +220,7 @@ our $exe_mysqladmin;
 our $exe_mysqltest;
 our $exe_libtool;
 our $exe_mysql_embedded;
+our $exe_mariadb_conv;
 
 our $opt_big_test= 0;
 our $opt_staging_run= 0;
@@ -1503,7 +1507,7 @@ sub command_line_setup {
   my $vardir_location= (defined $ENV{MTR_BINDIR} 
                           ? "$ENV{MTR_BINDIR}/mysql-test" 
                           : $glob_mysql_test_dir);
-  $vardir_location= realpath $vardir_location unless IS_WINDOWS;
+  $vardir_location= realpath $vardir_location;
   $default_vardir= "$vardir_location/var";
 
   if ( ! $opt_vardir )
@@ -1640,12 +1644,24 @@ sub command_line_setup {
   # --------------------------------------------------------------------------
   # Check debug related options
   # --------------------------------------------------------------------------
+  $ENV{ASAN_OPTIONS}= "abort_on_error=1:" . ($ENV{ASAN_OPTIONS} || '');
+  $ENV{ASAN_OPTIONS}= "suppressions=${glob_mysql_test_dir}/asan.supp:" .
+    $ENV{ASAN_OPTIONS}
+    if -f "$glob_mysql_test_dir/asan.supp" and not IS_WINDOWS;
+  # The following can be useful when a test fails without any asan report
+  # on stderr like with openssl_1.test
+  # $ENV{ASAN_OPTIONS}= "log_path=${opt_vardir}/log/asan:" . $ENV{ASAN_OPTIONS};
+
+  # Add leak suppressions
+  $ENV{LSAN_OPTIONS}= "suppressions=${glob_mysql_test_dir}/lsan.supp:print_suppressions=0"
+    if -f "$glob_mysql_test_dir/lsan.supp" and not IS_WINDOWS;
+
   if ( $opt_gdb || $opt_client_gdb || $opt_ddd || $opt_client_ddd || $opt_rr ||
        $opt_manual_gdb || $opt_manual_lldb || $opt_manual_ddd ||
-       $opt_manual_debug || $opt_dbx || $opt_client_dbx || $opt_manual_dbx || 
+       $opt_manual_debug || $opt_dbx || $opt_client_dbx || $opt_manual_dbx ||
        $opt_debugger || $opt_client_debugger )
   {
-    $ENV{ASAN_OPTIONS}= 'abort_on_error=1:'.($ENV{ASAN_OPTIONS} || '');
+    $ENV{ASAN_OPTIONS}= 'disable_coredump=0:'. $ENV{ASAN_OPTIONS};
     if ( using_extern() )
     {
       mtr_error("Can't use --extern when using debugger");
@@ -1662,6 +1678,7 @@ sub command_line_setup {
     # One day for PID file creation (this is given in seconds not minutes)
     $opt_start_timeout= 24 * 60 * 60;
   }
+  mtr_verbose("ASAN_OPTIONS=$ENV{ASAN_OPTIONS}");
 
   # --------------------------------------------------------------------------
   # Modified behavior with --start options
@@ -1770,9 +1787,13 @@ sub command_line_setup {
   if ($opt_valgrind && ! grep(/^--tool=/i, @valgrind_args))
   {
     # Set valgrind_option unless already defined
-    push(@valgrind_args, ("--show-reachable=yes", "--leak-check=yes",
-                          "--num-callers=16"))
-      unless @valgrind_args;
+    if (!@valgrind_args)
+    {
+      push(@valgrind_args, ("--show-reachable=yes", "--leak-check=yes",
+                            "--num-callers=20"));
+      push(@valgrind_args, ("--gen-suppressions=all"));
+      # push(@valgrind_args, ("--trace-signals=yes"));
+    }
     unshift(@valgrind_args, "--tool=memcheck");
   }
 
@@ -1988,7 +2009,7 @@ sub find_mysqld {
 
   my ($mysqld_basedir)= $ENV{MTR_BINDIR}|| @_;
 
-  my @mysqld_names= ("mysqld", "mysqld-max-nt", "mysqld-max",
+  my @mysqld_names= ("mariadbd", "mysqld", "mysqld-max-nt", "mysqld-max",
 		     "mysqld-nt");
 
   if ( $opt_debug_server ){
@@ -2026,6 +2047,7 @@ sub executable_setup () {
   $exe_mysqladmin=     mtr_exe_exists("$path_client_bindir/mysqladmin");
   $exe_mysql=          mtr_exe_exists("$path_client_bindir/mysql");
   $exe_mysql_plugin=   mtr_exe_exists("$path_client_bindir/mysql_plugin");
+  $exe_mariadb_conv=   mtr_exe_exists("$path_client_bindir/mariadb-conv");
 
   $exe_mysql_embedded= mtr_exe_maybe_exists("$basedir/libmysqld/examples/mysql_embedded");
 
@@ -2290,6 +2312,7 @@ sub environment_setup {
   $ENV{'DEFAULT_MASTER_PORT'}= $mysqld_variables{'port'};
   $ENV{'MYSQL_TMP_DIR'}=      $opt_tmpdir;
   $ENV{'MYSQLTEST_VARDIR'}=   $opt_vardir;
+  $ENV{'MYSQLTEST_REAL_VARDIR'}= realpath $opt_vardir;
   $ENV{'MYSQL_BINDIR'}=       $bindir;
   $ENV{'MYSQL_SHAREDIR'}=     $path_language;
   $ENV{'MYSQL_CHARSETSDIR'}=  $path_charsetsdir;
@@ -2330,6 +2353,7 @@ sub environment_setup {
   $ENV{'EXE_MYSQL'}=                $exe_mysql;
   $ENV{'MYSQL_PLUGIN'}=             $exe_mysql_plugin;
   $ENV{'MYSQL_EMBEDDED'}=           $exe_mysql_embedded;
+  $ENV{'MARIADB_CONV'}=             $exe_mariadb_conv;
   if(IS_WINDOWS)
   {
      $ENV{'MYSQL_INSTALL_DB_EXE'}=  mtr_exe_exists("$bindir/sql$opt_vs_config/mysql_install_db");
@@ -2629,12 +2653,15 @@ sub setup_vardir() {
   # and make them world readable
   copytree("$glob_mysql_test_dir/std_data", "$opt_vardir/std_data", "0022");
 
-  # create a plugin dir and copy or symlink plugins into it
   unless($plugindir)
   {
+    # create a plugin dir and copy or symlink plugins into it
     if ($source_dist)
     {
       $plugindir="$opt_vardir/plugins";
+      # Source builds collect both client plugins and server plugins in the
+      # same directory.
+      $client_plugindir= $plugindir;
       mkpath($plugindir);
       if (IS_WINDOWS)
       {
@@ -2690,10 +2717,18 @@ sub setup_vardir() {
            <$bindir/lib/plugin/*.so>,             # bintar
            <$bindir/lib/plugin/*.dll>)
       {
-        my $pname=basename($_);
+        my $pname= basename($_);
         set_plugin_var($pname);
-        $plugindir=dirname($_) unless $plugindir;
+        $plugindir= dirname($_) unless $plugindir;
       }
+
+      # Note: client plugins can be installed separately from server plugins,
+      #       as is the case for Debian packaging.
+      for (<$bindir/lib/*/libmariadb3/plugin>)
+      {
+        $client_plugindir= $_ if <$_/*.so>;
+      }
+      $client_plugindir= $plugindir unless $client_plugindir;
     }
   }
 
@@ -3204,7 +3239,7 @@ sub mysql_install_db {
   mtr_add_arg($args, "--loose-skip-plugin-$_") for @optional_plugins;
   # starting from 10.0 bootstrap scripts require InnoDB
   mtr_add_arg($args, "--loose-innodb");
-  mtr_add_arg($args, "--loose-innodb-log-file-size=5M");
+  mtr_add_arg($args, "--loose-innodb-log-file-size=10M");
   mtr_add_arg($args, "--disable-sync-frm");
   mtr_add_arg($args, "--tmpdir=%s", "$opt_vardir/tmp/");
   mtr_add_arg($args, "--core-file");
@@ -4528,7 +4563,7 @@ sub extract_warning_lines ($$) {
 
   my @patterns =
     (
-     qr/^Warning|mysqld: Warning|\[Warning\]/,
+     qr/^Warning|(mysqld|mariadbd): Warning|\[Warning\]/,
      qr/^Error:|\[ERROR\]/,
      qr/^==\d+==\s+\S/, # valgrind errors
      qr/InnoDB: Warning|InnoDB: Error/,
@@ -4603,7 +4638,7 @@ sub extract_warning_lines ($$) {
      qr|Access denied for user|,
      qr|Aborted connection|,
      qr|table.*is full|,
-     qr|\[ERROR\] mysqld: \Z|,  # Warning from Aria recovery
+     qr/\[ERROR\] (mysqld|mariadbd): \Z/,  # Warning from Aria recovery
      qr|Linux Native AIO|, # warning that aio does not work on /dev/shm
      qr|InnoDB: io_setup\(\) attempt|,
      qr|InnoDB: io_setup\(\) failed with EAGAIN|,
@@ -4635,7 +4670,9 @@ sub extract_warning_lines ($$) {
      qr/InnoDB: Table .*mysql.*innodb_table_stats.* not found./,
      qr/InnoDB: User stopword table .* does not exist./,
      qr/Dump thread [0-9]+ last sent to server [0-9]+ binlog file:pos .+/,
-     qr/Detected table cache mutex contention at instance .* waits. Additional table cache instance cannot be activated: consider raising table_open_cache_instances. Number of active instances/
+     qr/Detected table cache mutex contention at instance .* waits. Additional table cache instance cannot be activated: consider raising table_open_cache_instances. Number of active instances/,
+     qr/WSREP: Failed to guess base node address/,
+     qr/WSREP: Guessing address for incoming client/,
     );
 
   my $matched_lines= [];
@@ -6141,7 +6178,7 @@ sub valgrind_arguments {
   my $exe=  shift;
 
   # Ensure the jemalloc works with mysqld
-  if ($$exe =~ /mysqld/)
+  if ($$exe =~ /(mysqld|mariadbd)/)
   {
     my %somalloc=(
       'system jemalloc' => 'libjemalloc*',

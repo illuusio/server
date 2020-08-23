@@ -24,7 +24,7 @@
 #include "sql_priv.h"
 #include "sql_plugin.h"
 #include "ha_heap.h"
-#include "sql_base.h"                    // enum_tdc_remove_table_type
+#include "sql_base.h"
 
 static handler *heap_create_handler(handlerton *hton,
                                     TABLE_SHARE *table, 
@@ -34,25 +34,29 @@ heap_prepare_hp_create_info(TABLE *table_arg, bool internal_table,
                             HP_CREATE_INFO *hp_create_info);
 
 
-int heap_panic(handlerton *hton, ha_panic_function flag)
+static int heap_panic(handlerton *hton, ha_panic_function flag)
 {
   return hp_panic(flag);
 }
 
 
+static int heap_drop_table(handlerton *hton, const char *path)
+{
+  int error= heap_delete_table(path);
+  return error == ENOENT ? -1 : error;
+}
+
 int heap_init(void *p)
 {
   handlerton *heap_hton;
 
-#ifdef HAVE_PSI_INTERFACE
   init_heap_psi_keys();
-#endif
 
   heap_hton= (handlerton *)p;
-  heap_hton->state=      SHOW_OPTION_YES;
   heap_hton->db_type=    DB_TYPE_HEAP;
   heap_hton->create=     heap_create_handler;
   heap_hton->panic=      heap_panic;
+  heap_hton->drop_table= heap_drop_table;
   heap_hton->flags=      HTON_CAN_RECREATE;
 
   return 0;
@@ -562,8 +566,7 @@ THR_LOCK_DATA **ha_heap::store_lock(THD *thd,
 
 int ha_heap::delete_table(const char *name)
 {
-  int error= heap_delete_table(name);
-  return error == ENOENT ? 0 : error;
+  return heap_drop_table(0, name);
 }
 
 
@@ -580,8 +583,8 @@ int ha_heap::rename_table(const char * from, const char * to)
 }
 
 
-ha_rows ha_heap::records_in_range(uint inx, key_range *min_key,
-                                  key_range *max_key)
+ha_rows ha_heap::records_in_range(uint inx, const key_range *min_key,
+                                  const key_range *max_key, page_range *pages)
 {
   KEY *key=table->key_info+inx;
   if (key->algorithm == HA_KEY_ALG_BTREE)
@@ -620,7 +623,8 @@ heap_prepare_hp_create_info(TABLE *table_arg, bool internal_table,
   for (key= parts= 0; key < keys; key++)
     parts+= table_arg->key_info[key].user_defined_key_parts;
 
-  if (!(keydef= (HP_KEYDEF*) my_malloc(keys * sizeof(HP_KEYDEF) +
+  if (!(keydef= (HP_KEYDEF*) my_malloc(hp_key_memory_HP_KEYDEF,
+                                       keys * sizeof(HP_KEYDEF) +
 				       parts * sizeof(HA_KEYSEG),
 				       MYF(MY_WME | MY_THREAD_SPECIFIC))))
     return my_errno;
@@ -835,23 +839,6 @@ int ha_heap::find_unique_row(uchar *record, uint unique_idx)
 struct st_mysql_storage_engine heap_storage_engine=
 { MYSQL_HANDLERTON_INTERFACE_VERSION };
 
-mysql_declare_plugin(heap)
-{
-  MYSQL_STORAGE_ENGINE_PLUGIN,
-  &heap_storage_engine,
-  "MEMORY",
-  "MySQL AB",
-  "Hash based, stored in memory, useful for temporary tables",
-  PLUGIN_LICENSE_GPL,
-  heap_init,
-  NULL,
-  0x0100, /* 1.0 */
-  NULL,                       /* status variables                */
-  NULL,                       /* system variables                */
-  NULL,                       /* config options                  */
-  0,                          /* flags                           */
-}
-mysql_declare_plugin_end;
 maria_declare_plugin(heap)
 {
   MYSQL_STORAGE_ENGINE_PLUGIN,

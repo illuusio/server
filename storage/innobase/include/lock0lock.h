@@ -344,7 +344,7 @@ lock_sec_rec_read_check_and_lock(
 					records: LOCK_S or LOCK_X; the
 					latter is possible in
 					SELECT FOR UPDATE */
-	ulint			gap_mode,/*!< in: LOCK_ORDINARY, LOCK_GAP, or
+	unsigned		gap_mode,/*!< in: LOCK_ORDINARY, LOCK_GAP, or
 					LOCK_REC_NOT_GAP */
 	que_thr_t*		thr);	/*!< in: query thread */
 /*********************************************************************//**
@@ -372,7 +372,7 @@ lock_clust_rec_read_check_and_lock(
 					records: LOCK_S or LOCK_X; the
 					latter is possible in
 					SELECT FOR UPDATE */
-	ulint			gap_mode,/*!< in: LOCK_ORDINARY, LOCK_GAP, or
+	unsigned		gap_mode,/*!< in: LOCK_ORDINARY, LOCK_GAP, or
 					LOCK_REC_NOT_GAP */
 	que_thr_t*		thr);	/*!< in: query thread */
 /*********************************************************************//**
@@ -401,7 +401,7 @@ lock_clust_rec_read_check_and_lock_alt(
 					records: LOCK_S or LOCK_X; the
 					latter is possible in
 					SELECT FOR UPDATE */
-	ulint			gap_mode,/*!< in: LOCK_ORDINARY, LOCK_GAP, or
+	unsigned		gap_mode,/*!< in: LOCK_ORDINARY, LOCK_GAP, or
 					LOCK_REC_NOT_GAP */
 	que_thr_t*		thr)	/*!< in: query thread */
 	MY_ATTRIBUTE((warn_unused_result));
@@ -443,7 +443,7 @@ be granted immediately, the query thread is put to wait.
 dberr_t
 lock_table(
 /*=======*/
-	ulint		flags,	/*!< in: if BTR_NO_LOCKING_FLAG bit is set,
+	unsigned	flags,	/*!< in: if BTR_NO_LOCKING_FLAG bit is set,
 				does nothing */
 	dict_table_t*	table,	/*!< in/out: database table
 				in dictionary cache */
@@ -606,42 +606,6 @@ lock_get_type(
 	const lock_t*	lock);	/*!< in: lock */
 
 /*******************************************************************//**
-Gets the trx of the lock. Non-inline version for using outside of the
-lock module.
-@return	trx_t* */
-UNIV_INTERN
-trx_t*
-lock_get_trx(
-/*=========*/
-	const lock_t*	lock);	/*!< in: lock */
-
-/*******************************************************************//**
-Gets the id of the transaction owning a lock.
-@return transaction id */
-trx_id_t
-lock_get_trx_id(
-/*============*/
-	const lock_t*	lock);	/*!< in: lock */
-
-/*******************************************************************//**
-Gets the mode of a lock in a human readable string.
-The string should not be free()'d or modified.
-@return lock mode */
-const char*
-lock_get_mode_str(
-/*==============*/
-	const lock_t*	lock);	/*!< in: lock */
-
-/*******************************************************************//**
-Gets the type of a lock in a human readable string.
-The string should not be free()'d or modified.
-@return lock type */
-const char*
-lock_get_type_str(
-/*==============*/
-	const lock_t*	lock);	/*!< in: lock */
-
-/*******************************************************************//**
 Gets the id of the table on which the lock is.
 @return id of the table */
 table_id_t
@@ -674,21 +638,6 @@ lock_rec_get_index_name(
 	const lock_t*	lock);	/*!< in: lock */
 
 /*******************************************************************//**
-For a record lock, gets the tablespace number on which the lock is.
-@return tablespace number */
-ulint
-lock_rec_get_space_id(
-/*==================*/
-	const lock_t*	lock);	/*!< in: lock */
-
-/*******************************************************************//**
-For a record lock, gets the page number on which the lock is.
-@return page number */
-ulint
-lock_rec_get_page_no(
-/*=================*/
-	const lock_t*	lock);	/*!< in: lock */
-/*******************************************************************//**
 Check if there are any locks (table or rec) against table.
 @return TRUE if locks exist */
 bool
@@ -698,15 +647,8 @@ lock_table_has_locks(
 					held on records in this table or on the
 					table itself */
 
-/*********************************************************************//**
-A thread which wakes up threads whose lock wait may have lasted too long.
-@return a dummy parameter */
-extern "C"
-os_thread_ret_t
-DECLARE_THREAD(lock_wait_timeout_thread)(
-/*=====================================*/
-	void*	arg);	/*!< in: a dummy parameter required by
-			os_thread_create */
+/** A task which wakes up threads whose lock wait may have lasted too long */
+void lock_wait_timeout_task(void*);
 
 /********************************************************************//**
 Releases a user OS thread waiting for a lock to be released, if the
@@ -817,12 +759,12 @@ public:
 	MY_ALIGNED(CACHE_LINE_SIZE)
 	LockMutex	mutex;			/*!< Mutex protecting the
 						locks */
-	hash_table_t*	rec_hash;		/*!< hash table of the record
-						locks */
-	hash_table_t*	prdt_hash;		/*!< hash table of the predicate
-						lock */
-	hash_table_t*	prdt_page_hash;		/*!< hash table of the page
-						lock */
+  /** record locks */
+  hash_table_t rec_hash;
+  /** predicate locks for SPATIAL INDEX */
+  hash_table_t prdt_hash;
+  /** page locks for SPATIAL INDEX */
+  hash_table_t prdt_page_hash;
 
 	MY_ALIGNED(CACHE_LINE_SIZE)
 	LockMutex	wait_mutex;		/*!< Mutex protecting the
@@ -843,14 +785,8 @@ public:
 
 	ulint		n_lock_max_wait_time;	/*!< Max wait time */
 
-	os_event_t	timeout_event;		/*!< An event waited for by
-						lock_wait_timeout_thread.
-						Not protected by a mutex,
-						but the waits are timed.
-						Signaled on shutdown only. */
-
-	bool		timeout_thread_active;	/*!< True if the timeout thread
-						is running */
+	std::unique_ptr<tpool::timer>	timeout_timer; /*!< Thread pool timer task */
+	bool timeout_timer_active;
 
 
   /**
@@ -897,7 +833,7 @@ lock_rec_create(
 	lock_t*			c_lock,	/*!< conflicting lock */
 	que_thr_t*		thr,	/*!< thread owning trx */
 #endif
-	ulint			type_mode,/*!< in: lock mode and wait
+	unsigned		type_mode,/*!< in: lock mode and wait
 					flag, type is ignored and
 					replaced by LOCK_REC */
 	const buf_block_t*	block,	/*!< in: buffer block containing
@@ -936,7 +872,7 @@ lock_rec_create_low(
 	lock_t*		c_lock,	/*!< conflicting lock */
 	que_thr_t*	thr,	/*!< thread owning trx */
 #endif
-	ulint		type_mode,
+	unsigned	type_mode,
 	ulint		space,
 	ulint		page_no,
 	const page_t*	page,
@@ -967,7 +903,7 @@ lock_rec_enqueue_waiting(
 #ifdef WITH_WSREP
 	lock_t*			c_lock,	/*!< conflicting lock */
 #endif
-	ulint			type_mode,
+	unsigned		type_mode,
 	const buf_block_t*	block,
 	ulint			heap_no,
 	dict_index_t*		index,

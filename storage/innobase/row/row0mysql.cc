@@ -54,7 +54,6 @@ Created 9/17/2000 Heikki Tuuri
 #include "rem0cmp.h"
 #include "row0import.h"
 #include "row0ins.h"
-#include "row0merge.h"
 #include "row0row.h"
 #include "row0sel.h"
 #include "row0upd.h"
@@ -730,7 +729,7 @@ handle_new_error:
 			/* Roll back the latest, possibly incomplete insertion
 			or update */
 
-			trx_rollback_to_savepoint(trx, savept);
+			trx->rollback(savept);
 		}
 		/* MySQL will roll back the latest SQL statement */
 		break;
@@ -753,7 +752,7 @@ handle_new_error:
 		/* Roll back the whole transaction; this resolution was added
 		to version 3.23.43 */
 
-		trx_rollback_to_savepoint(trx, NULL);
+		trx->rollback();
 		break;
 
 	case DB_MUST_GET_MORE_FILE_SPACE:
@@ -1187,7 +1186,7 @@ row_lock_table_autoinc_for_mysql(
 
 	thr = que_fork_get_first_thr(prebuilt->ins_graph);
 
-	que_thr_move_to_run_state_for_mysql(thr, trx);
+	thr->start_running();
 
 run_again:
 	thr->run_node = node;
@@ -1216,7 +1215,7 @@ run_again:
 		return(err);
 	}
 
-	que_thr_stop_for_mysql_no_error(thr, trx);
+	thr->stop_no_error();
 
 	trx->op_info = "";
 
@@ -1246,7 +1245,7 @@ row_lock_table(row_prebuilt_t* prebuilt)
 
 	thr = que_fork_get_first_thr(prebuilt->sel_graph);
 
-	que_thr_move_to_run_state_for_mysql(thr, trx);
+	thr->start_running();
 
 run_again:
 	thr->run_node = thr;
@@ -1278,7 +1277,7 @@ run_again:
 		return(err);
 	}
 
-	que_thr_stop_for_mysql_no_error(thr, trx);
+	thr->stop_no_error();
 
 	trx->op_info = "";
 
@@ -1413,7 +1412,7 @@ row_insert_for_mysql(
 		node->state = INS_NODE_ALLOC_ROW_ID;
 	}
 
-	que_thr_move_to_run_state_for_mysql(thr, trx);
+	thr->start_running();
 
 run_again:
 	thr->run_node = node;
@@ -1515,7 +1514,7 @@ error_exit:
 		}
 	}
 
-	que_thr_stop_for_mysql_no_error(thr, trx);
+	thr->stop_no_error();
 
 	if (table->is_system_db) {
 		srv_stats.n_system_rows_inserted.inc(size_t(trx->id));
@@ -1828,7 +1827,7 @@ row_update_for_mysql(row_prebuilt_t* prebuilt)
 
 	ut_ad(!prebuilt->sql_stat_start);
 
-	que_thr_move_to_run_state_for_mysql(thr, trx);
+	thr->start_running();
 
 	ut_ad(!prebuilt->versioned_write || node->table->versioned());
 
@@ -1873,13 +1872,13 @@ row_update_for_mysql(row_prebuilt_t* prebuilt)
 		}
 	}
 
-	que_thr_stop_for_mysql_no_error(thr, trx);
+	thr->stop_no_error();
 
 	if (dict_table_has_fts_index(table)
 	    && trx->fts_next_doc_id != UINT64_UNDEFINED) {
 		err = row_fts_update_or_delete(prebuilt);
 		if (UNIV_UNLIKELY(err != DB_SUCCESS)) {
-			ut_ad(!"unexpected error");
+			ut_ad("unexpected error" == 0);
 			goto error;
 		}
 	}
@@ -1937,8 +1936,8 @@ error:
 	DBUG_RETURN(err);
 }
 
-/** This can only be used when srv_locks_unsafe_for_binlog is TRUE or this
-session is using a READ COMMITTED or READ UNCOMMITTED isolation level.
+/** This can only be used when the current transaction is at
+READ COMMITTED or READ UNCOMMITTED isolation level.
 Before calling this function row_search_for_mysql() must have
 initialized prebuilt->new_rec_locks to store the information which new
 record locks really were set. This function removes a newly set
@@ -1961,17 +1960,8 @@ row_unlock_for_mysql(
 
 	ut_ad(prebuilt != NULL);
 	ut_ad(trx != NULL);
+	ut_ad(trx->isolation_level <= TRX_ISO_READ_COMMITTED);
 
-	if (UNIV_UNLIKELY
-	    (!srv_locks_unsafe_for_binlog
-	     && trx->isolation_level > TRX_ISO_READ_COMMITTED)) {
-
-		ib::error() << "Calling row_unlock_for_mysql though"
-			" innodb_locks_unsafe_for_binlog is FALSE and this"
-			" session is not using READ COMMITTED isolation"
-			" level.";
-		return;
-	}
 	if (dict_index_is_spatial(prebuilt->index)) {
 		return;
 	}
@@ -2394,7 +2384,7 @@ err_exit:
 		break;
 	case DB_OUT_OF_FILE_SPACE:
 		trx->error_state = DB_SUCCESS;
-		trx_rollback_to_savepoint(trx, NULL);
+		trx->rollback();
 
 		ib::warn() << "Cannot create table "
 			<< table->name
@@ -2425,7 +2415,7 @@ err_exit:
 	case DB_TABLESPACE_EXISTS:
 	default:
 		trx->error_state = DB_SUCCESS;
-		trx_rollback_to_savepoint(trx, NULL);
+		trx->rollback();
 		dict_mem_table_free(table);
 		break;
 	}
@@ -2528,8 +2518,8 @@ row_create_index_for_mysql(
 		ut_ad((index == NULL) == (err != DB_SUCCESS));
 		if (UNIV_LIKELY(err == DB_SUCCESS)) {
 			ut_ad(!index->is_instant());
-			index->n_core_null_bytes = UT_BITS_IN_BYTES(
-				unsigned(index->n_nullable));
+			index->n_core_null_bytes = static_cast<uint8_t>(
+				UT_BITS_IN_BYTES(unsigned(index->n_nullable)));
 
 			err = dict_create_index_tree_in_mem(index, trx);
 #ifdef BTR_CUR_HASH_ADAPT
@@ -2737,7 +2727,10 @@ row_mysql_drop_garbage_tables()
 		table_name = mem_heap_strdupl(
 			heap,
 			reinterpret_cast<const char*>(field), len);
-		if (strstr(table_name, "/" TEMP_FILE_PREFIX "-")) {
+		if (strstr(table_name, "/" TEMP_FILE_PREFIX "-") &&
+                    !strstr(table_name, "/" TEMP_FILE_PREFIX "-backup-") &&
+                    !strstr(table_name, "/" TEMP_FILE_PREFIX "-exchange-"))
+                {
 			btr_pcur_store_position(&pcur, &mtr);
 			btr_pcur_commit_specify_mtr(&pcur, &mtr);
 
@@ -3175,7 +3168,7 @@ row_mysql_lock_table(
 	thr = que_fork_get_first_thr(
 		static_cast<que_fork_t*>(que_node_get_parent(thr)));
 
-	que_thr_move_to_run_state_for_mysql(thr, trx);
+	thr->start_running();
 
 run_again:
 	thr->run_node = thr;
@@ -3186,7 +3179,7 @@ run_again:
 	trx->error_state = err;
 
 	if (err == DB_SUCCESS) {
-		que_thr_stop_for_mysql_no_error(thr, trx);
+		thr->stop_no_error();
 	} else {
 		que_thr_stop_for_mysql(thr);
 
@@ -3341,6 +3334,8 @@ row_drop_table_for_mysql(
 		DBUG_RETURN(DB_TABLE_NOT_FOUND);
 	}
 
+	std::vector<pfs_os_file_t> detached_handles;
+
 	const bool is_temp_name = strstr(table->name.m_name,
 					 "/" TEMP_FILE_PREFIX);
 
@@ -3375,19 +3370,6 @@ row_drop_table_for_mysql(
 		table records yet. Thus it is safe to release and
 		reacquire the data dictionary latches. */
 		if (table->fts) {
-			ut_ad(!table->fts->add_wq);
-			ut_ad(lock_trx_has_sys_table_locks(trx) == 0);
-
-			for (;;) {
-				bool retry = false;
-				if (dict_fts_index_syncing(table)) {
-					retry = true;
-				}
-				if (!retry) {
-					break;
-				}
-				DICT_BG_YIELD(trx);
-			}
 			row_mysql_unlock_data_dictionary(trx);
 			fts_optimize_remove_table(table);
 			row_mysql_lock_data_dictionary(trx);
@@ -3408,7 +3390,7 @@ row_drop_table_for_mysql(
 
 		dict_stats_recalc_pool_del(table);
 		dict_stats_defrag_pool_del(table, NULL);
-		if (btr_defragment_thread_active) {
+		if (btr_defragment_active) {
 			/* During fts_drop_orphaned_tables() in
 			recv_recovery_rollback_active() the
 			btr_defragment_mutex has not yet been
@@ -3490,7 +3472,15 @@ row_drop_table_for_mysql(
 
 	if (table->n_foreign_key_checks_running > 0) {
 defer:
-		if (!is_temp_name) {
+		/* Rename #sql-backup to #sql-ib if table has open ref count
+		while dropping the table. This scenario can happen
+		when purge thread is waiting for dict_sys.mutex so
+		that it could close the table. But drop table acquires
+		dict_sys.mutex.
+                In the future this should use 'tmp_file_prefix'!
+                */
+		if (!is_temp_name
+		    || strstr(table->name.m_name, "/#sql-backup-")) {
 			heap = mem_heap_create(FN_REFLEN);
 			const char* tmp_name
 				= dict_mem_create_temporary_tablename(
@@ -3729,7 +3719,8 @@ do_drop:
 		ut_ad(!filepath);
 
 		if (space->id != TRX_SYS_SPACE) {
-			err = fil_delete_tablespace(space->id);
+			err = fil_delete_tablespace(space->id, false,
+						    &detached_handles);
 		}
 		break;
 
@@ -3756,7 +3747,7 @@ do_drop:
 			<< ut_get_name(trx, tablename) << ".";
 
 		trx->error_state = DB_SUCCESS;
-		trx_rollback_to_savepoint(trx, NULL);
+		trx->rollback();
 		trx->error_state = DB_SUCCESS;
 
 		/* Mark all indexes available in the data dictionary
@@ -3807,6 +3798,11 @@ funct_exit_all_freed:
 		}
 
 		row_mysql_unlock_data_dictionary(trx);
+	}
+
+	for (const auto& handle : detached_handles) {
+		ut_ad(handle != OS_FILE_CLOSED);
+		os_file_close(handle);
 	}
 
 	trx->op_info = "";
@@ -4488,7 +4484,7 @@ end:
 				" succeed.";
 		}
 		trx->error_state = DB_SUCCESS;
-		trx_rollback_to_savepoint(trx, NULL);
+		trx->rollback();
 		trx->error_state = DB_SUCCESS;
 	} else {
 		/* The following call will also rename the .ibd data file if
@@ -4498,7 +4494,7 @@ end:
 			table, new_name, !new_is_tmp);
 		if (err != DB_SUCCESS) {
 			trx->error_state = DB_SUCCESS;
-			trx_rollback_to_savepoint(trx, NULL);
+			trx->rollback();
 			trx->error_state = DB_SUCCESS;
 			goto funct_exit;
 		}
@@ -4511,13 +4507,16 @@ end:
 		}
 
 		/* We only want to switch off some of the type checking in
-		an ALTER TABLE...ALGORITHM=COPY, not in a RENAME. */
+		an ALTER TABLE, not in a RENAME. */
 		dict_names_t	fk_tables;
 
 		err = dict_load_foreigns(
-			new_name, NULL,
-			false, !old_is_tmp || trx->check_foreigns,
-			DICT_ERR_IGNORE_NONE, fk_tables);
+			new_name, NULL, false,
+			!old_is_tmp || trx->check_foreigns,
+			use_fk
+			? DICT_ERR_IGNORE_NONE
+			: DICT_ERR_IGNORE_FK_NOKEY,
+			fk_tables);
 
 		if (err != DB_SUCCESS) {
 
@@ -4536,10 +4535,8 @@ end:
 					" with the new table definition.";
 			}
 
-			ut_a(DB_SUCCESS == dict_table_rename_in_cache(
-				table, old_name, FALSE));
 			trx->error_state = DB_SUCCESS;
-			trx_rollback_to_savepoint(trx, NULL);
+			trx->rollback();
 			trx->error_state = DB_SUCCESS;
 		}
 
@@ -4551,7 +4548,7 @@ end:
 			ut_a(DB_SUCCESS == dict_table_rename_in_cache(
 				table, old_name, FALSE));
 			trx->error_state = DB_SUCCESS;
-			trx_rollback_to_savepoint(trx, NULL);
+			trx->rollback();
 			trx->error_state = DB_SUCCESS;
 			goto funct_exit;
 		}

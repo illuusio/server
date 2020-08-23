@@ -5180,7 +5180,7 @@ char *jbin_object_delete(UDF_INIT *initid, UDF_ARGS *args, char *result,
 		PCSZ  key;
 		PJOB  jobp;
 		PJVAL jvp = MakeValue(g, args, 0, &top);
-		PJSON jsp __attribute__((unused)) = jvp->GetJson();
+		(void) jvp->GetJson();          // XXX Should be removed?
 
 		if (CheckPath(g, args, top, jvp, 2))
 			PUSH_WARNING(g->Message);

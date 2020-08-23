@@ -1,5 +1,5 @@
 /* Copyright (c) 2000, 2013, Oracle and/or its affiliates.
-   Copyright (c) 2016, MariaDB
+   Copyright (c) 2016, 2020, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -41,8 +41,8 @@ bool Binary_string::real_alloc(size_t length)
   if (Alloced_length < arg_length)
   {
     free();
-    if (!(Ptr=(char*) my_malloc(arg_length,MYF(MY_WME |
-                                               (thread_specific ?
+    if (!(Ptr=(char*) my_malloc(PSI_INSTRUMENT_ME,
+                                arg_length,MYF(MY_WME | (thread_specific ?
                                                 MY_THREAD_SPECIFIC : 0)))))
       return TRUE;
     DBUG_ASSERT(length < UINT_MAX32);
@@ -92,13 +92,13 @@ bool Binary_string::realloc_raw(size_t alloc_length)
       return TRUE;                                 /* Overflow */
     if (alloced)
     {
-      if (!(new_ptr= (char*) my_realloc(Ptr,len,
+      if (!(new_ptr= (char*) my_realloc(PSI_INSTRUMENT_ME, Ptr,len,
                                         MYF(MY_WME |
                                             (thread_specific ?
                                              MY_THREAD_SPECIFIC : 0)))))
         return TRUE;				// Signal error
     }
-    else if ((new_ptr= (char*) my_malloc(len,
+    else if ((new_ptr= (char*) my_malloc(PSI_INSTRUMENT_ME, len,
                                          MYF(MY_WME |
                                              (thread_specific ?
                                               MY_THREAD_SPECIFIC : 0)))))
@@ -125,7 +125,7 @@ bool String::set_int(longlong num, bool unsigned_flag, CHARSET_INFO *cs)
 
   if (alloc(l))
     return TRUE;
-  str_length=(uint32) (cs->cset->longlong10_to_str)(cs,Ptr,l,base,num);
+  str_length=(uint32) (cs->longlong10_to_str)(Ptr,l,base,num);
   set_charset(cs);
   return FALSE;
 }
@@ -777,6 +777,29 @@ void Static_binary_string::qs_append(ulonglong i)
   str_length+= (int) (end-buff);
 }
 
+
+bool Binary_string::copy_printable_hhhh(CHARSET_INFO *to_cs,
+                                        CHARSET_INFO *from_cs,
+                                        const char *from,
+                                        size_t from_length)
+{
+  DBUG_ASSERT(from_length < UINT_MAX32);
+  uint errors;
+  uint one_escaped_char_length= MY_CS_PRINTABLE_CHAR_LENGTH * to_cs->mbminlen;
+  uint one_char_length= MY_MAX(one_escaped_char_length, to_cs->mbmaxlen);
+  ulonglong bytes_needed= from_length * one_char_length;
+  if (bytes_needed >= UINT_MAX32 || alloc((size_t) bytes_needed))
+    return true;
+  str_length= my_convert_using_func(Ptr, Alloced_length, to_cs,
+                                    to_cs->cset->wc_to_printable,
+                                    from, from_length,
+                                    from_cs,
+                                    from_cs->cset->mb_wc,
+                                    &errors);
+  return false;
+}
+
+
 /*
   Compare strings according to collation, without end space.
 
@@ -798,9 +821,8 @@ void Static_binary_string::qs_append(ulonglong i)
 
 int sortcmp(const String *s,const String *t, CHARSET_INFO *cs)
 {
- return cs->coll->strnncollsp(cs,
-                              (uchar *) s->ptr(),s->length(),
-                              (uchar *) t->ptr(),t->length());
+ return cs->strnncollsp(s->ptr(), s->length(),
+                        t->ptr(), t->length());
 }
 
 
@@ -1076,8 +1098,8 @@ String_copier::well_formed_copy(CHARSET_INFO *to_cs,
       my_charset_same(from_cs, to_cs))
   {
     m_cannot_convert_error_pos= NULL;
-    return (uint) to_cs->cset->copy_fix(to_cs, to, to_length, from, from_length,
-                                 nchars, this);
+    return (uint) to_cs->copy_fix(to, to_length, from, from_length,
+                                  nchars, this);
   }
   return (uint) my_convert_fix(to_cs, to, to_length, from_cs, from, from_length,
                         nchars, this, this);
@@ -1213,4 +1235,26 @@ bool String::append_semi_hex(const char *s, uint len, CHARSET_INFO *cs)
   DBUG_ASSERT((ulonglong) str_length + nbytes < UINT_MAX32);
   str_length+= nbytes;
   return false;
+}
+
+// Shrink the buffer, but only if it is allocated on the heap.
+void Binary_string::shrink(size_t arg_length)
+{
+    if (!is_alloced())
+        return;
+    if (ALIGN_SIZE(arg_length + 1) < Alloced_length)
+    {
+        char* new_ptr;
+        if (!(new_ptr = (char*)my_realloc(STRING_PSI_MEMORY_KEY, Ptr, arg_length,
+            MYF(thread_specific ? MY_THREAD_SPECIFIC : 0))))
+        {
+            Alloced_length = 0;
+            real_alloc(arg_length);
+        }
+        else
+        {
+            Ptr = new_ptr;
+            Alloced_length = (uint32)arg_length;
+        }
+    }
 }

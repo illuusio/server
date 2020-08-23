@@ -46,7 +46,7 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
   uint aligned_key_start, block_length, res;
   uint internal_table= flags & HA_CREATE_INTERNAL_TABLE;
   ulong reclength, real_reclength,min_pack_length;
-  char kfilename[FN_REFLEN],klinkname[FN_REFLEN], *klinkname_ptr;
+  char kfilename[FN_REFLEN],klinkname[FN_REFLEN], *klinkname_ptr= 0;
   char dfilename[FN_REFLEN],dlinkname[FN_REFLEN], *dlinkname_ptr= 0;
   ulong pack_reclength;
   ulonglong tot_length,max_rows, tmp;
@@ -94,7 +94,8 @@ int mi_create(const char *name,uint keys,MI_KEYDEF *keydefs,
     ci->reloc_rows=ci->max_rows;		/* Check if wrong parameter */
 
   if (!(rec_per_key_part=
-	(ulong*) my_malloc((keys + uniques)*HA_MAX_KEY_SEG*sizeof(long),
+	(ulong*) my_malloc(mi_key_memory_MYISAM_SHARE,
+                           (keys + uniques) * HA_MAX_KEY_SEG * sizeof(long),
 			   MYF(MY_WME | MY_ZEROFILL))))
     DBUG_RETURN(my_errno);
 

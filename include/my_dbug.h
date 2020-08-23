@@ -52,7 +52,10 @@ extern void _db_enter_(const char *_func_, const char *_file_, uint _line_,
 extern  void _db_return_(struct _db_stack_frame_ *_stack_frame_);
 extern  int _db_pargs_(uint _line_,const char *keyword);
 extern  void _db_doprnt_(const char *format,...)
-  ATTRIBUTE_FORMAT(printf, 1, 2);
+#ifdef WAITING_FOR_BUGFIX_TO_VSPRINTF
+  ATTRIBUTE_FORMAT(printf, 1, 2)
+#endif
+  ;
 extern  void _db_dump_(uint _line_,const char *keyword,
                        const unsigned char *memory, size_t length);
 extern  void _db_end_(void);
@@ -139,7 +142,7 @@ extern int (*dbug_sanity)(void);
 #define DBUG_ABORT() (_db_flush_(),\
                      (void)_CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE),\
                      (void)_CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR),\
-                     _exit(3))
+                     TerminateProcess(GetCurrentProcess(),3))
 #endif
 
 /*
