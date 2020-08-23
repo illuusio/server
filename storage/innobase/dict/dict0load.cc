@@ -233,7 +233,7 @@ dict_get_first_table_name_in_db(
 	tuple = dtuple_create(heap, 1);
 	dfield = dtuple_get_nth_field(tuple, 0);
 
-	dfield_set_data(dfield, name, ut_strlen(name));
+	dfield_set_data(dfield, name, strlen(name));
 	dict_index_copy_types(tuple, sys_index, 1);
 
 	btr_pcur_open_on_user_rec(sys_index, tuple, PAGE_CUR_GE,
@@ -255,7 +255,7 @@ loop:
 		rec, DICT_FLD__SYS_TABLES__NAME, &len);
 
 	if (len < strlen(name)
-	    || ut_memcmp(name, field, strlen(name)) != 0) {
+	    || memcmp(name, field, strlen(name))) {
 		/* Not found */
 
 		btr_pcur_close(&pcur);
@@ -387,7 +387,7 @@ dict_process_sys_tables_rec_and_mtr_commit(
 
 	ut_a(!rec_get_deleted_flag(rec, 0));
 
-	ut_ad(mtr_memo_contains_page(mtr, rec, MTR_MEMO_PAGE_S_FIX));
+	ut_ad(mtr->memo_contains_page_flagged(rec, MTR_MEMO_PAGE_S_FIX));
 
 	/* Get the table name */
 	table_name_t table_name(mem_heap_strdupl(heap, field, len));
@@ -528,7 +528,6 @@ dict_process_sys_foreign_rec(
 {
 	ulint		len;
 	const byte*	field;
-	ulint		n_fields_and_type;
 
 	if (rec_get_deleted_flag(rec, 0)) {
 		return("delete-marked record in SYS_FOREIGN");
@@ -586,10 +585,10 @@ err_len:
 	if (len != 4) {
 		goto err_len;
 	}
-	n_fields_and_type = mach_read_from_4(field);
+	uint32_t n_fields_and_type = mach_read_from_4(field);
 
-	foreign->type = (unsigned int) (n_fields_and_type >> 24);
-	foreign->n_fields = (unsigned int) (n_fields_and_type & 0x3FFUL);
+	foreign->type = n_fields_and_type >> 24 & ((1U << 6) - 1);
+	foreign->n_fields = n_fields_and_type & dict_index_t::MAX_N_FIELDS;
 
 	return(NULL);
 }
@@ -672,17 +671,12 @@ dict_process_sys_tablespaces(
 /*=========================*/
 	mem_heap_t*	heap,		/*!< in/out: heap memory */
 	const rec_t*	rec,		/*!< in: current SYS_TABLESPACES rec */
-	ulint*		space,		/*!< out: space id */
+	uint32_t*	space,		/*!< out: tablespace identifier */
 	const char**	name,		/*!< out: tablespace name */
 	ulint*		flags)		/*!< out: tablespace flags */
 {
 	ulint		len;
 	const byte*	field;
-
-	/* Initialize the output values */
-	*space = ULINT_UNDEFINED;
-	*name = NULL;
-	*flags = ULINT_UNDEFINED;
 
 	if (rec_get_deleted_flag(rec, 0)) {
 		return("delete-marked record in SYS_TABLESPACES");
@@ -738,7 +732,7 @@ dict_process_sys_datafiles(
 /*=======================*/
 	mem_heap_t*	heap,		/*!< in/out: heap memory */
 	const rec_t*	rec,		/*!< in: current SYS_DATAFILES rec */
-	ulint*		space,		/*!< out: space id */
+	uint32_t*	space,		/*!< out: space id */
 	const char**	path)		/*!< out: datafile paths */
 {
 	ulint		len;
@@ -1487,7 +1481,8 @@ void dict_check_tablespaces_and_store_max_id()
 	/* Initialize the max space_id from sys header */
 	mtr.start();
 	ulint max_space_id = mach_read_from_4(DICT_HDR_MAX_SPACE_ID
-					      + dict_hdr_get(&mtr));
+					      + DICT_HDR
+					      + dict_hdr_get(&mtr)->frame);
 	mtr.commit();
 
 	fil_set_max_space_id_if_bigger(max_space_id);
@@ -1847,7 +1842,6 @@ dict_load_columns(
 			the flag is set before the table is created. */
 			if (table->fts == NULL) {
 				table->fts = fts_create(table);
-				fts_optimize_add_table(table);
 			}
 
 			ut_a(table->fts->doc_col == ULINT_UNDEFINED);
@@ -2103,7 +2097,7 @@ err_len:
 
 		sys_field->name = mem_heap_strdupl(
 			heap, (const char*) field, len);
-		sys_field->prefix_len = prefix_len;
+		sys_field->prefix_len = prefix_len & ((1U << 12) - 1);
 		*pos = position;
 	}
 
@@ -2332,7 +2326,7 @@ err_len:
 	(*index)->id = id;
 	(*index)->page = mach_read_from_4(field);
 	ut_ad((*index)->page);
-	(*index)->merge_threshold = merge_threshold;
+	(*index)->merge_threshold = merge_threshold & ((1U << 6) - 1);
 
 	return(NULL);
 }
@@ -2699,10 +2693,12 @@ dict_get_and_save_data_dir_path(
 
 		if (const char* p = table->space
 		    ? table->space->chain.start->name : NULL) {
-			table->flags |= (1 << DICT_TF_POS_DATA_DIR);
+			table->flags |= 1 << DICT_TF_POS_DATA_DIR
+				& ((1U << DICT_TF_BITS) - 1);
 			dict_save_data_dir_path(table, p);
 		} else if (char* path = dict_get_first_path(table->space_id)) {
-			table->flags |= (1 << DICT_TF_POS_DATA_DIR);
+			table->flags |= 1 << DICT_TF_POS_DATA_DIR
+				& ((1U << DICT_TF_BITS) - 1);
 			dict_save_data_dir_path(table, path);
 			ut_free(path);
 		}
@@ -2712,7 +2708,8 @@ dict_get_and_save_data_dir_path(
 			unset the flag.  This does not change SYS_DATAFILES
 			or SYS_TABLES or FSP_FLAGS on the header page of the
 			tablespace, but it makes dict_table_t consistent. */
-			table->flags &= ~DICT_TF_MASK_DATA_DIR;
+			table->flags &= ~DICT_TF_MASK_DATA_DIR
+				& ((1U << DICT_TF_BITS) - 1);
 		}
 
 		if (!dict_mutex_own) {
@@ -2770,7 +2767,7 @@ dict_load_tablespace(
 {
 	ut_ad(!table->is_temporary());
 	ut_ad(!table->space);
-	ut_ad(table->space_id < SRV_LOG_SPACE_FIRST_ID);
+	ut_ad(table->space_id < SRV_SPACE_ID_UPPER_BOUND);
 	ut_ad(fil_system.sys_space);
 
 	if (table->space_id == TRX_SYS_SPACE) {
@@ -2897,7 +2894,7 @@ dict_load_table_one(
 	tuple = dtuple_create(heap, 1);
 	dfield = dtuple_get_nth_field(tuple, 0);
 
-	dfield_set_data(dfield, name.m_name, ut_strlen(name.m_name));
+	dfield_set_data(dfield, name.m_name, strlen(name.m_name));
 	dict_index_copy_types(tuple, sys_index, 1);
 
 	btr_pcur_open_on_user_rec(sys_index, tuple, PAGE_CUR_GE,
@@ -2919,8 +2916,8 @@ err_exit:
 		rec, DICT_FLD__SYS_TABLES__NAME, &len);
 
 	/* Check if the table name in record is the searched one */
-	if (len != ut_strlen(name.m_name)
-	    || 0 != ut_memcmp(name.m_name, field, len)) {
+	if (len != strlen(name.m_name)
+	    || memcmp(name.m_name, field, len)) {
 
 		goto err_exit;
 	}
@@ -3082,7 +3079,6 @@ func_exit:
 			/* the table->fts could be created in dict_load_column
 			when a user defined FTS_DOC_ID is present, but no
 			FTS */
-			fts_optimize_remove_table(table);
 			fts_free(table);
 		} else if (fts_optimize_wq) {
 			fts_optimize_add_table(table);
@@ -3280,7 +3276,7 @@ dict_load_foreign_cols(
 		field = rec_get_nth_field_old(
 			rec, DICT_FLD__SYS_FOREIGN_COLS__ID, &len);
 
-		if (len != id_len || ut_memcmp(foreign->id, field, len) != 0) {
+		if (len != id_len || memcmp(foreign->id, field, len)) {
 			const rec_t*	pos;
 			ulint		pos_len;
 			const rec_t*	for_col_name;
@@ -3380,7 +3376,6 @@ dict_load_foreign(
 	const rec_t*	rec;
 	const byte*	field;
 	ulint		len;
-	ulint		n_fields_and_type;
 	mtr_t		mtr;
 	dict_table_t*	for_table;
 	dict_table_t*	ref_table;
@@ -3431,8 +3426,7 @@ dict_load_foreign(
 	field = rec_get_nth_field_old(rec, DICT_FLD__SYS_FOREIGN__ID, &len);
 
 	/* Check if the id in record is the searched one */
-	if (len != id_len || ut_memcmp(id, field, len) != 0) {
-
+	if (len != id_len || memcmp(id, field, len)) {
 		{
 			ib::error	err;
 			err << "Cannot load foreign constraint " << id
@@ -3455,7 +3449,7 @@ dict_load_foreign(
 
 	foreign = dict_mem_foreign_create();
 
-	n_fields_and_type = mach_read_from_4(
+	uint32_t n_fields_and_type = mach_read_from_4(
 		rec_get_nth_field_old(
 			rec, DICT_FLD__SYS_FOREIGN__N_COLS, &len));
 
@@ -3463,8 +3457,8 @@ dict_load_foreign(
 
 	/* We store the type in the bits 24..29 of n_fields_and_type. */
 
-	foreign->type = (unsigned int) (n_fields_and_type >> 24);
-	foreign->n_fields = (unsigned int) (n_fields_and_type & 0x3FFUL);
+	foreign->type = (n_fields_and_type >> 24) & ((1U << 6) - 1);
+	foreign->n_fields = n_fields_and_type & dict_index_t::MAX_N_FIELDS;
 
 	foreign->id = mem_heap_strdupl(foreign->heap, id, id_len);
 
@@ -3591,7 +3585,7 @@ start_load:
 	tuple = dtuple_create_from_mem(tuple_buf, sizeof(tuple_buf), 1, 0);
 	dfield = dtuple_get_nth_field(tuple, 0);
 
-	dfield_set_data(dfield, table_name, ut_strlen(table_name));
+	dfield_set_data(dfield, table_name, strlen(table_name));
 	dict_index_copy_types(tuple, sec_index, 1);
 
 	btr_pcur_open_on_user_rec(sec_index, tuple, PAGE_CUR_GE,
@@ -3636,8 +3630,8 @@ loop:
 		goto next_rec;
 	}
 
-	if ((innobase_get_lower_case_table_names() != 2)
-	    && (0 != ut_memcmp(field, table_name, len))) {
+	if (innobase_get_lower_case_table_names() != 2
+	    && memcmp(field, table_name, len)) {
 		goto next_rec;
 	}
 

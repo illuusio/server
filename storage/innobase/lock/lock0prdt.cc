@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 2014, 2016, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2018, MariaDB Corporation.
+Copyright (c) 2018, 2020, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -153,7 +153,7 @@ bool
 lock_prdt_has_to_wait(
 /*==================*/
 	const trx_t*	trx,	/*!< in: trx of new lock */
-	ulint		type_mode,/*!< in: precise mode of the new lock
+	unsigned	type_mode,/*!< in: precise mode of the new lock
 				to set: LOCK_S or LOCK_X, possibly
 				ORed to LOCK_PREDICATE or LOCK_PRDT_PAGE,
 				LOCK_INSERT_INTENTION */
@@ -228,7 +228,7 @@ lock_t*
 lock_prdt_has_lock(
 /*===============*/
 	ulint			precise_mode,	/*!< in: LOCK_S or LOCK_X */
-	ulint			type_mode,	/*!< in: LOCK_PREDICATE etc. */
+	unsigned		type_mode,	/*!< in: LOCK_PREDICATE etc. */
 	const buf_block_t*	block,		/*!< in: buffer block
 						containing the record */
 	lock_prdt_t*		prdt,		/*!< in: The predicate to be
@@ -285,7 +285,7 @@ static
 lock_t*
 lock_prdt_other_has_conflicting(
 /*============================*/
-	ulint			mode,	/*!< in: LOCK_S or LOCK_X,
+	unsigned		mode,	/*!< in: LOCK_S or LOCK_X,
 					possibly ORed to LOCK_PREDICATE or
 					LOCK_PRDT_PAGE, LOCK_INSERT_INTENTION */
 	const buf_block_t*	block,	/*!< in: buffer block containing
@@ -385,7 +385,7 @@ static
 lock_t*
 lock_prdt_find_on_page(
 /*===================*/
-	ulint			type_mode,	/*!< in: lock type_mode field */
+	unsigned		type_mode,	/*!< in: lock type_mode field */
 	const buf_block_t*	block,		/*!< in: buffer block */
 	lock_prdt_t*		prdt,		/*!< in: MBR with the lock */
 	const trx_t*		trx)		/*!< in: transaction */
@@ -423,7 +423,7 @@ static
 lock_t*
 lock_prdt_add_to_queue(
 /*===================*/
-	ulint			type_mode,/*!< in: lock mode, wait, predicate
+	unsigned		type_mode,/*!< in: lock mode, wait, predicate
 					etc. flags; type is ignored
 					and replaced by LOCK_REC */
 	const buf_block_t*	block,	/*!< in: buffer block containing
@@ -541,7 +541,7 @@ lock_prdt_insert_check_and_lock(
 	lock_t*		lock;
 
 	/* Only need to check locks on prdt_hash */
-	lock = lock_rec_get_first(lock_sys.prdt_hash, block, PRDT_HEAPNO);
+	lock = lock_rec_get_first(&lock_sys.prdt_hash, block, PRDT_HEAPNO);
 
 	if (lock == NULL) {
 		lock_mutex_exit();
@@ -628,7 +628,7 @@ lock_prdt_update_parent(
 
 	/* Get all locks in parent */
 	for (lock = lock_rec_get_first_on_page_addr(
-			lock_sys.prdt_hash, space, page_no);
+		     &lock_sys.prdt_hash, space, page_no);
 	     lock;
 	     lock = lock_rec_get_next_on_page(lock)) {
 		lock_prdt_t*	lock_prdt;
@@ -677,7 +677,7 @@ lock_prdt_update_split_low(
 	lock_prdt_t*	new_prdt,	/*!< in: MBR on the new page */
 	ulint		space,		/*!< in: space id */
 	ulint		page_no,	/*!< in: page number */
-	ulint		type_mode)	/*!< in: LOCK_PREDICATE or
+	unsigned	type_mode)	/*!< in: LOCK_PREDICATE or
 					LOCK_PRDT_PAGE */
 {
 	lock_t*		lock;
@@ -775,7 +775,7 @@ lock_init_prdt_from_mbr(
 
 	if (heap != NULL) {
 		prdt->data = mem_heap_alloc(heap, sizeof(*mbr));
-		ut_memcpy(prdt->data, mbr, sizeof(*mbr));
+		memcpy(prdt->data, mbr, sizeof(*mbr));
 	} else {
 		prdt->data = static_cast<void*>(mbr);
 	}
@@ -797,7 +797,7 @@ lock_prdt_lock(
 				records: LOCK_S or LOCK_X; the
 				latter is possible in
 				SELECT FOR UPDATE */
-	ulint		type_mode,
+	unsigned	type_mode,
 				/*!< in: LOCK_PREDICATE or LOCK_PRDT_PAGE */
 	que_thr_t*	thr)	/*!< in: query thread
 				(can be NULL if BTR_NO_LOCKING_FLAG) */
@@ -815,8 +815,8 @@ lock_prdt_lock(
 	ut_ad(type_mode & (LOCK_PREDICATE | LOCK_PRDT_PAGE));
 
 	hash_table_t*	hash = type_mode == LOCK_PREDICATE
-		? lock_sys.prdt_hash
-		: lock_sys.prdt_page_hash;
+		? &lock_sys.prdt_hash
+		: &lock_sys.prdt_page_hash;
 
 	/* Another transaction cannot have an implicit lock on the record,
 	because when we come here, we already have modified the clustered
@@ -825,7 +825,7 @@ lock_prdt_lock(
 
 	lock_mutex_enter();
 
-	const ulint	prdt_mode = ulint(mode) | type_mode;
+	const unsigned	prdt_mode = type_mode | mode;
 	lock_t*		lock = lock_rec_get_first_on_page(hash, block);
 
 	if (lock == NULL) {
@@ -833,7 +833,7 @@ lock_prdt_lock(
 #ifdef WITH_WSREP
 			NULL, NULL, /* FIXME: replicate SPATIAL INDEX locks */
 #endif
-			ulint(mode) | type_mode, block, PRDT_HEAPNO,
+			prdt_mode, block, PRDT_HEAPNO,
 			index, trx, FALSE);
 
 		status = LOCK_REC_SUCCESS_CREATED;
@@ -865,7 +865,7 @@ lock_prdt_lock(
 						NULL, /* FIXME: replicate
 						      SPATIAL INDEX locks */
 #endif
-						ulint(mode) | type_mode,
+						prdt_mode,
 						block, PRDT_HEAPNO,
 						index, thr, prdt);
 				} else {
@@ -925,7 +925,7 @@ lock_place_prdt_page_lock(
 	lock_mutex_enter();
 
 	const lock_t*	lock = lock_rec_get_first_on_page_addr(
-		lock_sys.prdt_page_hash, space, page_no);
+		&lock_sys.prdt_page_hash, space, page_no);
 
 	const ulint	mode = LOCK_S | LOCK_PRDT_PAGE;
 	trx_t*		trx = thr_get_trx(thr);
@@ -981,7 +981,7 @@ lock_test_prdt_page_lock(
 	lock_mutex_enter();
 
 	lock = lock_rec_get_first_on_page_addr(
-		lock_sys.prdt_page_hash, space, page_no);
+		&lock_sys.prdt_page_hash, space, page_no);
 
 	lock_mutex_exit();
 
@@ -999,20 +999,14 @@ lock_prdt_rec_move(
 	const buf_block_t*	donator)	/*!< in: buffer block containing
 						the donating record */
 {
-	lock_t* lock;
-
-	if (!lock_sys.prdt_hash) {
-		return;
-	}
-
 	lock_mutex_enter();
 
-	for (lock = lock_rec_get_first(lock_sys.prdt_hash,
-				       donator, PRDT_HEAPNO);
+	for (lock_t *lock = lock_rec_get_first(&lock_sys.prdt_hash,
+					       donator, PRDT_HEAPNO);
 	     lock != NULL;
 	     lock = lock_rec_get_next(PRDT_HEAPNO, lock)) {
 
-		const ulint     type_mode = lock->type_mode;
+		const auto type_mode = lock->type_mode;
 		lock_prdt_t*	lock_prdt = lock_get_prdt_from_lock(lock);
 
 		lock_rec_reset_nth_bit(lock, PRDT_HEAPNO);
@@ -1041,8 +1035,8 @@ lock_prdt_page_free_from_discard(
 
 	ut_ad(lock_mutex_own());
 
-	space = block->page.id.space();
-	page_no = block->page.id.page_no();
+	space = block->page.id().space();
+	page_no = block->page.id().page_no();
 
 	lock = lock_rec_get_first_on_page_addr(lock_hash, space, page_no);
 

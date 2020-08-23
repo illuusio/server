@@ -64,7 +64,6 @@
 #cmakedefine HAVE_SYS_FILE_H 1
 #cmakedefine HAVE_SYS_FPU_H 1
 #cmakedefine HAVE_SYS_IOCTL_H 1
-#cmakedefine HAVE_SYS_IPC_H 1
 #cmakedefine HAVE_SYS_MALLOC_H 1
 #cmakedefine HAVE_SYS_MMAN_H 1
 #cmakedefine HAVE_SYS_NDIR_H 1
@@ -73,7 +72,6 @@
 #cmakedefine HAVE_SYS_PRCTL_H 1
 #cmakedefine HAVE_SYS_RESOURCE_H 1
 #cmakedefine HAVE_SYS_SELECT_H 1
-#cmakedefine HAVE_SYS_SHM_H 1
 #cmakedefine HAVE_SYS_SOCKET_H 1
 #cmakedefine HAVE_SYS_SOCKIO_H 1
 #cmakedefine HAVE_SYS_UTSNAME_H 1
@@ -106,6 +104,11 @@
 #cmakedefine HAVE_SYSTEMD 1
 #cmakedefine HAVE_CRC32_VPMSUM 1
 
+/* Support ARMv8 crc + crypto  */
+#cmakedefine HAVE_ARMV8_CRC 1
+#cmakedefine HAVE_ARMV8_CRYPTO 1
+#cmakedefine HAVE_ARMV8_CRC_CRYPTO_INTRINSICS 1
+
 /* Does "struct timespec" have a "sec" and "nsec" field? */
 #cmakedefine HAVE_TIMESPEC_TS_SEC 1
 
@@ -122,7 +125,6 @@
 /* Functions we may want to use. */
 #cmakedefine HAVE_ACCEPT4 1
 #cmakedefine HAVE_ACCESS 1
-#cmakedefine HAVE_AIOWAIT 1
 #cmakedefine HAVE_ALARM 1
 #cmakedefine HAVE_ALLOCA 1
 #cmakedefine HAVE_BFILL 1
@@ -148,6 +150,7 @@
 #cmakedefine HAVE_GETHOSTBYADDR_R 1
 #cmakedefine HAVE_GETHRTIME 1
 #cmakedefine HAVE_GETPAGESIZE 1
+#cmakedefine HAVE_GETPAGESIZES 1
 #cmakedefine HAVE_GETPASS 1
 #cmakedefine HAVE_GETPASSPHRASE 1
 #cmakedefine HAVE_GETPWNAM 1
@@ -160,14 +163,12 @@
 #cmakedefine gmtime_r @gmtime_r@
 #cmakedefine HAVE_IN_ADDR_T 1
 #cmakedefine HAVE_INITGROUPS 1
-#cmakedefine HAVE_LARGE_PAGE_OPTION 1
 #cmakedefine HAVE_LDIV 1
 #cmakedefine HAVE_LRAND48 1
 #cmakedefine HAVE_LOCALTIME_R 1
 #cmakedefine HAVE_LSTAT 1
 #cmakedefine HAVE_MEMALIGN 1
 /* #cmakedefine HAVE_MLOCK 1 see Bug#54662 */
-#cmakedefine HAVE_NPTL 1
 #cmakedefine HAVE_NL_LANGINFO 1
 #cmakedefine HAVE_MADVISE 1
 #cmakedefine HAVE_DECL_MADVISE 1
@@ -382,9 +383,6 @@
 
 #cmakedefine HAVE_GCC_C11_ATOMICS 1
 #cmakedefine HAVE_SOLARIS_ATOMIC 1
-#cmakedefine HAVE_DECL_SHM_HUGETLB 1
-#cmakedefine HAVE_LINUX_LARGE_PAGES 1
-#cmakedefine HUGETLB_USE_PROC_MEMINFO 1
 #cmakedefine NO_FCNTL_NONBLOCK 1
 #cmakedefine NO_ALARM 1
 
@@ -495,7 +493,6 @@
 #cmakedefine HAVE_CHARSET_ujis 1
 #cmakedefine HAVE_CHARSET_utf8mb4 1
 #cmakedefine HAVE_CHARSET_utf8mb3 1
-#cmakedefine HAVE_CHARSET_utf8 1
 #cmakedefine HAVE_CHARSET_utf16 1
 #cmakedefine HAVE_CHARSET_utf32 1
 #cmakedefine HAVE_UCA_COLLATIONS 1
@@ -545,6 +542,7 @@
 #define PACKAGE_VERSION "@VERSION@"
 #define VERSION "@VERSION@"
 #define PROTOCOL_VERSION 10
+#define PCRE2_CODE_UNIT_WIDTH 8
 
 #define MALLOC_LIBRARY "@MALLOC_LIBRARY@"
 

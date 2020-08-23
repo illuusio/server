@@ -101,9 +101,9 @@ Street, Fifth Floor, Boston, MA 02110-1335 USA
 #include "encryption_plugin.h"
 #include <sql_plugin.h>
 #include <srv0srv.h>
-#include <crc_glue.h>
 #include <log.h>
 #include <derror.h>
+#include <thr_timer.h>
 
 int sys_var_init();
 
@@ -122,8 +122,6 @@ my_bool xtrabackup_mysqld_args;
 my_bool xtrabackup_help;
 
 my_bool xtrabackup_export;
-
-my_bool xtrabackup_rollback_xa;
 
 longlong xtrabackup_use_memory;
 
@@ -160,16 +158,16 @@ typedef std::list<regex_t> regex_list_t;
 static regex_list_t regex_include_list;
 static regex_list_t regex_exclude_list;
 
-static hash_table_t* tables_include_hash = NULL;
-static hash_table_t* tables_exclude_hash = NULL;
+static hash_table_t tables_include_hash;
+static hash_table_t tables_exclude_hash;
 
 char *xtrabackup_databases = NULL;
 char *xtrabackup_databases_file = NULL;
 char *xtrabackup_databases_exclude = NULL;
-static hash_table_t* databases_include_hash = NULL;
-static hash_table_t* databases_exclude_hash = NULL;
+static hash_table_t databases_include_hash;
+static hash_table_t databases_exclude_hash;
 
-static hash_table_t* inc_dir_tables_hash;
+static hash_table_t inc_dir_tables_hash;
 
 struct xb_filter_entry_struct{
 	char*		name;
@@ -233,8 +231,8 @@ parameters are declared in mysqld.cc: */
 
 long innobase_buffer_pool_awe_mem_mb = 0;
 long innobase_file_io_threads = 4;
-long innobase_read_io_threads = 4;
-long innobase_write_io_threads = 4;
+ulong innobase_read_io_threads = 4;
+ulong innobase_write_io_threads = 4;
 
 longlong innobase_page_size = (1LL << 14); /* 16KB */
 char*	innobase_buffer_pool_filename = NULL;
@@ -245,14 +243,6 @@ are determined in innobase_init below: */
 static char*	innobase_ignored_opt;
 char*	innobase_data_home_dir;
 char*	innobase_data_file_path;
-
-my_bool innobase_use_doublewrite;
-my_bool	innobase_file_per_table;
-my_bool innobase_locks_unsafe_for_binlog;
-my_bool innobase_rollback_on_timeout;
-my_bool innobase_create_status_file;
-
-ulong	innobase_active_counter	= 0;
 
 #ifndef _WIN32
 static char *xtrabackup_debug_sync = NULL;
@@ -351,8 +341,6 @@ typedef std::map<space_id_t,std::string> space_id_to_name_t;
 struct ddl_tracker_t {
 	/** Tablspaces with their ID and name, as they were copied to backup.*/
 	space_id_to_name_t tables_in_backup;
-	/** Tablespaces for that optimized DDL without redo log was found.*/
-	std::set<space_id_t> optimized_ddl;
 	/** Drop operations found in redo log. */
 	std::set<space_id_t> drops;
 	/* For DDL operation found in redo log,  */
@@ -591,26 +579,25 @@ std::string filename_to_spacename(const byte *filename, size_t len)
 
 /** Report an operation to create, delete, or rename a file during backup.
 @param[in]	space_id	tablespace identifier
-@param[in]	flags		tablespace flags (NULL if not create)
+@param[in]	create		whether the file is being created
 @param[in]	name		file name (not NUL-terminated)
 @param[in]	len		length of name, in bytes
 @param[in]	new_name	new file name (NULL if not rename)
 @param[in]	new_len		length of new_name, in bytes (0 if NULL) */
-static void backup_file_op(ulint space_id, const byte* flags,
+static void backup_file_op(ulint space_id, bool create,
 	const byte* name, ulint len,
 	const byte* new_name, ulint new_len)
 {
 
-	ut_ad(!flags || !new_name);
+	ut_ad(!create || !new_name);
 	ut_ad(name);
 	ut_ad(len);
 	ut_ad(!new_name == !new_len);
 	pthread_mutex_lock(&backup_mutex);
 
-	if (flags) {
+	if (create) {
 		ddl_tracker.id_to_name[space_id] = filename_to_spacename(name, len);
-		msg("DDL tracking :  create %zu \"%.*s\": %x",
-			space_id, int(len), name, mach_read_from_4(flags));
+		msg("DDL tracking : create %zu \"%.*s\"", space_id, int(len), name);
 	}
 	else if (new_name) {
 		ddl_tracker.id_to_name[space_id] = filename_to_spacename(new_name, new_len);
@@ -633,14 +620,14 @@ static void backup_file_op(ulint space_id, const byte* flags,
 
  We will abort backup in this case.
 */
-static void backup_file_op_fail(ulint space_id, const byte* flags,
+static void backup_file_op_fail(ulint space_id, bool create,
 	const byte* name, ulint len,
 	const byte* new_name, ulint new_len)
 {
 	bool fail;
-	if (flags) {
-		msg("DDL tracking :  create %zu \"%.*s\": %x",
-			space_id, int(len), name, mach_read_from_4(flags));
+	if (create) {
+		msg("DDL tracking : create %zu \"%.*s\"",
+			space_id, int(len), name);
 		std::string  spacename = filename_to_spacename(name, len);
 		fail = !check_if_skip_table(spacename.c_str());
 	}
@@ -660,30 +647,6 @@ static void backup_file_op_fail(ulint space_id, const byte* flags,
 		ut_a(opt_no_lock);
 		die("DDL operation detected in the late phase of backup."
 			"Backup is inconsistent. Remove --no-lock option to fix.");
-	}
-}
-
-
-/** Callback whenever MLOG_INDEX_LOAD happens.
-@param[in]	space_id	space id to check */
-static void backup_optimized_ddl_op(ulint space_id)
-{
-	pthread_mutex_lock(&backup_mutex);
-	ddl_tracker.optimized_ddl.insert(space_id);
-	pthread_mutex_unlock(&backup_mutex);
-}
-
-/*
-  Optimized DDL callback at the end of backup that
-  run with --no-lock. Usually aborts the backup.
-*/
-static void backup_optimized_ddl_op_fail(ulint space_id) {
-	msg("DDL tracking : optimized DDL on space %zu", space_id);
-	if (ddl_tracker.tables_in_backup.find(space_id) != ddl_tracker.tables_in_backup.end()) {
-		ut_a(opt_no_lock);
-		msg("ERROR : Optimized DDL operation detected in the late phase of backup."
-			"Backup is inconsistent. Remove --no-lock option to fix.");
-		exit(EXIT_FAILURE);
 	}
 }
 
@@ -739,7 +702,6 @@ enum options_xtrabackup
   OPT_XTRA_BACKUP,
   OPT_XTRA_PREPARE,
   OPT_XTRA_EXPORT,
-  OPT_XTRA_ROLLBACK_XA,
   OPT_XTRA_PRINT_PARAM,
   OPT_XTRA_USE_MEMORY,
   OPT_XTRA_THROTTLE,
@@ -853,12 +815,6 @@ struct my_option xb_client_options[]= {
      "create files to import to another database when prepare.",
      (G_PTR *) &xtrabackup_export, (G_PTR *) &xtrabackup_export, 0, GET_BOOL,
      NO_ARG, 0, 0, 0, 0, 0, 0},
-    {"rollback-xa", OPT_XTRA_ROLLBACK_XA,
-     "Rollback prepared XA's on --prepare. "
-     "After preparing target directory with this option "
-     "it can no longer be a base for incremental backup.",
-     (G_PTR *) &xtrabackup_rollback_xa, (G_PTR *) &xtrabackup_rollback_xa, 0,
-     GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"print-param", OPT_XTRA_PRINT_PARAM,
      "print parameter of mysqld needed for copyback.",
      (G_PTR *) &xtrabackup_print_param, (G_PTR *) &xtrabackup_print_param, 0,
@@ -1239,6 +1195,10 @@ uint xb_client_options_count = array_elements(xb_client_options);
 static const char *dbug_option;
 #endif
 
+namespace deprecated {
+extern ulong srv_n_log_files;
+}
+
 struct my_option xb_server_options[] =
 {
   {"datadir", 'h', "Path to the database root.", (G_PTR*) &mysql_data_home,
@@ -1287,11 +1247,10 @@ struct my_option xb_server_options[] =
    GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 #ifdef BTR_CUR_HASH_ADAPT
   {"innodb_adaptive_hash_index", OPT_INNODB_ADAPTIVE_HASH_INDEX,
-   "Enable InnoDB adaptive hash index (enabled by default).  "
-   "Disable with --skip-innodb-adaptive-hash-index.",
+   "Enable InnoDB adaptive hash index (disabled by default).",
    &btr_search_enabled,
    &btr_search_enabled,
-   0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
+   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif /* BTR_CUR_HASH_ADAPT */
   {"innodb_autoextend_increment", OPT_INNODB_AUTOEXTEND_INCREMENT,
    "Data file autoextend increment in megabytes",
@@ -1306,8 +1265,8 @@ struct my_option xb_server_options[] =
    &innobase_data_home_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_doublewrite", OPT_INNODB_DOUBLEWRITE,
    "Enable InnoDB doublewrite buffer during --prepare.",
-   (G_PTR*) &innobase_use_doublewrite,
-   (G_PTR*) &innobase_use_doublewrite, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+   (G_PTR*) &srv_use_doublewrite_buf,
+   (G_PTR*) &srv_use_doublewrite_buf, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"innodb_io_capacity", OPT_INNODB_IO_CAPACITY,
    "Number of IOPs the server can do. Tunes the background IO rate",
    (G_PTR*) &srv_io_capacity, (G_PTR*) &srv_io_capacity,
@@ -1326,8 +1285,8 @@ struct my_option xb_server_options[] =
    1, 0},
   {"innodb_file_per_table", OPT_INNODB_FILE_PER_TABLE,
    "Stores each InnoDB table to an .ibd file in the database dir.",
-   (G_PTR*) &innobase_file_per_table,
-   (G_PTR*) &innobase_file_per_table, 0, GET_BOOL, NO_ARG,
+   (G_PTR*) &srv_file_per_table,
+   (G_PTR*) &srv_file_per_table, 0, GET_BOOL, NO_ARG,
    FALSE, 0, 0, 0, 0, 0},
 
   {"innodb_flush_method", OPT_INNODB_FLUSH_METHOD,
@@ -1343,11 +1302,12 @@ struct my_option xb_server_options[] =
   {"innodb_log_file_size", OPT_INNODB_LOG_FILE_SIZE,
    "Ignored for mysqld option compatibility",
    (G_PTR*) &srv_log_file_size, (G_PTR*) &srv_log_file_size, 0,
-   GET_ULL, REQUIRED_ARG, 48 << 20, 1 << 20, log_group_max_size, 0,
+   GET_ULL, REQUIRED_ARG, 48 << 20, 1 << 20,
+   std::numeric_limits<ulonglong>::max(), 0,
    UNIV_PAGE_SIZE_MAX, 0},
   {"innodb_log_files_in_group", OPT_INNODB_LOG_FILES_IN_GROUP,
    "Ignored for mysqld option compatibility",
-   &srv_n_log_files, &srv_n_log_files,
+   &deprecated::srv_n_log_files, &deprecated::srv_n_log_files,
    0, GET_LONG, REQUIRED_ARG, 1, 1, 100, 0, 1, 0},
   {"innodb_log_group_home_dir", OPT_INNODB_LOG_GROUP_HOME_DIR,
    "Path to InnoDB log files.", &srv_log_group_home_dir,
@@ -1415,11 +1375,6 @@ struct my_option xb_server_options[] =
   "Has no effect in the 'backup' phase (plugin directory during backup is the same as server's)",
   &xb_plugin_dir, &xb_plugin_dir,
   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0 },
-
-  {"innodb-log-checksums", OPT_INNODB_LOG_CHECKSUMS,
-   "Whether to require checksums for InnoDB redo log blocks",
-   &innodb_log_checksums, &innodb_log_checksums,
-   0, GET_BOOL, REQUIRED_ARG, 1, 0, 0, 0, 0, 0 },
 
   {"open_files_limit", OPT_OPEN_FILES_LIMIT, "the maximum number of file "
    "descriptors to reserve with setrlimit().",
@@ -1614,9 +1569,9 @@ static int prepare_export()
   outf= popen(cmdline,"r");
   if (!outf)
     goto end;
-  
+
   char outline[FN_REFLEN];
-  while(fgets(outline, sizeof(outline)-1, outf))
+  while (fgets(outline, FN_REFLEN - 1, outf))
     fprintf(stderr,"%s",outline);
 
   err = pclose(outf);
@@ -1680,11 +1635,10 @@ check_if_param_set(const char *param)
 }
 
 my_bool
-xb_get_one_option(int optid,
-		  const struct my_option *opt __attribute__((unused)),
-		  char *argument)
+xb_get_one_option(const struct my_option *opt,
+		  char *argument, const char *)
 {
-  switch(optid) {
+  switch(opt->id) {
   case 'h':
     strmake(mysql_real_data_home,argument, FN_REFLEN - 1);
     mysql_data_home= mysql_real_data_home;
@@ -1948,23 +1902,12 @@ static bool innodb_init_param()
 
 	srv_buf_pool_size = (ulint) xtrabackup_use_memory;
 	srv_buf_pool_chunk_unit = (ulong)srv_buf_pool_size;
-	srv_buf_pool_instances = 1;
-	srv_n_page_cleaners = 1;
 
 	srv_n_file_io_threads = (ulint) innobase_file_io_threads;
-	srv_n_read_io_threads = (ulint) innobase_read_io_threads;
-	srv_n_write_io_threads = (ulint) innobase_write_io_threads;
-
-	srv_use_doublewrite_buf = (ibool) innobase_use_doublewrite;
-
-	row_rollback_on_timeout = (ibool) innobase_rollback_on_timeout;
-
-	srv_file_per_table = (my_bool) innobase_file_per_table;
-
-        srv_locks_unsafe_for_binlog = (ibool) innobase_locks_unsafe_for_binlog;
+	srv_n_read_io_threads = innobase_read_io_threads;
+	srv_n_write_io_threads = innobase_write_io_threads;
 
 	srv_max_n_open_files = ULINT_UNDEFINED - 5;
-	srv_innodb_status = (ibool) innobase_create_status_file;
 
 	srv_print_verbose_log = verbose ? 2 : 1;
 
@@ -2001,10 +1944,6 @@ static bool innodb_init_param()
 	if (!srv_undo_dir || !xtrabackup_backup) {
 		srv_undo_dir = (char*) ".";
 	}
-
-	log_checksum_algorithm_ptr = innodb_log_checksums || srv_encrypt_log
-		? log_block_calc_checksum_crc32
-		: log_block_calc_checksum_none;
 
 #ifdef _WIN32
 	srv_use_native_aio = TRUE;
@@ -2315,7 +2254,7 @@ check_if_table_matches_filters(const char *name,
 	const regex_list_t& regex_list,
 	hash_table_t* tables_hash)
 {
-	if (regex_list.empty() && !tables_hash) {
+	if (regex_list.empty() && !tables_hash->array) {
 		return(FALSE);
 	}
 
@@ -2323,11 +2262,8 @@ check_if_table_matches_filters(const char *name,
 		return(TRUE);
 	}
 
-	if (tables_hash && find_filter_in_hashtable(name, tables_hash, NULL)) {
-		return(TRUE);
-	}
-
-	return FALSE;
+	return tables_hash->array &&
+		find_filter_in_hashtable(name, tables_hash, NULL);
 }
 
 enum skip_database_check_result {
@@ -2353,8 +2289,8 @@ check_if_skip_database(
 	/* There are some filters for databases, check them */
 	xb_filter_entry_t*	database = NULL;
 
-	if (databases_exclude_hash &&
-		find_filter_in_hashtable(name, databases_exclude_hash,
+	if (databases_exclude_hash.array &&
+		find_filter_in_hashtable(name, &databases_exclude_hash,
 					 &database) &&
 		!database->has_tables) {
 		/* Database is found and there are no tables specified,
@@ -2362,8 +2298,8 @@ check_if_skip_database(
 		return DATABASE_SKIP;
 	}
 
-	if (databases_include_hash) {
-		if (!find_filter_in_hashtable(name, databases_include_hash,
+	if (databases_include_hash.array) {
+		if (!find_filter_in_hashtable(name, &databases_include_hash,
 					      &database)) {
 		/* Database isn't found, skip the database */
 			return DATABASE_SKIP;
@@ -2387,8 +2323,7 @@ check_if_skip_database_by_path(
 	const char* path /*!< in: path to the db directory. */
 )
 {
-	if (databases_include_hash == NULL &&
-		databases_exclude_hash == NULL) {
+	if (!databases_include_hash.array && !databases_exclude_hash.array) {
 		return(FALSE);
 	}
 
@@ -2432,10 +2367,10 @@ check_if_skip_table(
 
 	if (regex_exclude_list.empty() &&
 		regex_include_list.empty() &&
-		tables_include_hash == NULL &&
-		tables_exclude_hash == NULL &&
-		databases_include_hash == NULL &&
-		databases_exclude_hash == NULL) {
+		!tables_include_hash.array &&
+		!tables_exclude_hash.array &&
+		!databases_include_hash.array &&
+		!databases_exclude_hash.array) {
 		return(FALSE);
 	}
 
@@ -2467,22 +2402,22 @@ check_if_skip_table(
 	without truncating the #P#... suffix so we can backup individual
 	partitions with regexps like '^test[.]t#P#p5' */
 	if (check_if_table_matches_filters(buf, regex_exclude_list,
-					   tables_exclude_hash)) {
+					   &tables_exclude_hash)) {
 		return(TRUE);
 	}
 	if (check_if_table_matches_filters(buf, regex_include_list,
-					   tables_include_hash)) {
+					   &tables_include_hash)) {
 		return(FALSE);
 	}
 	if ((eptr = strstr(buf, "#P#")) != NULL) {
 		*eptr = 0;
 
 		if (check_if_table_matches_filters(buf, regex_exclude_list,
-						   tables_exclude_hash)) {
+						   &tables_exclude_hash)) {
 			return (TRUE);
 		}
 		if (check_if_table_matches_filters(buf, regex_include_list,
-						   tables_include_hash)) {
+						   &tables_include_hash)) {
 			return(FALSE);
 		}
 	}
@@ -2495,7 +2430,7 @@ check_if_skip_table(
 
 	if (skip_database == DATABASE_SKIP_SOME_TABLES ||
 		!regex_include_list.empty() ||
-		tables_include_hash) {
+		tables_include_hash.array) {
 
 		/* Include lists are present, but qualified name
 		   failed to match any.*/
@@ -2727,12 +2662,9 @@ static lsn_t xtrabackup_copy_log(lsn_t start_lsn, lsn_t end_lsn, bool last)
 		}
 	}
 
-	store_t store = STORE_NO;
-
-	if (more_data && recv_parse_log_recs(0, &store, 0, false)) {
-
+	store_t store= STORE_NO;
+	if (more_data && recv_sys.parse(0, &store, false)) {
 		msg("Error: copying the log failed");
-
 		return(0);
 	}
 
@@ -2848,7 +2780,7 @@ static os_thread_ret_t DECLARE_THREAD(log_copying_thread)(void*)
 	for (;;) {
 		os_event_reset(log_copying_stop);
 		os_event_wait_time_low(log_copying_stop,
-				       xtrabackup_log_copy_interval * 1000ULL,
+				       xtrabackup_log_copy_interval * 1000U,
 				       0);
 		if (xtrabackup_copy_logfile()) {
 			break;
@@ -2976,7 +2908,7 @@ Initialize the appropriate datasink(s). Both local backups and streaming in the
 
 Otherwise (i.e. when streaming in the 'tar' format) we need 2 separate datasinks
 for the data stream (and don't allow parallel data copying) and for metainfo
-files (including ib_logfile0). The second datasink writes to temporary
+files (including LOG_FILE_NAME). The second datasink writes to temporary
 files first, and then streams them in a serialized way when closed. */
 static void
 xtrabackup_init_datasinks(void)
@@ -3323,8 +3255,6 @@ static dberr_t xb_assign_undo_space_start()
 {
 
 	pfs_os_file_t	file;
-	byte*		buf;
-	byte*		page;
 	bool		ret;
 	dberr_t		error = DB_SUCCESS;
 	ulint		space;
@@ -3343,8 +3273,8 @@ static dberr_t xb_assign_undo_space_start()
 		return DB_ERROR;
 	}
 
-	buf = static_cast<byte*>(ut_malloc_nokey(2U << srv_page_size_shift));
-	page = static_cast<byte*>(ut_align(buf, srv_page_size));
+	byte* page = static_cast<byte*>
+		(aligned_malloc(srv_page_size, srv_page_size));
 
 	if (os_file_read(IORequestRead, file, page, 0, srv_page_size)
 	    != DB_SUCCESS) {
@@ -3391,7 +3321,7 @@ retry:
 	srv_undo_space_id_start = space;
 
 func_exit:
-	ut_free(buf);
+	aligned_free(page);
 	ret = os_file_close(file);
 	ut_a(ret);
 
@@ -3525,17 +3455,17 @@ xb_filter_entry_t*
 xb_add_filter(
 /*========================*/
 	const char*	name,	/*!< in: name of table/database */
-	hash_table_t**	hash)	/*!< in/out: hash to insert into */
+	hash_table_t*	hash)	/*!< in/out: hash to insert into */
 {
 	xb_filter_entry_t*	entry;
 
 	entry = xb_new_filter_entry(name);
 
-	if (UNIV_UNLIKELY(*hash == NULL)) {
-		*hash = hash_create(1000);
+	if (UNIV_UNLIKELY(!hash->array)) {
+		hash->create(1000);
 	}
 	HASH_INSERT(xb_filter_entry_t,
-		name_hash, *hash,
+		name_hash, hash,
 		ut_fold_string(entry->name),
 		entry);
 
@@ -3573,8 +3503,8 @@ void
 xb_register_filter_entry(
 /*=====================*/
 	const char*	name,	/*!< in: name */
-	hash_table_t** databases_hash,
-	hash_table_t** tables_hash
+	hash_table_t* databases_hash,
+	hash_table_t* tables_hash
 	)
 {
 	const char*		p;
@@ -3591,8 +3521,8 @@ xb_register_filter_entry(
 		strncpy(dbname, name, p - name);
 		dbname[p - name] = 0;
 
-		if (*databases_hash) {
-			HASH_SEARCH(name_hash, (*databases_hash),
+		if (databases_hash) {
+			HASH_SEARCH(name_hash, databases_hash,
 					ut_fold_string(dbname),
 					xb_filter_entry_t*,
 					db_entry, (void) 0,
@@ -3791,7 +3721,7 @@ xb_filter_hash_free(hash_table_t* hash)
 	ulint	i;
 
 	/* free the hash elements */
-	for (i = 0; i < hash_get_n_cells(hash); i++) {
+	for (i = 0; i < hash->n_cells; i++) {
 		xb_filter_entry_t*	table;
 
 		table = static_cast<xb_filter_entry_t *>
@@ -3809,8 +3739,7 @@ xb_filter_hash_free(hash_table_t* hash)
 		}
 	}
 
-	/* free hash */
-	hash_table_free(hash);
+	hash->free();
 }
 
 static void xb_regex_list_free(regex_list_t* list)
@@ -3830,75 +3759,40 @@ xb_filters_free()
 	xb_regex_list_free(&regex_include_list);
 	xb_regex_list_free(&regex_exclude_list);
 
-	if (tables_include_hash) {
-		xb_filter_hash_free(tables_include_hash);
+	if (tables_include_hash.array) {
+		xb_filter_hash_free(&tables_include_hash);
 	}
 
-	if (tables_exclude_hash) {
-		xb_filter_hash_free(tables_exclude_hash);
+	if (tables_exclude_hash.array) {
+		xb_filter_hash_free(&tables_exclude_hash);
 	}
 
-	if (databases_include_hash) {
-		xb_filter_hash_free(databases_include_hash);
+	if (databases_include_hash.array) {
+		xb_filter_hash_free(&databases_include_hash);
 	}
 
-	if (databases_exclude_hash) {
-		xb_filter_hash_free(databases_exclude_hash);
+	if (databases_exclude_hash.array) {
+		xb_filter_hash_free(&databases_exclude_hash);
 	}
 }
 
-/*********************************************************************//**
-Create log file metadata. */
-static
-void
-open_or_create_log_file(
-/*====================*/
-	fil_space_t* space,
-	ulint	i)			/*!< in: log file number in group */
-{
-	char	name[FN_REFLEN];
-	ulint	dirnamelen;
-
-	os_normalize_path(srv_log_group_home_dir);
-
-	dirnamelen = strlen(srv_log_group_home_dir);
-	ut_a(dirnamelen < (sizeof name) - 10 - sizeof "ib_logfile");
-	memcpy(name, srv_log_group_home_dir, dirnamelen);
-
-	/* Add a path separator if needed. */
-	if (dirnamelen && name[dirnamelen - 1] != OS_PATH_SEPARATOR) {
-		name[dirnamelen++] = OS_PATH_SEPARATOR;
-	}
-
-	sprintf(name + dirnamelen, "%s%zu", "ib_logfile", i);
-
-	ut_a(fil_validate());
-
-	space->add(name, OS_FILE_CLOSED,
-		   ulint(srv_log_file_size >> srv_page_size_shift),
-		   false, false);
-}
-
-/***********************************************************************
+#ifdef RLIMIT_NOFILE
+/**
 Set the open files limit. Based on set_max_open_files().
-
+@param max_file_limit  requested open files limit
 @return the resulting open files limit. May be less or more than the requested
 value.  */
-static uint
-xb_set_max_open_files(
-/*==================*/
-	uint max_file_limit)	/*!<in: open files limit */
+static ulong xb_set_max_open_files(rlim_t max_file_limit)
 {
-#if defined(RLIMIT_NOFILE)
 	struct rlimit rlimit;
-	uint old_cur;
+	rlim_t old_cur;
 
 	if (getrlimit(RLIMIT_NOFILE, &rlimit)) {
 
 		goto end;
 	}
 
-	old_cur = (uint) rlimit.rlim_cur;
+	old_cur = rlimit.rlim_cur;
 
 	if (rlimit.rlim_cur == RLIM_INFINITY) {
 
@@ -3914,8 +3808,8 @@ xb_set_max_open_files(
 	rlimit.rlim_cur = rlimit.rlim_max = max_file_limit;
 
 	if (setrlimit(RLIMIT_NOFILE, &rlimit)) {
-
-		max_file_limit = old_cur;	/* Use original value */
+		/* Use original value */
+		max_file_limit = static_cast<ulong>(old_cur);
 	} else {
 
 		rlimit.rlim_cur = 0;	/* Safety if next call fails */
@@ -3925,16 +3819,16 @@ xb_set_max_open_files(
 		if (rlimit.rlim_cur) {
 
 			/* If call didn't fail */
-			max_file_limit = (uint) rlimit.rlim_cur;
+			max_file_limit = rlimit.rlim_cur;
 		}
 	}
 
 end:
-	return(max_file_limit);
-#else
-	return(0);
-#endif
+	return static_cast<ulong>(max_file_limit);
 }
+#else
+# define xb_set_max_open_files(x) 0UL
+#endif
 
 static void stop_backup_threads()
 {
@@ -3975,7 +3869,9 @@ static bool xtrabackup_backup_low()
 		if (recv_find_max_checkpoint(&max_cp_field) == DB_SUCCESS
 		    && log_sys.log.format != 0) {
 			if (max_cp_field == LOG_CHECKPOINT_1) {
-				log_header_read(max_cp_field);
+				log_sys.log.read(max_cp_field,
+						 {log_sys.checkpoint_buf,
+						  OS_FILE_LOG_BLOCK_SIZE});
 			}
 			metadata_to_lsn = mach_read_from_8(
 				log_sys.checkpoint_buf + LOG_CHECKPOINT_LSN);
@@ -4063,8 +3959,8 @@ static bool xtrabackup_backup_func()
 	}
 	msg("cd to %s", mysql_real_data_home);
 	encryption_plugin_backup_init(mysql_connection);
-	msg("open files limit requested %u, set to %u",
-	    (uint) xb_open_files_limit,
+	msg("open files limit requested %lu, set to %lu",
+	    xb_open_files_limit,
 	    xb_set_max_open_files(xb_open_files_limit));
 
 	mysql_data_home= mysql_data_home_buff;
@@ -4110,15 +4006,14 @@ fail:
                                                 especially in 64-bit
                                                 computers */
         }
-
+	srv_thread_pool_init();
 	sync_check_init();
 	ut_d(sync_check_enable());
 	/* Reset the system variables in the recovery module. */
-	recv_sys_var_init();
 	trx_pool_init();
 
 	ut_crc32_init();
-	crc_init();
+	my_checksum_init();
 	recv_sys.create();
 
 #ifdef WITH_INNODB_DISALLOW_WRITES
@@ -4135,14 +4030,8 @@ fail:
 		    SRV_MAX_N_PENDING_SYNC_IOS);
 
 	log_sys.create();
-	log_sys.log.create(srv_n_log_files);
-	fil_space_t*	space = fil_space_create(
-		"innodb_redo_log", SRV_LOG_SPACE_FIRST_ID, 0,
-		FIL_TYPE_LOG, NULL);
-
-	for (ulint i = 0; i < srv_n_log_files; i++) {
-		open_or_create_log_file(space, i);
-	}
+	log_sys.log.create();
+	log_sys.log.open_file(get_log_file_path());
 
 	/* create extra LSN dir if it does not exist. */
 	if (xtrabackup_extra_lsndir
@@ -4188,11 +4077,11 @@ reread_log_header:
 		goto fail;
 	}
 
-	const byte* buf = log_sys.checkpoint_buf;
+	byte* buf = log_sys.checkpoint_buf;
 	checkpoint_lsn_start = log_sys.log.get_lsn();
 	checkpoint_no_start = log_sys.next_checkpoint_no;
 
-	log_header_read(max_cp_field);
+	log_sys.log.read(max_cp_field, {buf, OS_FILE_LOG_BLOCK_SIZE});
 
 	if (checkpoint_no_start != mach_read_from_8(buf + LOG_CHECKPOINT_NO)
 	    || checkpoint_lsn_start
@@ -4211,10 +4100,10 @@ reread_log_header:
 
 	/* open the log file */
 	memset(&stat_info, 0, sizeof(MY_STAT));
-	dst_log_file = ds_open(ds_redo, "ib_logfile0", &stat_info);
+	dst_log_file = ds_open(ds_redo, LOG_FILE_NAME, &stat_info);
 	if (dst_log_file == NULL) {
-		msg("Error: failed to open the target stream for "
-		    "'ib_logfile0'.");
+		msg("Error: failed to open the target stream for '%s'.",
+		    LOG_FILE_NAME);
 		goto fail;
 	}
 
@@ -4235,7 +4124,7 @@ reread_log_header:
 	log_hdr_field +=
 		(log_sys.next_checkpoint_no & 1) ? LOG_CHECKPOINT_2 : LOG_CHECKPOINT_1;
 	/* The least significant bits of LOG_CHECKPOINT_OFFSET must be
-	stored correctly in the copy of the ib_logfile. The most significant
+	stored correctly in the copy of the LOG_FILE_NAME. The most significant
 	bits, which identify the start offset of the log block in the file,
 	we did choose freely, as LOG_FILE_HDR_SIZE. */
 	ut_ad(!((log_sys.log.get_lsn() ^ checkpoint_lsn_start)
@@ -4280,7 +4169,6 @@ fail_before_log_copying_thread_start:
 	/* copy log file by current position */
 	log_copy_scanned_lsn = checkpoint_lsn_start;
 	recv_sys.recovered_lsn = log_copy_scanned_lsn;
-	log_optimized_ddl_op = backup_optimized_ddl_op;
 
 	if (xtrabackup_copy_logfile())
 		goto fail_before_log_copying_thread_start;
@@ -4425,7 +4313,6 @@ void backup_fix_ddl(void)
 	/* Disable further DDL on backed up tables (only needed for --no-lock).*/
 	pthread_mutex_lock(&backup_mutex);
 	log_file_op = backup_file_op_fail;
-	log_optimized_ddl_op = backup_optimized_ddl_op_fail;
 	pthread_mutex_unlock(&backup_mutex);
 
 	DBUG_MARIABACKUP_EVENT("backup_fix_ddl",0);
@@ -4442,32 +4329,14 @@ void backup_fix_ddl(void)
 			continue;
 		}
 
-		bool has_optimized_ddl =
-			ddl_tracker.optimized_ddl.find(id) != ddl_tracker.optimized_ddl.end();
-
 		if (ddl_tracker.id_to_name.find(id) == ddl_tracker.id_to_name.end()) {
-			if (has_optimized_ddl) {
-				new_tables.insert(name);
-			}
 			continue;
 		}
 
 		/* tablespace was affected by DDL. */
 		const std::string new_name = ddl_tracker.id_to_name[id];
 		if (new_name != name) {
-			if (has_optimized_ddl) {
-				/* table was renamed, but we need a full copy
-				of it because of optimized DDL. We emulate a drop/create.*/
-				dropped_tables.insert(name);
-				new_tables.insert(new_name);
-			} else {
-				/* Renamed, and no optimized DDL*/
-				renamed_tables[name] = new_name;
-			}
-		} else if (has_optimized_ddl) {
-			/* Table was recreated, or optimized DDL ran.
-			In both cases we need a full copy in the backup.*/
-			new_tables.insert(name);
+			renamed_tables[name] = new_name;
 		}
 	}
 
@@ -4611,8 +4480,6 @@ xb_space_create_file(
 	pfs_os_file_t*	file)		/*!<out: file handle */
 {
 	bool		ret;
-	byte*		buf;
-	byte*		page;
 
 	*file = os_file_create_simple_no_error_handling(
 		0, path, OS_FILE_CREATE, OS_FILE_READ_WRITE, false, &ret);
@@ -4631,9 +4498,9 @@ xb_space_create_file(
 		return ret;
 	}
 
-	buf = static_cast<byte *>(malloc(3U << srv_page_size_shift));
 	/* Align the memory for file i/o if we might have O_DIRECT set */
-	page = static_cast<byte *>(ut_align(buf, srv_page_size));
+	byte* page = static_cast<byte*>(aligned_malloc(2 * srv_page_size,
+						       srv_page_size));
 
 	memset(page, '\0', srv_page_size);
 
@@ -4644,7 +4511,7 @@ xb_space_create_file(
 
 	if (!zip_size) {
 		buf_flush_init_for_writing(
-			NULL, page, NULL, 0,
+			NULL, page, NULL,
 			fil_space_t::full_crc32(flags));
 
 		ret = os_file_write(IORequestWrite, path, *file, page, 0,
@@ -4656,18 +4523,19 @@ xb_space_create_file(
 		fprintf(stderr, "zip_size = " ULINTPF "\n", zip_size);
 
 #ifdef UNIV_DEBUG
-		page_zip.m_start =
+		page_zip.m_start = 0;
 #endif /* UNIV_DEBUG */
-			page_zip.m_end = page_zip.m_nonempty =
-			page_zip.n_blobs = 0;
+		page_zip.m_end = 0;
+		page_zip.m_nonempty = 0;
+		page_zip.n_blobs = 0;
 
-		buf_flush_init_for_writing(NULL, page, &page_zip, 0, false);
+		buf_flush_init_for_writing(NULL, page, &page_zip, false);
 
 		ret = os_file_write(IORequestWrite, path, *file,
 				    page_zip.data, 0, zip_size);
 	}
 
-	free(buf);
+	aligned_free(page);
 
 	if (ret != DB_SUCCESS) {
 		msg("mariabackup: could not write the first page to %s",
@@ -4769,7 +4637,7 @@ exit:
 
 	table->name = ((char*)table) + sizeof(xb_filter_entry_t);
 	strcpy(table->name, dest_space_name);
-	HASH_INSERT(xb_filter_entry_t, name_hash, inc_dir_tables_hash,
+	HASH_INSERT(xb_filter_entry_t, name_hash, &inc_dir_tables_hash,
 			ut_fold_string(table->name), table);
 
 	mutex_enter(&fil_system.mutex);
@@ -4880,8 +4748,7 @@ xtrabackup_apply_delta(
 	xb_delta_info_t info(srv_page_size, 0, SRV_TMP_SPACE_ID);
 	ulint		page_size;
 	ulint		page_size_shift;
-	byte*		incremental_buffer_base = NULL;
-	byte*		incremental_buffer;
+	byte*		incremental_buffer = NULL;
 
 	size_t		offset;
 
@@ -4949,11 +4816,8 @@ xtrabackup_apply_delta(
 	posix_fadvise(dst_file, 0, 0, POSIX_FADV_DONTNEED);
 
 	/* allocate buffer for incremental backup (4096 pages) */
-	incremental_buffer_base = static_cast<byte *>
-		(malloc((page_size / 4 + 1) * page_size));
 	incremental_buffer = static_cast<byte *>
-		(ut_align(incremental_buffer_base,
-			  page_size));
+		(aligned_malloc(page_size / 4 * page_size, page_size));
 
 	msg("Applying %s to %s...", src_path, dst_path);
 
@@ -5062,7 +4926,7 @@ xtrabackup_apply_delta(
 		incremental_buffers++;
 	}
 
-	free(incremental_buffer_base);
+	aligned_free(incremental_buffer);
 	if (src_file != OS_FILE_CLOSED) {
 		os_file_close(src_file);
 		os_file_delete(0,src_path);
@@ -5072,7 +4936,7 @@ xtrabackup_apply_delta(
 	return TRUE;
 
 error:
-	free(incremental_buffer_base);
+	aligned_free(incremental_buffer);
 	if (src_file != OS_FILE_CLOSED)
 		os_file_close(src_file);
 	if (dst_file != OS_FILE_CLOSED)
@@ -5163,7 +5027,7 @@ rm_if_not_found(
 	/* Truncate ".ibd" */
 	name[strlen(name) - 4] = '\0';
 
-	HASH_SEARCH(name_hash, inc_dir_tables_hash, ut_fold_string(name),
+	HASH_SEARCH(name_hash, &inc_dir_tables_hash, ut_fold_string(name),
 		    xb_filter_entry_t*,
 		    table, (void) 0,
 		    !strcmp(table->name, name));
@@ -5507,13 +5371,11 @@ static bool xtrabackup_prepare_func(char** argv)
 	}
 
 	srv_max_n_threads = 1000;
-	srv_undo_logs = 1;
 	srv_n_purge_threads = 1;
 
 	xb_filters_init();
 
 	srv_log_group_home_dir = NULL;
-	srv_thread_concurrency = 1;
 
 	if (xtrabackup_incremental) {
 		srv_operation = SRV_OPERATION_RESTORE_DELTA;
@@ -5527,7 +5389,7 @@ static bool xtrabackup_prepare_func(char** argv)
 		ut_crc32_init();
 		recv_sys.create();
 		log_sys.create();
-		recv_recovery_on = true;
+		recv_sys.recovery_on = true;
 
 #ifdef WITH_INNODB_DISALLOW_WRITES
 		srv_allow_writes_event = os_event_create(0);
@@ -5540,7 +5402,7 @@ static bool xtrabackup_prepare_func(char** argv)
 			goto error_cleanup;
 		}
 
-		inc_dir_tables_hash = hash_create(1000);
+		inc_dir_tables_hash.create(1000);
 
 		ok = xtrabackup_apply_deltas();
 
@@ -5553,7 +5415,7 @@ static bool xtrabackup_prepare_func(char** argv)
 			xb_process_datadir("./", ".ibd", rm_if_not_found);
 		}
 
-		xb_filter_hash_free(inc_dir_tables_hash);
+		xb_filter_hash_free(&inc_dir_tables_hash);
 
 		fil_system.close();
 #ifdef WITH_INNODB_DISALLOW_WRITES
@@ -5565,13 +5427,10 @@ static bool xtrabackup_prepare_func(char** argv)
 		if (!ok) goto error_cleanup;
 	}
 
-        srv_operation=
-            xtrabackup_export
-                ? SRV_OPERATION_RESTORE_EXPORT
-                : (xtrabackup_rollback_xa ? SRV_OPERATION_RESTORE_ROLLBACK_XA
-                                          : SRV_OPERATION_RESTORE);
+	srv_operation = xtrabackup_export
+		? SRV_OPERATION_RESTORE_EXPORT : SRV_OPERATION_RESTORE;
 
-        if (innodb_init_param()) {
+	if (innodb_init_param()) {
 		goto error_cleanup;
 	}
 
@@ -5592,49 +5451,9 @@ static bool xtrabackup_prepare_func(char** argv)
 		srv_max_dirty_pages_pct_lwm = srv_max_buf_pool_modified_pct;
 	}
 
-        if (xtrabackup_rollback_xa)
-          srv_fast_shutdown= 0;
-
         if (innodb_init()) {
 		goto error_cleanup;
 	}
-
-        if (xtrabackup_rollback_xa)
-        {
-          /* Please do not merge MDEV-21168 fix in 10.5+ */
-          compile_time_assert(MYSQL_VERSION_ID < 10 * 10000 + 5 * 100);
-          XID *xid_list=
-              (XID *) my_malloc(MAX_XID_LIST_SIZE * sizeof(XID), MYF(0));
-          if (!xid_list)
-          {
-            msg("Can't allocate %i bytes for XID's list", MAX_XID_LIST_SIZE);
-            ok= false;
-            goto error_cleanup;
-          }
-          int got;
-          ut_ad(recv_no_log_write);
-          ut_d(recv_no_log_write= false);
-          while ((got= trx_recover_for_mysql(xid_list, MAX_XID_LIST_SIZE)) > 0)
-          {
-            for (int i= 0; i < got; i++)
-            {
-#ifndef DBUG_OFF
-              int rc=
-#endif // !DBUG_OFF
-                  innobase_rollback_by_xid(NULL, xid_list + i);
-#ifndef DBUG_OFF
-              if (rc == 0)
-              {
-                char buf[XIDDATASIZE * 4 + 6]; // see xid_to_str
-                DBUG_PRINT("info",
-                           ("rollback xid %s", xid_to_str(buf, xid_list[i])));
-              }
-#endif // !DBUG_OFF
-            }
-          }
-          ut_d(recv_no_log_write= true);
-          my_free(xid_list);
-        }
 
 	if (ok) {
 		msg("Last binlog file %s, position %lld",
@@ -5643,34 +5462,18 @@ static bool xtrabackup_prepare_func(char** argv)
 	}
 
 	/* Check whether the log is applied enough or not. */
-	if ((srv_start_lsn || fil_space_get(SRV_LOG_SPACE_FIRST_ID))
-	    && srv_start_lsn < target_lsn) {
+	if (recv_sys.recovered_lsn && recv_sys.recovered_lsn < target_lsn) {
 		msg("mariabackup: error: "
 		    "The log was only applied up to LSN " LSN_PF
 		    ", instead of " LSN_PF,
-		    srv_start_lsn, target_lsn);
+		    recv_sys.recovered_lsn, target_lsn);
 		ok = false;
 	}
 #ifdef WITH_WSREP
 	else if (ok) xb_write_galera_info(xtrabackup_incremental);
 #endif
 
-        if (xtrabackup_rollback_xa)
-        {
-          // See innobase_end() and thd_destructor_proxy()
-          while (srv_fast_shutdown == 0 &&
-                 (trx_sys.any_active_transactions() ||
-                  static_cast<uint>(thread_count) > srv_n_purge_threads + 1))
-            os_thread_sleep(1000);
-
-          srv_shutdown_bg_undo_sources();
-          srv_purge_shutdown();
-          buf_flush_sync_all_buf_pools();
-          innodb_shutdown();
-          innobase_space_shutdown();
-        }
-        else
-          innodb_shutdown();
+        innodb_shutdown();
 
         innodb_free_param();
 
@@ -5996,7 +5799,7 @@ void handle_options(int argc, char **argv, char ***argv_server,
 	/* Setup some variables for Innodb.*/
 	srv_operation = SRV_OPERATION_RESTORE;
 
-	files_charset_info = &my_charset_utf8_general_ci;
+	files_charset_info = &my_charset_utf8mb3_general_ci;
 
 
 	setup_error_messages();
@@ -6199,7 +6002,7 @@ void handle_options(int argc, char **argv, char ***argv_server,
         {
           char *argument= opt_password;
           char *start= argument;
-          opt_password= my_strdup(opt_password, MYF(MY_FAE));
+          opt_password= my_strdup(PSI_NOT_INSTRUMENTED, opt_password, MYF(MY_FAE));
           while (*argument)
             *argument++= 'x'; // Destroy argument
           if (*start)
@@ -6289,9 +6092,6 @@ int main(int argc, char **argv)
 	init_signals();
 	MY_INIT(argv[0]);
 
-	pthread_key_create(&THR_THD, NULL);
-	my_pthread_setspecific_ptr(THR_THD, NULL);
-
 	xb_regex_init();
 
 	capture_tool_command(argc, argv);
@@ -6301,7 +6101,7 @@ int main(int argc, char **argv)
 		die("mysql_server_init() failed");
 	}
 
-	system_charset_info = &my_charset_utf8_general_ci;
+	system_charset_info = &my_charset_utf8mb3_general_ci;
 	key_map_full.set_all();
 
 	logger.init_base();
@@ -6318,9 +6118,12 @@ int main(int argc, char **argv)
 		DBUG_SET(dbug_option);
 	}
 #endif
+	/* Main functions for library */
+	init_thr_timer(5);
 
 	int status = main_low(server_defaults);
 
+	end_thr_timer();
 	backup_cleanup();
 
 	if (innobackupex_mode) {
@@ -6336,9 +6139,6 @@ int main(int argc, char **argv)
 		DBUG_END();
 	}
 #endif
-
-	if (THR_THD)
-		(void) pthread_key_delete(THR_THD);
 
 	logger.cleanup_base();
 	cleanup_errmsgs();
@@ -6495,10 +6295,10 @@ static int main_low(char** argv)
 		    incremental_lsn);
 	}
 
-	if (xtrabackup_export && innobase_file_per_table == FALSE) {
+	if (xtrabackup_export && !srv_file_per_table) {
 		msg("mariabackup: auto-enabling --innodb-file-per-table due to "
 		    "the --export option");
-		innobase_file_per_table = TRUE;
+		srv_file_per_table = TRUE;
 	}
 
 	/* cannot execute both for now */

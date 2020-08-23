@@ -124,19 +124,25 @@ bool dict_col_t::same_encoding(uint16_t a, uint16_t b)
   return false;
 }
 
-/**********************************************************************//**
-Creates a table memory object.
+/** Creates a table memory object.
+@param[in]	name		table name
+@param[in]	space		tablespace
+@param[in]	n_cols		total number of columns including virtual and
+				non-virtual columns
+@param[in]	n_v_cols	number of virtual columns
+@param[in]	flags		table flags
+@param[in]	flags2		table flags2
+@param[in]	init_stats_latch	whether to init the stats latch
 @return own: table object */
 dict_table_t*
 dict_mem_table_create(
-/*==================*/
-	const char*	name,	/*!< in: table name */
-	fil_space_t*	space,	/*!< in: tablespace */
-	ulint		n_cols,	/*!< in: total number of columns including
-				virtual and non-virtual columns */
-	ulint		n_v_cols,/*!< in: number of virtual columns */
-	ulint		flags,	/*!< in: table flags */
-	ulint		flags2)	/*!< in: table flags2 */
+	const char*	name,
+	fil_space_t*	space,
+	ulint		n_cols,
+	ulint		n_v_cols,
+	ulint		flags,
+	ulint		flags2,
+	bool		init_stats_latch)
 {
 	dict_table_t*	table;
 	mem_heap_t*	heap;
@@ -165,15 +171,21 @@ dict_mem_table_create(
 
 	ut_d(table->magic_n = DICT_TABLE_MAGIC_N);
 
-	table->flags = (unsigned int) flags;
-	table->flags2 = (unsigned int) flags2;
+	table->flags = static_cast<unsigned>(flags)
+		& ((1U << DICT_TF_BITS) - 1);
+	table->flags2 = static_cast<unsigned>(flags2)
+		& ((1U << DICT_TF2_BITS) - 1);
 	table->name.m_name = mem_strdup(name);
 	table->is_system_db = dict_mem_table_is_system(table->name.m_name);
 	table->space = space;
 	table->space_id = space ? space->id : ULINT_UNDEFINED;
-	table->n_t_cols = unsigned(n_cols + DATA_N_SYS_COLS);
-	table->n_v_cols = (unsigned int) (n_v_cols);
-	table->n_cols = unsigned(table->n_t_cols - table->n_v_cols);
+	table->n_t_cols = static_cast<unsigned>(n_cols + DATA_N_SYS_COLS)
+		& dict_index_t::MAX_N_FIELDS;
+	table->n_v_cols = static_cast<unsigned>(n_v_cols)
+		& dict_index_t::MAX_N_FIELDS;
+	table->n_cols = static_cast<unsigned>(
+		table->n_t_cols - table->n_v_cols)
+		& dict_index_t::MAX_N_FIELDS;
 
 	table->cols = static_cast<dict_col_t*>(
 		mem_heap_alloc(heap, table->n_cols * sizeof(dict_col_t)));
@@ -198,8 +210,11 @@ dict_mem_table_create(
 	new(&table->foreign_set) dict_foreign_set();
 	new(&table->referenced_set) dict_foreign_set();
 
-	rw_lock_create(dict_table_stats_key, &table->stats_latch,
-		       SYNC_INDEX_TREE);
+	if (init_stats_latch) {
+		rw_lock_create(dict_table_stats_key, &table->stats_latch,
+			       SYNC_INDEX_TREE);
+		table->stats_latch_inited = true;
+	}
 
 	return(table);
 }
@@ -223,8 +238,6 @@ dict_mem_table_free(
 	    || DICT_TF2_FLAG_IS_SET(table, DICT_TF2_FTS_HAS_DOC_ID)
 	    || DICT_TF2_FLAG_IS_SET(table, DICT_TF2_FTS_ADD_DOC_ID)) {
 		if (table->fts) {
-			fts_optimize_remove_table(table);
-
 			fts_free(table);
 		}
 	}
@@ -245,7 +258,9 @@ dict_mem_table_free(
 
 	UT_DELETE(table->s_cols);
 
-	rw_lock_free(&table->stats_latch);
+	if (table->stats_latch_inited) {
+		rw_lock_free(&table->stats_latch);
+	}
 
 	mem_heap_free(table->heap);
 }
@@ -311,7 +326,7 @@ dict_mem_table_add_col(
 	ulint		len)	/*!< in: precision */
 {
 	dict_col_t*	col;
-	ulint		i;
+	unsigned	i;
 
 	ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
 	ut_ad(!heap == !name);
@@ -345,11 +360,11 @@ dict_mem_table_add_col(
 	switch (prtype & DATA_VERSIONED) {
 	case DATA_VERS_START:
 		ut_ad(!table->vers_start);
-		table->vers_start = i;
+		table->vers_start = i & dict_index_t::MAX_N_FIELDS;
 		break;
 	case DATA_VERS_END:
 		ut_ad(!table->vers_end);
-		table->vers_end = i;
+		table->vers_end = i & dict_index_t::MAX_N_FIELDS;
 	}
 }
 
@@ -379,7 +394,6 @@ dict_mem_table_add_v_col(
 	ulint		num_base)
 {
 	dict_v_col_t*	v_col;
-	ulint		i;
 
 	ut_ad(table);
 	ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
@@ -387,7 +401,7 @@ dict_mem_table_add_v_col(
 
 	ut_ad(prtype & DATA_VIRTUAL);
 
-	i = table->n_v_def++;
+	unsigned i = table->n_v_def++;
 
 	table->n_t_def++;
 
@@ -411,7 +425,7 @@ dict_mem_table_add_v_col(
 	v_col = &table->v_cols[i];
 
 	dict_mem_fill_column_struct(&v_col->m_col, pos, mtype, prtype, len);
-	v_col->v_pos = i;
+	v_col->v_pos = i & dict_index_t::MAX_N_FIELDS;
 
 	if (num_base != 0) {
 		v_col->base_col = static_cast<dict_col_t**>(mem_heap_zalloc(
@@ -421,7 +435,8 @@ dict_mem_table_add_v_col(
 		v_col->base_col = NULL;
 	}
 
-	v_col->num_base = num_base;
+	v_col->num_base = static_cast<unsigned>(num_base)
+		& dict_index_t::MAX_N_FIELDS;
 
 	/* Initialize the index list for virtual columns */
 	ut_ad(v_col->v_indexes.empty());
@@ -746,18 +761,18 @@ dict_mem_fill_column_struct(
 	ulint		prtype,		/*!< in: precise type */
 	ulint		col_len)	/*!< in: column length */
 {
-	ulint	mbminlen;
-	ulint	mbmaxlen;
+	unsigned mbminlen, mbmaxlen;
 
-	column->ind = (unsigned int) col_pos;
+	column->ind = static_cast<unsigned>(col_pos)
+		& dict_index_t::MAX_N_FIELDS;
 	column->ord_part = 0;
 	column->max_prefix = 0;
-	column->mtype = (unsigned int) mtype;
-	column->prtype = (unsigned int) prtype;
-	column->len = (unsigned int) col_len;
+	column->mtype = static_cast<uint8_t>(mtype);
+	column->prtype = static_cast<unsigned>(prtype);
+	column->len = static_cast<uint16_t>(col_len);
 	dtype_get_mblen(mtype, prtype, &mbminlen, &mbmaxlen);
-	column->mbminlen = mbminlen;
-	column->mbmaxlen = mbmaxlen;
+	column->mbminlen = mbminlen & 7;
+	column->mbmaxlen = mbmaxlen & 7;
 	column->def_val.data = NULL;
 	column->def_val.len = UNIV_SQL_DEFAULT;
 	ut_ad(!column->is_dropped());
@@ -1085,7 +1100,7 @@ dict_mem_index_add_field(
 	field = dict_index_get_nth_field(index, unsigned(index->n_def) - 1);
 
 	field->name = name;
-	field->prefix_len = (unsigned int) prefix_len;
+	field->prefix_len = prefix_len & ((1U << 12) - 1);
 }
 
 /**********************************************************************//**
@@ -1201,8 +1216,10 @@ inline void dict_index_t::reconstruct_fields()
 {
 	DBUG_ASSERT(is_primary());
 
-	n_fields += table->instant->n_dropped;
-	n_def += table->instant->n_dropped;
+	n_fields = (n_fields + table->instant->n_dropped)
+		& dict_index_t::MAX_N_FIELDS;
+	n_def = (n_def + table->instant->n_dropped)
+		& dict_index_t::MAX_N_FIELDS;
 
 	const unsigned n_first = first_user_field();
 
@@ -1221,7 +1238,8 @@ inline void dict_index_t::reconstruct_fields()
 		if (c.is_dropped()) {
 			f.col = &table->instant->dropped[j++];
 			DBUG_ASSERT(f.col->is_dropped());
-			f.fixed_len = dict_col_get_fixed_size(f.col, comp);
+			f.fixed_len = dict_col_get_fixed_size(f.col, comp)
+				& ((1U << 10) - 1);
 		} else {
 			DBUG_ASSERT(!c.is_not_null());
 			const auto old = std::find_if(
@@ -1243,7 +1261,7 @@ inline void dict_index_t::reconstruct_fields()
 	}
 
 	fields = tfields;
-	n_core_null_bytes = UT_BITS_IN_BYTES(n_core_null);
+	n_core_null_bytes = static_cast<byte>(UT_BITS_IN_BYTES(n_core_null));
 }
 
 /** Reconstruct dropped or reordered columns.
@@ -1367,7 +1385,7 @@ dict_index_t::vers_history_row(
         } else {
 		ib::error() << "foreign constraints: secondary index is out of "
 			       "sync";
-		ut_ad(!"secondary index is out of sync");
+		ut_ad("secondary index is out of sync" == 0);
 		error = true;
 	}
 	mtr.commit();

@@ -1273,10 +1273,10 @@ static struct my_tests_st *get_my_tests();  /* To be defined in main .c file */
 static struct my_tests_st *my_testlist= 0;
 
 static my_bool
-get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
-               char *argument)
+get_one_option(const struct my_option *opt, char *argument,
+               const char *filename __attribute__((unused)))
 {
-  switch (optid) {
+  switch (opt->id) {
   case '#':
     DBUG_PUSH(argument ? argument : default_dbug_option);
     break;
@@ -1288,7 +1288,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     {
       char *start=argument;
       my_free(opt_password);
-      opt_password= my_strdup(argument, MYF(MY_FAE));
+      opt_password= my_strdup(PSI_NOT_INSTRUMENTED, argument, MYF(MY_FAE));
       while (*argument) *argument++= 'x';               /* Destroy argument */
       if (*start)
         start[1]=0;
@@ -1319,7 +1319,7 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
     }
     if (embedded_server_arg_count == MAX_SERVER_ARGS-1 ||
         !(embedded_server_args[embedded_server_arg_count++]=
-          my_strdup(argument, MYF(MY_FAE))))
+          my_strdup(PSI_NOT_INSTRUMENTED, argument, MYF(MY_FAE))))
     {
       DIE("Can't use server argument");
     }

@@ -62,7 +62,7 @@ static my_bool tty_password= 0;
 static char opt_tmpdir[FN_REFLEN] = "";
 
 #ifndef DBUG_OFF
-static char *default_dbug_option= (char*) "d:t:O,/tmp/mysql_upgrade.trace";
+static char *default_dbug_option= (char*) "d:t:O,/tmp/mariadb-upgrade.trace";
 #endif
 
 static char **defaults_argv;
@@ -268,12 +268,12 @@ static void add_one_option_cnf_file(DYNAMIC_STRING *ds,
 }
 
 static my_bool
-get_one_option(int optid, const struct my_option *opt,
-               char *argument)
+get_one_option(const struct my_option *opt, char *argument,
+               const char *filename __attribute__((unused)))
 {
   my_bool add_option= TRUE;
 
-  switch (optid) {
+  switch (opt->id) {
 
   case '?':
     printf("%s  Ver %s Distrib %s, for %s (%s)\n",
@@ -317,7 +317,7 @@ get_one_option(int optid, const struct my_option *opt,
   case 'b': /* --basedir   */
   case 'd': /* --datadir   */
     fprintf(stderr, "%s: the '--%s' option is always ignored\n",
-            my_progname, optid == 'b' ? "basedir" : "datadir");
+            my_progname, opt->id == 'b' ? "basedir" : "datadir");
     /* FALLTHROUGH */
 
   case 'k':                                     /* --version-check */
@@ -383,11 +383,20 @@ static int run_command(char* cmd,
   if (opt_verbose >= 4)
     puts(cmd);
 
-  if (!(res_file= my_popen(cmd, IF_WIN("rt","r"))))
+  if (!(res_file= my_popen(cmd, "r")))
     die("popen(\"%s\", \"r\") failed", cmd);
 
   while (fgets(buf, sizeof(buf), res_file))
   {
+#ifdef _WIN32
+    /* Strip '\r' off newlines. */
+    size_t len = strlen(buf);
+    if (len > 1 && buf[len - 2] == '\r' && buf[len - 1] == '\n')
+    {
+      buf[len - 2] = '\n';
+      buf[len - 1] = 0;
+    }
+#endif
     DBUG_PRINT("info", ("buf: %s", buf));
     if(ds_res)
     {

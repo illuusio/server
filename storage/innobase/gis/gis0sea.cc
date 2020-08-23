@@ -139,10 +139,10 @@ rtr_pcur_getnext_from_path(
 		      || latch_mode & BTR_MODIFY_LEAF);
 		mtr_s_lock_index(index, mtr);
 	} else {
-		ut_ad(mtr_memo_contains_flagged(mtr, &index->lock,
-						MTR_MEMO_SX_LOCK
-						| MTR_MEMO_S_LOCK
-						| MTR_MEMO_X_LOCK));
+		ut_ad(mtr->memo_contains_flagged(&index->lock,
+						 MTR_MEMO_SX_LOCK
+						 | MTR_MEMO_S_LOCK
+						 | MTR_MEMO_X_LOCK));
 	}
 
 	const ulint zip_size = index->table->space->zip_size();
@@ -422,9 +422,7 @@ rtr_pcur_getnext_from_path(
 
 					btr_cur_latch_leaves(
 						block,
-						page_id_t(index->table->space_id,
-							  block->page.id.page_no()),
-						zip_size, BTR_MODIFY_TREE,
+						BTR_MODIFY_TREE,
 						btr_cur, mtr);
 				}
 
@@ -601,15 +599,14 @@ rtr_pcur_open_low(
 	n_fields = dtuple_get_n_fields(tuple);
 
 	if (latch_mode & BTR_ALREADY_S_LATCHED) {
-		ut_ad(mtr_memo_contains(mtr, dict_index_get_lock(index),
-				  MTR_MEMO_S_LOCK));
+		ut_ad(mtr->memo_contains(index->lock, MTR_MEMO_S_LOCK));
 		tree_latched = true;
 	}
 
 	if (latch_mode & BTR_MODIFY_TREE) {
-		ut_ad(mtr_memo_contains_flagged(mtr, &index->lock,
-						MTR_MEMO_X_LOCK
-						| MTR_MEMO_SX_LOCK));
+		ut_ad(mtr->memo_contains_flagged(&index->lock,
+						 MTR_MEMO_X_LOCK
+						 | MTR_MEMO_SX_LOCK));
 		tree_latched = true;
 	}
 
@@ -676,7 +673,7 @@ rtr_page_get_father(
 	ulint	page_no = btr_node_ptr_get_child_page_no(cursor->page_cur.rec,
 							 offsets);
 
-	ut_ad(page_no == block->page.id.page_no());
+	ut_ad(page_no == block->page.id().page_no());
 #else
 	rtr_page_get_father_block(
 		NULL, heap, index, block, mtr, sea_cur, cursor);
@@ -709,11 +706,8 @@ static void rtr_get_father_node(
 	/* Try to optimally locate the parent node. Level should always
 	less than sea_cur->tree_height unless the root is splitting */
 	if (sea_cur && sea_cur->tree_height > level) {
-
-		ut_ad(mtr_memo_contains_flagged(mtr,
-						dict_index_get_lock(index),
-						MTR_MEMO_X_LOCK
-						| MTR_MEMO_SX_LOCK));
+		ut_ad(mtr->memo_contains_flagged(&index->lock, MTR_MEMO_X_LOCK
+						 | MTR_MEMO_SX_LOCK));
 		ret = rtr_cur_restore_position(
 			BTR_CONT_MODIFY_TREE, sea_cur, level, mtr);
 
@@ -822,12 +816,12 @@ rtr_page_get_father_node_ptr(
 	dict_index_t*	index;
 	rtr_mbr_t	mbr;
 
-	page_no = btr_cur_get_block(cursor)->page.id.page_no();
+	page_no = btr_cur_get_block(cursor)->page.id().page_no();
 	index = btr_cur_get_index(cursor);
 
 	ut_ad(srv_read_only_mode
-	      || mtr_memo_contains_flagged(mtr, dict_index_get_lock(index),
-					   MTR_MEMO_X_LOCK | MTR_MEMO_SX_LOCK));
+	      || mtr->memo_contains_flagged(&index->lock, MTR_MEMO_X_LOCK
+					    | MTR_MEMO_SX_LOCK));
 
 	ut_ad(dict_index_get_page(index) != page_no);
 
@@ -1200,7 +1194,7 @@ rtr_check_discard_page(
 				the root page */
 	buf_block_t*	block)	/*!< in: block of page to be discarded */
 {
-	const ulint pageno = block->page.id.page_no();
+	const ulint pageno = block->page.id().page_no();
 
 	mutex_enter(&index->rtr_track->rtr_active_mutex);
 
@@ -1221,7 +1215,7 @@ rtr_check_discard_page(
 		if (rtr_info->matches) {
 			mutex_enter(&rtr_info->matches->rtr_match_mutex);
 
-			if ((&rtr_info->matches->block)->page.id.page_no()
+			if ((&rtr_info->matches->block)->page.id().page_no()
 			     == pageno) {
 				if (!rtr_info->matches->matched_recs->empty()) {
 					rtr_info->matches->matched_recs->clear();
@@ -1237,8 +1231,8 @@ rtr_check_discard_page(
 	mutex_exit(&index->rtr_track->rtr_active_mutex);
 
 	lock_mutex_enter();
-	lock_prdt_page_free_from_discard(block, lock_sys.prdt_hash);
-	lock_prdt_page_free_from_discard(block, lock_sys.prdt_page_hash);
+	lock_prdt_page_free_from_discard(block, &lock_sys.prdt_hash);
+	lock_prdt_page_free_from_discard(block, &lock_sys.prdt_page_hash);
 	lock_mutex_exit();
 }
 
@@ -1275,7 +1269,7 @@ rtr_cur_restore_position(
 
 	ut_ad(latch_mode == BTR_CONT_MODIFY_TREE);
 
-	if (!buf_pool_is_obsolete(r_cursor->withdraw_clock)
+	if (!buf_pool.is_obsolete(r_cursor->withdraw_clock)
 	    && buf_page_optimistic_get(RW_X_LATCH,
 				       r_cursor->block_when_stored,
 				       r_cursor->modify_clock,
@@ -1496,7 +1490,7 @@ rtr_non_leaf_insert_stack_push(
 {
 	node_seq_t	new_seq;
 	btr_pcur_t*	my_cursor;
-	ulint		page_no = block->page.id.page_no();
+	ulint		page_no = block->page.id().page_no();
 
 	my_cursor = static_cast<btr_pcur_t*>(
 		ut_malloc_nokey(sizeof(*my_cursor)));
@@ -1512,7 +1506,7 @@ rtr_non_leaf_insert_stack_push(
 				my_cursor, mbr_inc);
 }
 
-/** Copy a buf_block_t strcuture, except "block->lock" and "block->mutex".
+/** Copy a buf_block_t, except "block->lock".
 @param[in,out]	matches	copy to match->block
 @param[in]	block	block to copy */
 static
@@ -1521,13 +1515,11 @@ rtr_copy_buf(
 	matched_rec_t*		matches,
 	const buf_block_t*	block)
 {
-	/* Copy all members of "block" to "matches->block" except "mutex"
-	and "lock". We skip "mutex" and "lock" because they are not used
+	/* Copy all members of "block" to "matches->block" except "lock".
+	We skip "lock" because it is not used
 	from the dummy buf_block_t we create here and because memcpy()ing
-	them generates (valid) compiler warnings that the vtable pointer
-	will be copied. It is also undefined what will happen with the
-	newly memcpy()ed mutex if the source mutex was acquired by
-	(another) thread while it was copied. */
+	it generates (valid) compiler warnings that the vtable pointer
+	will be copied. */
 	new (&matches->block.page) buf_page_t(block->page);
 	matches->block.frame = block->frame;
 	matches->block.unzip_LRU = block->unzip_LRU;
@@ -1535,7 +1527,6 @@ rtr_copy_buf(
 	ut_d(matches->block.in_unzip_LRU_list = block->in_unzip_LRU_list);
 	ut_d(matches->block.in_withdraw_list = block->in_withdraw_list);
 
-	/* Skip buf_block_t::mutex */
 	/* Skip buf_block_t::lock */
 	matches->block.lock_hash_val = block->lock_hash_val;
 	matches->block.modify_clock = block->modify_clock;
@@ -1620,6 +1611,60 @@ rtr_get_mbr_from_tuple(
 		     mbr);
 }
 
+/** Compare minimum bounding rectangles.
+@return	1, 0, -1, if mode == PAGE_CUR_MBR_EQUAL. And return
+1, 0 for rest compare modes, depends on a and b qualifies the
+relationship (CONTAINS, WITHIN etc.) */
+static int cmp_gis_field(page_cur_mode_t mode, const void *a, const void *b)
+{
+  return mode == PAGE_CUR_MBR_EQUAL
+    ? cmp_geometry_field(a, b)
+    : rtree_key_cmp(mode, a, b);
+}
+
+/** Compare a GIS data tuple to a physical record in rtree non-leaf node.
+We need to check the page number field, since we don't store pk field in
+rtree non-leaf node.
+@param[in]	dtuple		data tuple
+@param[in]	rec		R-tree record
+@return whether dtuple is less than rec */
+static bool
+cmp_dtuple_rec_with_gis_internal(const dtuple_t* dtuple, const rec_t* rec)
+{
+  const dfield_t *dtuple_field= dtuple_get_nth_field(dtuple, 0);
+  ut_ad(dfield_get_len(dtuple_field) == DATA_MBR_LEN);
+
+  if (cmp_gis_field(PAGE_CUR_WITHIN, dfield_get_data(dtuple_field), rec))
+    return true;
+
+  dtuple_field= dtuple_get_nth_field(dtuple, 1);
+  ut_ad(dfield_get_len(dtuple_field) == 4); /* child page number */
+  ut_ad(dtuple_field->type.mtype == DATA_SYS_CHILD);
+  ut_ad(!(dtuple_field->type.prtype & ~DATA_NOT_NULL));
+
+  return memcmp(dtuple_field->data, rec + DATA_MBR_LEN, 4) != 0;
+}
+
+#ifndef UNIV_DEBUG
+static
+#endif
+/** Compare a GIS data tuple to a physical record.
+@param[in] dtuple data tuple
+@param[in] rec R-tree record
+@param[in] mode compare mode
+@retval negative if dtuple is less than rec */
+int cmp_dtuple_rec_with_gis(const dtuple_t *dtuple, const rec_t *rec,
+                            page_cur_mode_t mode)
+{
+  const dfield_t *dtuple_field= dtuple_get_nth_field(dtuple, 0);
+  /* FIXME: TABLE_SHARE::init_from_binary_frm_image() is adding
+  field->key_part_length_bytes() to the key length */
+  ut_ad(dfield_get_len(dtuple_field) == DATA_MBR_LEN ||
+        dfield_get_len(dtuple_field) == DATA_MBR_LEN + 2);
+
+  return cmp_gis_field(mode, dfield_get_data(dtuple_field), rec);
+}
+
 /****************************************************************//**
 Searches the right position in rtree for a page cursor. */
 bool
@@ -1645,7 +1690,7 @@ rtr_cur_search_with_match(
 	const rec_t*	best_rec;
 	const rec_t*	last_match_rec = NULL;
 	bool		match_init = false;
-	ulint		space = block->page.id.space();
+	ulint		space = block->page.id().space();
 	page_cur_mode_t	orig_mode = mode;
 	const rec_t*	first_rec = NULL;
 
@@ -1692,7 +1737,7 @@ rtr_cur_search_with_match(
 		and the table is a compressed table, try to avoid
 		first page as much as possible, as there will be problem
 		when update MIN_REC rec in compress table */
-		if (buf_block_get_page_zip(block)
+		if (is_buf_block_get_page_zip(block)
 		    && !page_has_prev(page)
 		    && page_get_n_recs(page) >= 2) {
 
@@ -1701,9 +1746,6 @@ rtr_cur_search_with_match(
 	}
 
 	while (!page_rec_is_supremum(rec)) {
-		offsets = rec_get_offsets(rec, index, offsets, is_leaf,
-					  dtuple_get_n_fields_cmp(tuple),
-					  &heap);
 		if (!is_leaf) {
 			switch (mode) {
 			case PAGE_CUR_CONTAIN:
@@ -1713,21 +1755,21 @@ rtr_cur_search_with_match(
 				both CONTAIN and INTERSECT for either of
 				the search mode */
 				cmp = cmp_dtuple_rec_with_gis(
-					tuple, rec, offsets, PAGE_CUR_CONTAIN);
+					tuple, rec, PAGE_CUR_CONTAIN);
 
 				if (cmp != 0) {
 					cmp = cmp_dtuple_rec_with_gis(
-						tuple, rec, offsets,
+						tuple, rec,
 						PAGE_CUR_INTERSECT);
 				}
 				break;
 			case PAGE_CUR_DISJOINT:
 				cmp = cmp_dtuple_rec_with_gis(
-					tuple, rec, offsets, mode);
+					tuple, rec, mode);
 
 				if (cmp != 0) {
 					cmp = cmp_dtuple_rec_with_gis(
-						tuple, rec, offsets,
+						tuple, rec,
 						PAGE_CUR_INTERSECT);
 				}
 				break;
@@ -1736,11 +1778,11 @@ rtr_cur_search_with_match(
 				double	area;
 
 				cmp = cmp_dtuple_rec_with_gis(
-					tuple, rec, offsets, PAGE_CUR_WITHIN);
+					tuple, rec, PAGE_CUR_WITHIN);
 
 				if (cmp != 0) {
 					increase = rtr_rec_cal_increase(
-						tuple, rec, offsets, &area);
+						tuple, rec, &area);
 					/* Once it goes beyond DBL_MAX,
 					it would not make sense to record
 					such value, just make it
@@ -1763,19 +1805,19 @@ rtr_cur_search_with_match(
 				break;
 			case PAGE_CUR_RTREE_GET_FATHER:
 				cmp = cmp_dtuple_rec_with_gis_internal(
-					tuple, rec, offsets);
+					tuple, rec);
 				break;
 			default:
 				/* WITHIN etc. */
 				cmp = cmp_dtuple_rec_with_gis(
-					tuple, rec, offsets, mode);
+					tuple, rec, mode);
 			}
 		} else {
 			/* At leaf level, INSERT should translate to LE */
 			ut_ad(mode != PAGE_CUR_RTREE_INSERT);
 
 			cmp = cmp_dtuple_rec_with_gis(
-				tuple, rec, offsets, mode);
+				tuple, rec, mode);
 		}
 
 		if (cmp == 0) {
@@ -1948,17 +1990,10 @@ rtr_cur_search_with_match(
 	} else {
 
 		if (mode == PAGE_CUR_RTREE_INSERT) {
-			ulint	child_no;
-			ut_ad(!last_match_rec && rec);
-
-			offsets = rec_get_offsets(
-				rec, index, offsets, false,
-				ULINT_UNDEFINED, &heap);
-
-			child_no = btr_node_ptr_get_child_page_no(rec, offsets);
-
+			ut_ad(!last_match_rec);
 			rtr_non_leaf_insert_stack_push(
-				index, rtr_info->parent_path, level, child_no,
+				index, rtr_info->parent_path, level,
+				mach_read_from_4(rec + DATA_MBR_LEN),
 				block, rec, 0);
 
 		} else if (rtr_info && found && !is_leaf) {

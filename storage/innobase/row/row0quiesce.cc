@@ -535,19 +535,10 @@ row_quiesce_table_start(
 	}
 
 	if (!trx_is_interrupted(trx)) {
-		{
-			FlushObserver observer(table->space, trx, NULL);
-			buf_LRU_flush_or_remove_pages(table->space_id,
-						      &observer);
-		}
+		buf_LRU_flush_or_remove_pages(table->space_id, true);
 
-		if (trx_is_interrupted(trx)) {
-
-			ib::warn() << "Quiesce aborted!";
-
-		} else if (row_quiesce_write_cfg(table, trx->mysql_thd)
-			   != DB_SUCCESS) {
-
+		if (row_quiesce_write_cfg(table, trx->mysql_thd)
+		    != DB_SUCCESS) {
 			ib::warn() << "There was an error writing to the"
 				" meta data file";
 		} else {

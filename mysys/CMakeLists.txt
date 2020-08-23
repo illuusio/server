@@ -44,17 +44,72 @@ SET(MYSYS_SOURCES  array.c charset-def.c charset.c checksum.c my_default.c
 				my_getncpus.c my_safehash.c my_chmod.c my_rnd.c
                                 my_uuid.c wqueue.c waiting_threads.c ma_dyncol.c ../sql-common/my_time.c
 				my_rdtsc.c my_context.c psi_noop.c
-                                my_atomic_writes.c my_cpu.c my_likely.c
+                                my_atomic_writes.c my_cpu.c my_likely.c my_largepage.c
                                 file_logger.c my_dlerror.c)
 
 IF (WIN32)
   SET (MYSYS_SOURCES ${MYSYS_SOURCES}
     my_winthread.c
+    my_wintoken.c
     my_wincond.c
     my_winerr.c
     my_winfile.c
     my_conio.c
     my_win_popen.cc)
+ENDIF()
+
+IF(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
+  #Check for PCLMUL instruction (x86)
+  CHECK_C_SOURCE_COMPILES("
+  int main()
+  {
+    asm volatile (\"pclmulqdq \\$0x00, %%xmm1, %%xmm0\":::\"cc\");
+    return 0;
+  }" HAVE_CLMUL_INSTRUCTION)
+
+  IF(HAVE_CLMUL_INSTRUCTION)
+    SET(MYSYS_SOURCES ${MYSYS_SOURCES} crc32/crc32_x86.c)
+  ENDIF()
+ELSEIF(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|AARCH64")
+  IF(CMAKE_COMPILER_IS_GNUCC AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.1)
+    include(CheckCXXSourceCompiles)
+
+    CHECK_CXX_SOURCE_COMPILES("
+    #define CRC32CX(crc, value) __asm__(\"crc32cx %w[c], %w[c], %x[v]\":[c]\"+r\"(crc):[v]\"r\"(value))
+    asm(\".arch_extension crc\");
+    unsigned int foo(unsigned int ret) {
+      CRC32CX(ret, 0);
+      return ret;
+    }
+    #include <sys/auxv.h>
+    int main() { foo(0); getauxval(AT_HWCAP); }" HAVE_ARMV8_CRC)
+
+    CHECK_CXX_SOURCE_COMPILES("
+    asm(\".arch_extension crypto\");
+    unsigned int foo(unsigned int ret) {
+      __asm__(\"pmull  v2.1q,          v2.1d,  v1.1d\");
+      return ret;
+    }
+    #include <sys/auxv.h>
+    int main() { foo(0); getauxval(AT_HWCAP); }" HAVE_ARMV8_CRYPTO)
+
+    CHECK_C_COMPILER_FLAG(-march=armv8-a+crc+crypto HAVE_ARMV8_CRC_CRYPTO_INTRINSICS)
+    IF(HAVE_ARMV8_CRC_CRYPTO_INTRINSICS)
+      SET(MYSYS_SOURCES ${MYSYS_SOURCES} crc32/crc32_arm64.c)
+      SET_SOURCE_FILES_PROPERTIES(crc32/crc32_arm64.c PROPERTIES
+        COMPILE_FLAGS "-march=armv8-a+crc+crypto")
+    ENDIF()
+  ENDIF()
+ELSEIF(CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64")
+  SET(HAVE_CRC32_VPMSUM 1 PARENT_SCOPE)
+  SET(MYSYS_SOURCES ${MYSYS_SOURCES} $<TARGET_OBJECTS:crc32c> $<TARGET_OBJECTS:crc32ieee>)
+
+  ADD_LIBRARY(crc32c OBJECT crc32/crc32_ppc64.c)
+  ADD_LIBRARY(crc32ieee OBJECT crc32/crc32_ppc64.c)
+
+  SET_TARGET_PROPERTIES(crc32c crc32ieee PROPERTIES COMPILE_FLAGS "${COMPILE_FLAGS} -maltivec -mvsx -mpower8-vector -mcrypto -mpower8-vector")
+  SET_TARGET_PROPERTIES(crc32ieee PROPERTIES COMPILE_DEFINITIONS "CRC32_FUNCTION=my_checksum;CRC32_CONSTANTS_HEADER=\"pcc_crc32_constants.h\"")
+  SET_TARGET_PROPERTIES(crc32c PROPERTIES COMPILE_DEFINITIONS "CRC32_FUNCTION=crc32c_vpmsum;CRC32_CONSTANTS_HEADER=\"pcc_crc32c_constants.h\"")
 ENDIF()
 
 IF(UNIX)
@@ -65,17 +120,14 @@ IF(HAVE_ALARM)
  SET(MYSYS_SOURCES ${MYSYS_SOURCES} my_alarm.c)
 ENDIF()
 
-IF(HAVE_LINUX_LARGE_PAGES)
- SET(MYSYS_SOURCES ${MYSYS_SOURCES} my_largepage.c)
-ENDIF()
-
 IF(HAVE_MLOCK)
  SET(MYSYS_SOURCES ${MYSYS_SOURCES} my_lockmem.c)
 ENDIF()
 
 ADD_CONVENIENCE_LIBRARY(mysys ${MYSYS_SOURCES})
+MAYBE_DISABLE_IPO(mysys)
 TARGET_LINK_LIBRARIES(mysys dbug strings ${ZLIB_LIBRARY}
- ${LIBNSL} ${LIBM} ${LIBRT} ${LIBDL} ${LIBSOCKET} ${LIBEXECINFO} ${CRC32_LIBRARY})
+ ${LIBNSL} ${LIBM} ${LIBRT} ${LIBDL} ${LIBSOCKET} ${LIBEXECINFO})
 DTRACE_INSTRUMENT(mysys)
 
 IF(HAVE_BFD_H)

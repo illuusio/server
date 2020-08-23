@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, 2019 MariaDB
+   Copyright (c) 2018, 2020, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -98,11 +98,7 @@ bool Pushdown_select::send_result_set_metadata()
 
 bool Pushdown_select::send_data()
 {
-  THD *thd= handler->thd;
   DBUG_ENTER("Pushdown_select::send_data");
-
-  if (thd->killed == ABORT_QUERY)
-    DBUG_RETURN(false);
 
   if (select->join->result->send_data(result_columns))
     DBUG_RETURN(true);

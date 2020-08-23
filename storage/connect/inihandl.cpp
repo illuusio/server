@@ -112,8 +112,6 @@ static PROFILE *MRUProfile[N_CACHED_PROFILES] = {NULL};
 
 //static CRITICAL_SECTION PROFILE_CritSect = CRITICAL_SECTION_INIT("PROFILE_CritSect");
 
-static const char hex[17] = "0123456789ABCDEF";
-
 BOOL  WritePrivateProfileString(LPCSTR section, LPCSTR entry,
                                 LPCSTR string, LPCSTR filename);
 
@@ -194,7 +192,7 @@ static void PROFILE_Save( FILE *file, PROFILESECTION *section )
     }
 
     for (key = section->key; key; key = key->next)
-      if (key->name && key->name[0]) {
+      if (key->name[0]) {
         fprintf(file, "%s", SVP(key->name));
 
         if (key->value)
@@ -1340,7 +1338,7 @@ BOOL WritePrivateProfileSection(LPCSTR section,
  * Note that when the buffer is big enough then the return value may be any
  * value between 1 and len-1 (or len in Win95), including len-2.
  */
-#ifdef NOT_USED
+#ifdef TEST_MODULE
 static DWORD
 GetPrivateProfileSectionNames(LPSTR buffer, DWORD size,  LPCSTR filename)
 {
@@ -1357,12 +1355,11 @@ GetPrivateProfileSectionNames(LPSTR buffer, DWORD size,  LPCSTR filename)
   LeaveCriticalSection(&PROFILE_CritSect);
   return ret;
 }  // end of GetPrivateProfileSectionNames
-#endif
+
 
 /************************************************************************
  * Program to test the above
  ************************************************************************/
-#ifdef TEST_MODULE
 int main(int argc, char**argv) {
   char  buff[128];
   char *p, *inifile = "D:\\Plug\\Data\\contact.ini";

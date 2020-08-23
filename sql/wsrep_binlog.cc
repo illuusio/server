@@ -64,7 +64,7 @@ int wsrep_write_cache_buf(IO_CACHE *cache, uchar **buf, size_t *buf_len)
                      wsrep_max_ws_size, total_length);
           goto error;
       }
-      uchar* tmp= (uchar *)my_realloc(*buf, total_length,
+      uchar* tmp= (uchar *)my_realloc(PSI_INSTRUMENT_ME, *buf, total_length,
                                        MYF(MY_ALLOW_ZERO_PTR));
       if (!tmp)
       {
@@ -381,7 +381,9 @@ void wsrep_register_for_group_commit(THD *thd)
 
 void wsrep_unregister_from_group_commit(THD *thd)
 {
-  DBUG_ASSERT(thd->wsrep_trx().state() == wsrep::transaction::s_ordered_commit);
+  DBUG_ASSERT(thd->wsrep_trx().state() == wsrep::transaction::s_ordered_commit||
+              // ordered_commit() failure results in s_aborting state
+              thd->wsrep_trx().state() == wsrep::transaction::s_aborting);
   wait_for_commit *wfc= thd->wait_for_commit_ptr;
 
   if (wfc)

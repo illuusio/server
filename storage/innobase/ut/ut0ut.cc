@@ -212,27 +212,6 @@ ut_print_buf(
 	ut_print_buf_hex(o, buf, len);
 }
 
-/*************************************************************//**
-Calculates fast the number rounded up to the nearest power of 2.
-@return first power of 2 which is >= n */
-ulint
-ut_2_power_up(
-/*==========*/
-	ulint	n)	/*!< in: number != 0 */
-{
-	ulint	res;
-
-	res = 1;
-
-	ut_ad(n > 0);
-
-	while (res < n) {
-		res = res * 2;
-	}
-
-	return(res);
-}
-
 /** Get a fixed-length string, quoted as an SQL identifier.
 If the string contains a slash '/', the string will be
 output as two identifiers separated by a period (.),

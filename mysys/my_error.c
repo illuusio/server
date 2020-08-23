@@ -118,7 +118,7 @@ void my_error(uint nr, myf MyFlags, ...)
   else
   {
     va_start(args,MyFlags);
-    (void) my_vsnprintf_ex(&my_charset_utf8_general_ci, ebuff,
+    (void) my_vsnprintf_ex(&my_charset_utf8mb3_general_ci, ebuff,
                            sizeof(ebuff), format, args);
     va_end(args);
   }
@@ -148,7 +148,7 @@ void my_printf_error(uint error, const char *format, myf MyFlags, ...)
 		    error, MyFlags, errno, format));
 
   va_start(args,MyFlags);
-  (void) my_vsnprintf_ex(&my_charset_utf8_general_ci, ebuff,
+  (void) my_vsnprintf_ex(&my_charset_utf8mb3_general_ci, ebuff,
                          sizeof(ebuff), format, args);
   va_end(args);
   (*error_handler_hook)(error, ebuff, MyFlags);
@@ -224,7 +224,8 @@ int my_error_register(const char** (*get_errmsgs)(int error), uint first,
   struct my_err_head **search_meh_pp;
 
   /* Allocate a new header structure. */
-  if (! (meh_p= (struct my_err_head*) my_malloc(sizeof(struct my_err_head),
+  if (! (meh_p= (struct my_err_head*) my_malloc(key_memory_my_err_head,
+                                                sizeof(struct my_err_head),
                                                 MYF(MY_WME))))
     return 1;
   meh_p->get_errmsgs= get_errmsgs;

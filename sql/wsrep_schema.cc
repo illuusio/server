@@ -139,6 +139,25 @@ private:
   my_bool m_wsrep_on;
 };
 
+class thd_server_status
+{
+public:
+  thd_server_status(THD* thd, uint server_status, bool condition)
+    : m_thd(thd)
+    , m_thd_server_status(thd->server_status)
+  {
+    if (condition)
+      thd->server_status= server_status;
+  }
+  ~thd_server_status()
+  {
+    m_thd->server_status= m_thd_server_status;
+  }
+private:
+  THD* m_thd;
+  uint m_thd_server_status;
+};
+
 class thd_context_switch
 {
 public:
@@ -473,12 +492,11 @@ static int scan(TABLE* table, uint field, INTTYPE& val)
 
 static int scan(TABLE* table, uint field, char* strbuf, uint strbuf_len)
 {
-  String str;
-  (void)table->field[field]->val_str(&str);
-  LEX_CSTRING tmp= str.lex_cstring();
-  uint len = tmp.length;
-  strncpy(strbuf, tmp.str, std::min(len, strbuf_len));
-  strbuf[strbuf_len - 1]= '\0';
+  uint len;
+  StringBuffer<STRING_BUFFER_USUAL_SIZE> str;
+  (void) table->field[field]->val_str(&str);
+  len= str.length();
+  strmake(strbuf, str.ptr(), MY_MIN(len, strbuf_len-1));
   return 0;
 }
 
@@ -1094,6 +1112,9 @@ int Wsrep_schema::remove_fragments(THD* thd,
   }
   else
   {
+    Wsrep_schema_impl::thd_server_status
+      thd_server_status(thd, thd->server_status | SERVER_STATUS_IN_TRANS,
+                        thd->in_multi_stmt_transaction_mode());
     Wsrep_schema_impl::finish_stmt(thd);
   }
 
@@ -1281,7 +1302,7 @@ int Wsrep_schema::recover_sr_transactions(THD *orig_thd)
     goto out;
   }
 
-  while (true)
+  while (0 == error)
   {
     if ((error= Wsrep_schema_impl::next_record(frag_table)) == 0)
     {
@@ -1331,19 +1352,23 @@ int Wsrep_schema::recover_sr_transactions(THD *orig_thd)
       }
       applier->store_globals();
       wsrep::mutable_buffer unused;
-      applier->apply_write_set(ws_meta, data, unused);
-      applier->after_apply();
+      if ((ret= applier->apply_write_set(ws_meta, data, unused)) != 0)
+      {
+        WSREP_ERROR("SR trx recovery applying returned %d", ret);
+      }
+      else
+      {
+        applier->after_apply();
+      }
       storage_service.store_globals();
     }
     else if (error == HA_ERR_END_OF_FILE)
     {
       ret= 0;
-      break;
     }
     else
     {
       WSREP_ERROR("SR table scan returned error %d", error);
-      break;
     }
   }
   Wsrep_schema_impl::end_scan(frag_table);
