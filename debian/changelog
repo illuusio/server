@@ -1,8 +1,15 @@
-mariadb-10.5 (1:10.5.5-1~exp1) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.5-1~exp1) experimental; urgency=medium
 
   * New upstream version 10.5.5 (Closes: #968895)
+    - Drop patches that are obsolete or applied upstream in 10.5
+    - Rename most occurrences of 10.4 to 10.5 after importing 10.5 series
+    - Add Breaks/Replaces for 10.5 on previous 10.4 versions
+    - Stop suggesting tinyca, upstream project does not exist anymore
+    - Sync some changes from upstream MariaDB 10.5 debian/ directory
+    - Update d/copyright for MariaDB 10.5
+    - Disable ColumnStore, not mature enough for Debian yet
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 23 Aug 2020 16:18:28 +0300
+ -- Otto Kekäläinen <otto@debian.org>  Mon, 24 Aug 2020 22:50:33 +0300
 
 mariadb-10.4 (1:10.4.14-1~exp1) experimental; urgency=medium
 
