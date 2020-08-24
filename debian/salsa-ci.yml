@@ -78,6 +78,7 @@ build buster-backports:
 # Temporairly allow failure in the test above since there seems to be a bug in mtr
 autopkgtest:
   extends: .test-autopkgtest
+  allow_failure: true
 
 piuparts:
   extends: .test-piuparts
