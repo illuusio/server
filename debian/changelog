@@ -1,4 +1,4 @@
-mariadb-10.5 (1:10.5.5-1~exp1) experimental; urgency=medium
+mariadb-10.5 (1:10.5.5-1) UNRELEASED; urgency=medium
 
   * New upstream version 10.5.5 (Closes: #968895)
     - Drop patches that are obsolete or applied upstream in 10.5
@@ -8,8 +8,11 @@ mariadb-10.5 (1:10.5.5-1~exp1) experimental; urgency=medium
     - Sync some changes from upstream MariaDB 10.5 debian/ directory
     - Update d/copyright for MariaDB 10.5
     - Disable ColumnStore, not mature enough for Debian yet
+    - Remove mariadb-plugin-tokudb as upstream TokuDB is not maintained anymore
+    - Introduce new package mariadb-plugin-s3 new in MariaDB 10.5
+  * Add NEWS item about MySQL 8.0 in-place binary incompatibility
 
- -- Otto Kekäläinen <otto@debian.org>  Mon, 24 Aug 2020 22:50:33 +0300
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 17 Sep 2020 14:37:47 +0300
 
 mariadb-10.4 (1:10.4.14-1~exp1) experimental; urgency=medium
 
