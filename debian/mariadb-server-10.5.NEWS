@@ -1,3 +1,21 @@
+mariadb-10.5 (10.5.5-1) unstable; urgency=medium
+
+   The latest version 10.5 of the MariaDB Server came out in June 2020 and is
+   guaranteed to have security releases at least until summer 2025.
+
+   For more information on what is new in MariaDB 10.5 check out:
+   https://speakerdeck.com/ottok/debconf-2020-whats-new-in-mariadb-server-10-dot-5-and-galera-4
+   or video from https://debconf20.debconf.org/.
+
+   MariaDB 10.5 has been tested to be backwards compatible with all previous
+   versions of MariaDB and all previous versions of MySQL up until version 5.7.
+   Note that MySQL 8.0 introducess significant backwards incompatible changes
+   compares do MySQL 5.7, and thus in-place binary upgrades from MySQL 8.0 to
+   MariaDB 10.5 are not possible, but sysadmins need to upgrade by exporting and
+   importing SQL dumps of their databases.
+
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 17 Sep 2020 14:37:47 +0300
+
 mariadb-10.1 (10.1.20-1) unstable; urgency=low
 
     MariaDB is now the default MySQL variant in Debian, at version 10.1. The
