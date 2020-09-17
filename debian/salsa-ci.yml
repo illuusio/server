@@ -12,7 +12,7 @@ variables:
   SALSA_CI_DISABLE_RC_BUGS: 0
 
 stages:
-  - pre-test
+  - provisioning
   - build
   - test
   - upgrade in Sid
@@ -22,7 +22,7 @@ stages:
   - publish # Stage referenced by Salsa-CI template aptly stanza, so must exist even though not used
 
 gnitpick:
-  stage: pre-test
+  stage: provisioning
   image: debian:sid
   script:
     # Actual Gnitpick part
@@ -33,39 +33,13 @@ gnitpick:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-build:
-  extends: .build-package
-  script: &gbp-buildpackage-script
-    # salsa-ci-team/pipeline#104
-    - rm -rf '$CI_PROJECT_DIR'
-    # salsa-ci-team/pipeline#107
-    - rm -rf ${CI_PROJECT_DIR}/debian/output/.ccache
-    - mkdir -p ${WORKING_DIR} ${CCACHE_WORK_DIR}
-    - mv ${CCACHE_WORK_DIR} ${CCACHE_TMP_DIR}
-    - gbp pull --ignore-branch --pristine-tar --track-missing
-    - |
-      mkdir -p ${WORKING_DIR}
-      # Check if we can obtain the orig from the git branches
-      if ! gbp export-orig --pristine-tar --tarball-dir=${WORKING_DIR}; then
-        # Fallback using origtargz
-        origtargz -dt
-        mv ../*.orig.* ${WORKING_DIR}
-      fi
-    - gbp buildpackage --git-ignore-branch --git-ignore-new --git-no-create-orig --git-overlay --git-export-dir=${WORKING_DIR} --git-builder="docker-build.sh ${SALSA_CI_IMAGES_DOCKERBUILDER}" |& filter-output
-    - du -shc ${WORKING_DIR}/* # Show total file size of artifacts. Must stay are under 100 MB.
-    - mv ${CCACHE_TMP_DIR} ${CCACHE_WORK_DIR}
-
 build buster-backports:
   extends: .build-package
-  script:
-    - *gbp-buildpackage-script
   variables:
       RELEASE: buster-backports
 
 build stretch-backports:
   extends: .build-package
-  script:
-    - *gbp-buildpackage-script
   variables:
      RELEASE: stretch-backports
 
@@ -81,15 +55,17 @@ piuparts:
 blhc:
   extends: .test-blhc
   stage: test extras
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
 
 # In addition to Salsa-CI, also run these fully MariaDB specific build jobs
 
 fresh install:
   stage: test
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:${RELEASE}
   artifacts:
     when: always
@@ -121,8 +97,9 @@ fresh install:
 
 mariadb-10.5 Sid upgrade:
   stage: upgrade in Sid
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:${RELEASE}
   artifacts:
     when: always
@@ -161,8 +138,9 @@ mariadb-10.5 Sid upgrade:
 
 mariadb-10.3 Buster to mariadb-10.5 upgrade:
   stage: upgrade from Buster/Stretch
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:buster
   artifacts:
     when: always
@@ -205,8 +183,9 @@ mariadb-10.3 Buster to mariadb-10.5 upgrade:
 
 mariadb-10.1 Stretch to mariadb-10.5 upgrade:
   stage: upgrade from Buster/Stretch
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:stretch
   artifacts:
     when: always
@@ -249,8 +228,9 @@ mariadb-10.1 Stretch to mariadb-10.5 upgrade:
 
 test basic features:
   stage: test
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:${RELEASE}
   artifacts:
     when: always
@@ -306,8 +286,9 @@ test basic features:
 # libmariadb-dev-compat layer. Should always end up using libmariadb.so.3 run-time.
 build mariadbclient consumer Python-MySQLdb:
   stage: test
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:${RELEASE}
   script:
     - cd ${WORKING_DIR} # Don't repeat this step, it's just cd ./debian/output
@@ -327,8 +308,9 @@ build mariadbclient consumer Python-MySQLdb:
 
 libmysql* to libmariadb* upgrade:
   stage: upgrade in Sid
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:${RELEASE}
   artifacts:
     when: always
@@ -366,8 +348,9 @@ libmysql* to libmariadb* upgrade:
 
 default-libmysqlclient-dev Sid upgrade:
   stage: upgrade in Sid
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:${RELEASE}
   artifacts:
     when: always
@@ -392,8 +375,9 @@ default-libmysqlclient-dev Sid upgrade:
 
 default-libmysqlclient-dev Buster upgrade:
   stage: upgrade from Buster/Stretch
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:buster
   artifacts:
     when: always
@@ -420,8 +404,9 @@ default-libmysqlclient-dev Buster upgrade:
 
 default-libmysqlclient-dev Stretch upgrade:
   stage: upgrade from Buster/Stretch
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:stretch
   artifacts:
     when: always
@@ -448,8 +433,9 @@ default-libmysqlclient-dev Stretch upgrade:
 
 mariadb-connector-c Stretch upgrade:
   stage: upgrade from Buster/Stretch
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:stretch
   artifacts:
     when: always
@@ -478,8 +464,9 @@ mariadb-connector-c Stretch upgrade:
 # The Debian maintainer scripts detect this situation and simply moves old datadir aside and start fresh.
 mysql-8.0 Sid to mariadb-10.5 upgrade:
   stage: upgrade in Sid
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:sid
   artifacts:
     when: always
@@ -524,8 +511,9 @@ mysql-8.0 Sid to mariadb-10.5 upgrade:
 # The Debian maintainer scripts detect this situation and simply moves old datadir aside and start fresh.
 mysql-8.0 Focal to mariadb-10.5 upgrade:
   stage: upgrade extras
-  dependencies:
-    - build buster-backports
+  needs:
+    - job: build buster-backports
+      artifacts: true
   image: debian:buster
   artifacts:
     when: always
@@ -575,8 +563,9 @@ mysql-8.0 Focal to mariadb-10.5 upgrade:
 
 mysql-5.7 Bionic to mariadb-10.5 upgrade:
   stage: upgrade extras
-  dependencies:
-    - build stretch-backports
+  needs:
+    - job: build stretch-backports
+      artifacts: true
   image: debian:stretch
   artifacts:
     when: always
@@ -630,8 +619,9 @@ mysql-5.7 Bionic to mariadb-10.5 upgrade:
 
 mariadb.org-10.5 to mariadb-10.5 upgrade:
   stage: upgrade extras
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:sid
   artifacts:
     when: always
@@ -678,8 +668,9 @@ mariadb.org-10.5 to mariadb-10.5 upgrade:
 
 mariadb.org-10.4 to mariadb-10.5 upgrade:
   stage: upgrade extras
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:sid
   artifacts:
     when: always
@@ -730,8 +721,9 @@ mariadb.org-10.4 to mariadb-10.5 upgrade:
 
 mariadb.org-10.3 to mariadb-10.5 upgrade:
   stage: upgrade extras
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:sid
   artifacts:
     when: always
@@ -779,8 +771,9 @@ mariadb.org-10.3 to mariadb-10.5 upgrade:
 
 mariadb.org-10.2 to mariadb-10.5 upgrade:
   stage: upgrade extras
-  dependencies:
-    - build
+  needs:
+    - job: build
+      artifacts: true
   image: debian:sid
   artifacts:
     when: always
@@ -828,8 +821,9 @@ mariadb.org-10.2 to mariadb-10.5 upgrade:
 
 mysql.com-5.7 to mariadb-10.5 upgrade (MDEV-22678):
   stage: upgrade extras
-  dependencies:
-    - build buster-backports
+  needs:
+    - job: build buster-backports
+      artifacts: true
   image: debian:buster
   artifacts:
     when: always
@@ -879,8 +873,9 @@ mysql.com-5.7 to mariadb-10.5 upgrade (MDEV-22678):
 
 percona-xtradb-5.7 to mariadb-10.5 upgrade (MDEV-22679):
   stage: upgrade extras
-  dependencies:
-    - build buster-backports
+  needs:
+    - job: build buster-backports
+      artifacts: true
   image: debian:buster
   artifacts:
     when: always
