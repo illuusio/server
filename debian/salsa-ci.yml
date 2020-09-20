@@ -392,7 +392,7 @@ default-libmysqlclient-dev Buster upgrade:
     - pkg-config --list-all
     - echo 'deb http://deb.debian.org/debian sid main' > /etc/apt/sources.list
     - apt-get update; apt-get install -y apt # Uprade minimal stack first
-    - apt-get install -y ./libmariadb3_*.deb ./libmariadbclient-dev_*.deb ./libmariadb-dev_*.deb ./libmariadb-dev-compat_*.deb ./libmariadbd19_*.deb ./libmariadbd-dev_*.deb ./mariadb-common_*.deb
+    - apt-get install -y ./libmariadb3_*.deb ./libmariadb-dev_*.deb ./libmariadb-dev-compat_*.deb ./libmariadbd19_*.deb ./libmariadbd-dev_*.deb ./mariadb-common_*.deb
     - ldconfig -p # | grep -e mariadb -e mysql
     - pkg-config --list-all
     - pkg-config --cflags --libs mysqlclient
@@ -421,7 +421,7 @@ default-libmysqlclient-dev Stretch upgrade:
     - pkg-config --list-all
     - echo 'deb http://deb.debian.org/debian sid main' > /etc/apt/sources.list
     - apt-get update; apt-get install -y apt # Uprade minimal stack first
-    - apt-get install -y ./libmariadb3_*.deb ./libmariadbclient-dev_*.deb ./libmariadb-dev_*.deb ./libmariadb-dev-compat_*.deb ./libmariadbd19_*.deb ./libmariadbd-dev_*.deb ./mariadb-common_*.deb
+    - apt-get install -y ./libmariadb3_*.deb ./libmariadb-dev_*.deb ./libmariadb-dev-compat_*.deb ./libmariadbd19_*.deb ./libmariadbd-dev_*.deb ./mariadb-common_*.deb
     - ldconfig -p # | grep -e mariadb -e mysql
     - pkg-config --list-all
     - pkg-config --cflags --libs mysqlclient
@@ -450,7 +450,7 @@ mariadb-connector-c Stretch upgrade:
     - pkg-config --list-all
     - echo 'deb http://deb.debian.org/debian sid main' > /etc/apt/sources.list
     - apt-get update; apt-get install -y apt # Uprade minimal stack first
-    - apt-get install -y ./libmariadb3_*.deb ./libmariadbclient-dev_*.deb ./libmariadb-dev_*.deb ./libmariadb-dev-compat_*.deb ./libmariadbd19_*.deb ./libmariadbd-dev_*.deb ./mariadb-common_*.deb
+    - apt-get install -y ./libmariadb3_*.deb ./libmariadb-dev_*.deb ./libmariadb-dev-compat_*.deb ./libmariadbd19_*.deb ./libmariadbd-dev_*.deb ./mariadb-common_*.deb
     - ldconfig -p # | grep -e mariadb -e mysql
     - pkg-config --list-all
     - pkg-config --cflags --libs mysqlclient
