@@ -11,3 +11,4 @@ rocksdb-kfreebsd.patch
 mroonga-path-reproducible-build.patch
 mtr-plugin-path.patch
 prevent-executable-stack-due-to-objects-compiled-fro.patch
+env-perl-usr-bin-perl.patch
