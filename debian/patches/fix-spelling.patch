@@ -1,0 +1,212 @@
+Author: Otto Kekäläinen <otto@debian.org>
+
+  Fix various spelling errors still found in code.
+
+--- a/storage/federated/ha_federated.cc
++++ b/storage/federated/ha_federated.cc
+@@ -3395,7 +3395,7 @@ maria_declare_plugin(federated)
+   &federated_storage_engine,
+   "FEDERATED",
+   "Patrick Galbraith and Brian Aker, MySQL AB",
+-  "Allows to access tables on other MariaDB servers",
++  "Allows accessing tables on other MariaDB servers",
+   PLUGIN_LICENSE_GPL,
+   federated_db_init, /* Plugin Init */
+   federated_done, /* Plugin Deinit */
+--- a/storage/federatedx/ha_federatedx.cc
++++ b/storage/federatedx/ha_federatedx.cc
+@@ -3716,7 +3716,7 @@ maria_declare_plugin(federatedx)
+   &federatedx_storage_engine,
+   "FEDERATED",
+   "Patrick Galbraith",
+-  "Allows to access tables on other MariaDB servers, supports transactions and more",
++  "Allows one to access tables on other MariaDB servers, supports transactions and more",
+   PLUGIN_LICENSE_GPL,
+   federatedx_db_init, /* Plugin Init */
+   federatedx_done, /* Plugin Deinit */
+@@ -3727,4 +3727,3 @@ maria_declare_plugin(federatedx)
+   MariaDB_PLUGIN_MATURITY_STABLE /* maturity */
+ }
+ maria_declare_plugin_end;
+-
+--- a/storage/innobase/handler/ha_innodb.cc
++++ b/storage/innobase/handler/ha_innodb.cc
+@@ -19919,7 +19919,7 @@ static MYSQL_SYSVAR_UINT(simulate_comp_f
+ static MYSQL_SYSVAR_BOOL(force_primary_key,
+   srv_force_primary_key,
+   PLUGIN_VAR_OPCMDARG,
+-  "Do not allow to create table without primary key (off by default)",
++  "Do not allow creating a table without primary key (off by default)",
+   NULL, NULL, FALSE);
+ 
+ static const char *page_compression_algorithms[]= { "none", "zlib", "lz4", "lzo", "lzma", "bzip2", "snappy", 0 };
+--- a/storage/maria/libmarias3/src/xml.c
++++ b/storage/maria/libmarias3/src/xml.c
+@@ -782,7 +782,7 @@ static struct xml_node* xml_parse_node(s
+ 	/* Close tag has to match open tag
+ 	 */
+ 	if (!xml_string_equals(tag_open, tag_close)) {
+-		xml_parser_error(parser, NO_CHARACTER, "xml_parse_node::tag missmatch");
++		xml_parser_error(parser, NO_CHARACTER, "xml_parse_node::tag mismatch");
+ 		goto exit_failure;
+ 	}
+ 
+--- a/storage/rocksdb/rocksdb/db/external_sst_file_ingestion_job.cc
++++ b/storage/rocksdb/rocksdb/db/external_sst_file_ingestion_job.cc
+@@ -46,7 +46,7 @@ Status ExternalSstFileIngestionJob::Prep
+             TablePropertiesCollectorFactory::Context::kUnknownColumnFamily &&
+         f.cf_id != cfd_->GetID()) {
+       return Status::InvalidArgument(
+-          "External file column family id dont match");
++          "External file column family id don't match");
+     }
+   }
+ 
+@@ -646,7 +646,7 @@ Status ExternalSstFileIngestionJob::Assi
+     return Status::InvalidArgument("Global seqno is required, but disabled");
+   } else if (file_to_ingest->global_seqno_offset == 0) {
+     return Status::InvalidArgument(
+-        "Trying to set global seqno for a file that dont have a global seqno "
++        "Trying to set global seqno for a file that don't have a global seqno "
+         "field");
+   }
+ 
+--- a/wsrep-lib/src/server_state.cpp
++++ b/wsrep-lib/src/server_state.cpp
+@@ -753,7 +753,7 @@ void wsrep::server_state::sst_received(w
+                  * logged view. */
+                 std::ostringstream msg;
+                 msg << "SST script passed bogus GTID: " << gtid
+-                    << ". Preceeding view GTID: " << v.state_id();
++                    << ". Preceding view GTID: " << v.state_id();
+                 throw wsrep::runtime_error(msg.str());
+             }
+ 
+--- a/wsrep-lib/src/transaction.cpp
++++ b/wsrep-lib/src/transaction.cpp
+@@ -915,7 +915,7 @@ bool wsrep::transaction::bf_abort(
+                 WSREP_LOG_DEBUG(client_state_.debug_log_level(),
+                                 wsrep::log::debug_level_transaction,
+                                 "Seqno " << bf_seqno
+-                                << " succesfully BF aborted " << id_
++                                << " successfully BF aborted " << id_
+                                 << " victim_seqno " << victim_seqno);
+                 bf_abort_state_ = state_at_enter;
+                 state(lock, s_must_abort);
+--- a/man/aria_chk.1
++++ b/man/aria_chk.1
+@@ -155,7 +155,7 @@ Change the collation used by the index.
+ Faster repair by not modifying the data file.
+ One can give a second '\-q' to force aria_chk to
+ modify the original datafile in case of duplicate keys.
+-NOTE: Tables where the data file is currupted can't be
++NOTE: Tables where the data file is corrupted can't be
+ fixed with this option.
+ .TP
+ \fB\-u\fR, \fB\-\-unpack\fR
+--- a/man/aria_read_log.1
++++ b/man/aria_read_log.1
+@@ -60,7 +60,7 @@ Start applying from last checkpoint
+ Print less information during apply/undo phase
+ .TP
+ \fB\-T\fR, \fB\-\-tables\-to\-redo\fR=\fIname\fR
+-List of tables sepearated with , that we should apply
++List of tables separated with , that we should apply
+ REDO on. Use this if you only want to recover some tables
+ .TP
+ \fB\-t\fR, \fB\-\-tmpdir\fR=\fIname\fR
+--- a/mysql-test/suite/innodb/r/innodb_bug34300.result
++++ b/mysql-test/suite/innodb/r/innodb_bug34300.result
+@@ -1,5 +1,5 @@
+ #
+-# Bug#34300 Tinyblob & tinytext fields currupted after export/import and alter in 5.1
++# Bug#34300 Tinyblob & tinytext fields corrupted after export/import and alter in 5.1
+ #
+ SET @@global.max_allowed_packet=16777216;
+ connect  newconn, localhost, root,,;
+--- a/mysql-test/suite/innodb/r/instant_alter_charset.result
++++ b/mysql-test/suite/innodb/r/instant_alter_charset.result
+@@ -1847,7 +1847,7 @@ HEX(a)
+ 0061
+ DROP TABLE t1;
+ #
+-# MDEV-19285 INSTANT ALTER from ascii_general_ci to latin1_general_ci produces currupt data
++# MDEV-19285 INSTANT ALTER from ascii_general_ci to latin1_general_ci produces corrupt data
+ #
+ CREATE TABLE t1 (a VARCHAR(10) CHARACTER SET ascii COLLATE ascii_general_ci, PRIMARY KEY(a)) ENGINE=InnoDB;
+ INSERT INTO t1 VALUES ('a'),(0xC0),('b');
+--- a/mysql-test/suite/innodb/t/innodb_bug34300.test
++++ b/mysql-test/suite/innodb/t/innodb_bug34300.test
+@@ -1,5 +1,5 @@
+ --echo #
+---echo # Bug#34300 Tinyblob & tinytext fields currupted after export/import and alter in 5.1
++--echo # Bug#34300 Tinyblob & tinytext fields corrupted after export/import and alter in 5.1
+ --echo #
+ 
+ -- source include/have_innodb.inc
+--- a/mysql-test/suite/innodb/t/instant_alter_charset.test
++++ b/mysql-test/suite/innodb/t/instant_alter_charset.test
+@@ -640,7 +640,7 @@ SELECT HEX(a) FROM t1;
+ DROP TABLE t1;
+ 
+ --echo #
+---echo # MDEV-19285 INSTANT ALTER from ascii_general_ci to latin1_general_ci produces currupt data
++--echo # MDEV-19285 INSTANT ALTER from ascii_general_ci to latin1_general_ci produces corrupt data
+ --echo #
+ 
+ CREATE TABLE t1 (a VARCHAR(10) CHARACTER SET ascii COLLATE ascii_general_ci, PRIMARY KEY(a)) ENGINE=InnoDB;
+--- a/sql/sql_repl.cc
++++ b/sql/sql_repl.cc
+@@ -1954,7 +1954,7 @@ send_event_to_slave(binlog_send_info *in
+     {
+       info->error= ER_MASTER_FATAL_ERROR_READING_BINLOG;
+       return "Failed to replace GTID event with backwards-compatible event: "
+-             "currupt event.";
++             "corrupt event.";
+     }
+     if (!need_dummy)
+       return NULL;
+--- a/storage/maria/aria_chk.c
++++ b/storage/maria/aria_chk.c
+@@ -586,7 +586,7 @@ Recover (repair)/ options (When using '-
+   -q, --quick         Faster repair by not modifying the data file.\n\
+                       One can give a second '-q' to force aria_chk to\n\
+ 		      modify the original datafile in case of duplicate keys.\n\
+-		      NOTE: Tables where the data file is currupted can't be\n\
++		      NOTE: Tables where the data file is corrupted can't be\n\
+ 		      fixed with this option.\n\
+   -u, --unpack        Unpack file packed with ariapack.\n\
+ ");
+--- a/storage/maria/aria_read_log.c
++++ b/storage/maria/aria_read_log.c
+@@ -269,7 +269,7 @@ static struct my_option my_long_options[
+    &opt_silent, &opt_silent, 0,
+    GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+   {"tables-to-redo", 'T',
+-   "List of tables sepearated with , that we should apply REDO on. Use this if you only want to recover some tables",
++   "List of tables separated with , that we should apply REDO on. Use this if you only want to recover some tables",
+    0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+   {"tmpdir", 't', "Path for temporary files. Multiple paths can be specified, "
+    "separated by "
+--- a/storage/myisam/myisamchk.c
++++ b/storage/myisam/myisamchk.c
+@@ -429,7 +429,7 @@ static void usage(void)
+   -q, --quick         Faster repair by not modifying the data file.\n\
+                       One can give a second '-q' to force myisamchk to\n\
+ 		      modify the original datafile in case of duplicate keys.\n\
+-		      NOTE: Tables where the data file is currupted can't be\n\
++		      NOTE: Tables where the data file is corrupted can't be\n\
+ 		      fixed with this option.\n\
+   -u, --unpack        Unpack file packed with myisampack.\n\
+ ");
+--- a/tests/mysql_client_test.c
++++ b/tests/mysql_client_test.c
+@@ -18882,7 +18882,7 @@ static void test_bug58036()
+   if (!mysql_change_user(conn, opt_user, opt_password, NULL))
+   {
+     if (!opt_silent)
+-      printf("mysql_change_user() succedded, error expected!");
++      printf("mysql_change_user() succeeded, error expected!");
+     mysql_close(conn);
+     DIE("");
+   }
