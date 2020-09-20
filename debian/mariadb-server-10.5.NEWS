@@ -1,4 +1,4 @@
-mariadb-10.5 (10.5.5-1) unstable; urgency=medium
+mariadb-10.5 (1:10.5.5-1) unstable; urgency=medium
 
    The latest version 10.5 of the MariaDB Server came out in June 2020 and is
    guaranteed to have security releases at least until summer 2025.
