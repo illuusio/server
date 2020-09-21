@@ -10,9 +10,17 @@ mariadb-10.5 (1:10.5.5-1) UNRELEASED; urgency=medium
     - Disable ColumnStore, not mature enough for Debian yet
     - Remove mariadb-plugin-tokudb as upstream TokuDB is not maintained anymore
     - Introduce new package mariadb-plugin-s3 new in MariaDB 10.5
+    - Include caching_sha2_password.so plugin for libmariadb3 (Closes: #962597)
+    - Remove unnecessary charset stanza from client config (Closes: #879099)
+  * Remove deprecated transitional libmariadbclient-dev package
+  * Correct documentation about systemd using debian-start (Closes: #866782)
   * Add NEWS item about MySQL 8.0 in-place binary incompatibility
+  * Add Provides: libmysqld-dev now as the mysql-8.0 stopped providing it
+  * Install Spider with a simple spider.cnf (Closes: #917818)
+  * Remove faulty encryption.preset file installed in subdirectory
+  * Salsa-CI: Refactor common parts into reusable sections
 
- -- Otto Kekäläinen <otto@debian.org>  Thu, 17 Sep 2020 14:37:47 +0300
+ -- Otto Kekäläinen <otto@debian.org>  Wed, 23 Sep 2020 22:38:04 +0300
 
 mariadb-10.4 (1:10.4.14-1~exp1) experimental; urgency=medium
 
