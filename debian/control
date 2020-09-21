@@ -53,10 +53,10 @@ Depends: libgnutls28-dev,
          ${shlibs:Depends}
 Breaks: libmariadbclient-dev (<< 1:10.3),
         libmysqlclient-dev,
-        libmysqld-dev
+        libmysqld-dev (<< ${source:Version})
 Replaces: libmariadbclient-dev (<< 1:10.3),
           libmysqlclient-dev,
-          libmysqld-dev
+          libmysqld-dev (<< ${source:Version})
 Conflicts: libmariadbclient16-dev,
            libmysqlclient-dev
 Description: MariaDB database development files
@@ -139,6 +139,7 @@ Package: libmariadbd-dev
 Architecture: any
 Multi-Arch: same
 Section: libdevel
+Provides: libmysqld-dev
 Pre-Depends: ${misc:Pre-Depends}
 Depends: libmariadb-dev (= ${binary:Version}),
          libmariadbd19 (= ${binary:Version}),

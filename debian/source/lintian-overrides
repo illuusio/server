@@ -46,3 +46,5 @@ source-contains-prebuilt-java-object storage/connect/mysql-test/connect/std_data
 source-contains-prebuilt-java-object storage/connect/mysql-test/connect/std_data/Mongo3.jar
 # Intentionally use a version that is easy to backport to Debian Stretch and Ubuntu Bionic (or Xenial-backports)
 package-uses-old-debhelper-compat-version 10
+# Intentional as libmariadbd-dev provides libmysqld-dev
+version-substvar-for-external-package libmariadb-dev -> libmysqld-dev
