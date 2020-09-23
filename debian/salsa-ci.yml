@@ -259,6 +259,41 @@ test basic features:
       mariadb -e "SELECT COUNT(*) FROM db.v_temptable"
       mariadb -e "CALL db.p()"
       mariadb -e "SELECT db.f()"
+    # Test TLS connections
+    - |
+      dpkg -l | grep -i -e tls -e ssl
+      # Create user for TCP connection, must have password
+      mariadb -e "SET PASSWORD FOR 'mysql'@'localhost' = PASSWORD('asdf234');"
+      cat <<EOF > /root/.my.cnf
+      [client]
+      user=mysql
+      password=asdf234
+      protocol=tcp
+      EOF
+      export CERT_PATH=/usr/share/mysql/mysql-test/std_data
+      openssl verify -CAfile $CERT_PATH/cacert.pem $CERT_PATH/server-cert.pem
+      openssl x509 -subject -issuer -noout -in $CERT_PATH/cacert.pem
+      openssl x509 -subject -issuer -noout -in $CERT_PATH/server-cert.pem
+      cat <<EOF > /etc/mysql/mariadb.conf.d/tls.cnf
+      [client-server]
+      ssl = on
+      ssl-ca = $CERT_PATH/cacert.pem
+      ssl-cert = $CERT_PATH/server-cert.pem
+      ssl-key = $CERT_PATH/server-key.pem
+      [server]
+      require-secure-transport = on
+      [client]
+      ssl-verify-server-cert = on
+      EOF
+      service mariadb restart
+      mariadb -Bse 'STATUS' | tee result
+      # Ensure important values present, otherwise fail job
+      grep --quiet "localhost via TCP/IP" result
+      mariadb -Bse 'SHOW VARIABLES' | grep -e tls -e ssl | tee result
+      grep --quiet "have_ssl	YES" result
+      grep --quiet TLSv1.2 result
+      mariadb -Bse 'SHOW SESSION STATUS' | grep -i -e tls -e ssl | tee result
+      grep --quiet TLSv1.2 result
   variables:
     GIT_STRATEGY: none
   except:
