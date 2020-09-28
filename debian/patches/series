@@ -13,3 +13,4 @@ mtr-plugin-path.patch
 prevent-executable-stack-due-to-objects-compiled-fro.patch
 env-perl-usr-bin-perl.patch
 fix-spelling.patch
+ftbfs-x32.patch
