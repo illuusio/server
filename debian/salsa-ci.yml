@@ -695,11 +695,12 @@ mysql.com-5.7 to mariadb-10.5 upgrade (MDEV-22678):
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    - apt-get install --no-install-recommends --yes gpg gpg-agent dirmngr ca-certificates # Bare minimal (<4MB) for apt-key to work
-    - apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 8C718D3B5072E1F5
-    - echo 'deb https://repo.mysql.com/apt/debian/ buster mysql-5.7' > /etc/apt/sources.list.d/mysql.list
-    - apt-get update
-    - apt-get install -y mysql-server
+    - |
+      apt-get install --no-install-recommends --yes gpg gpg-agent dirmngr ca-certificates # Bare minimal (<4MB) for apt-key to work
+      apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 8C718D3B5072E1F5
+      echo 'deb https://repo.mysql.com/apt/debian/ buster mysql-5.7' > /etc/apt/sources.list.d/mysql.list
+      apt-get update
+      apt-get install -y mysql-server
     - *test-verify-initial
     # Enable backports to make galera-4 available
     - echo 'deb http://deb.debian.org/debian buster-backports main' >> /etc/apt/sources.list.d/backports.list && apt-get update
@@ -712,7 +713,6 @@ mysql.com-5.7 to mariadb-10.5 upgrade (MDEV-22678):
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
-  allow_failure: true
 
 percona-xtradb-5.7 to mariadb-10.5 upgrade (MDEV-22679):
   stage: upgrade extras
@@ -727,11 +727,12 @@ percona-xtradb-5.7 to mariadb-10.5 upgrade (MDEV-22679):
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    - apt-get install --no-install-recommends --yes gpg gpg-agent dirmngr ca-certificates # Bare minimal (<4MB) for apt-key to work
-    - apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 9334A25F8507EFA5
-    - echo 'deb https://repo.percona.com/apt/ buster main' > /etc/apt/sources.list.d/mysql.list
-    - apt-get update
-    - apt-get install -y percona-xtradb-cluster-57
+    - |
+      apt-get install --no-install-recommends --yes gpg gpg-agent dirmngr ca-certificates # Bare minimal (<4MB) for apt-key to work
+      apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 9334A25F8507EFA5
+      echo 'deb https://repo.percona.com/apt/ buster main' > /etc/apt/sources.list.d/mysql.list
+      apt-get update
+      apt-get install -y percona-xtradb-cluster-57
     - service mysql status
     - *test-verify-initial
     # Enable backports to make galera-4 available
@@ -745,4 +746,3 @@ percona-xtradb-5.7 to mariadb-10.5 upgrade (MDEV-22679):
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
-  allow_failure: true

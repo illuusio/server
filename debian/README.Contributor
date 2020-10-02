@@ -172,3 +172,19 @@ the build will complete and not abort if any of those debug steps fail.
 If there is a core dump file a stack trace can be produced with:
 
     cd $(BUILDDIR)/mysql-test && gdb --batch --ex 'thr a a bt' var/log/*/mysqld.1/core || true
+
+## Debug installation/upgrade
+
+To see what exactly the Debian maintainer scripts run, a verbose debug mode can be enabled with:
+
+    export DEBIAN_SCRIPT_DEBUG=1
+    apt instal ...
+
+The source files of the Debian maintainer scripts are not the final ones, as the package building stage may make changes and additions to them. To view a maintainer script in the final form run on installed system:
+
+    cat /var/lib/dpkg/info/mariadb-server-10.5.postinst
+
+To review the my.cnf status you may run:
+
+    find /etc/mysql/ -ls
+    update-alternatives --display my.cnf
