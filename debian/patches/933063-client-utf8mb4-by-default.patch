@@ -1,0 +1,14 @@
+Author: Georg Richter <georg@mariadb.com>
+  Looks like it was forgotten to add this option when building C/C as a sunproject inside server. I fixed that now:
+
+--- a/libmariadb/CMakeLists.txt
++++ b/libmariadb/CMakeLists.txt
+@@ -25,7 +25,7 @@ get_directory_property(IS_SUBPROJECT PAR
+ SET_PROPERTY(DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
+ FOREACH(V WITH_MYSQLCOMPAT WITH_MSI WITH_SIGNCODE WITH_RTC WITH_UNIT_TESTS
+     WITH_DYNCOL WITH_EXTERNAL_ZLIB WITH_CURL WITH_SQLITE WITH_SSL
+-    INSTALL_LAYOUT WITH_TEST_SRCPKG)
++    DEFAULT_CHARSET INSTALL_LAYOUT WITH_TEST_SRCPKG)
+   SET(${V} ${${OPT}${V}})
+ ENDFOREACH()
+ 
