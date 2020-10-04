@@ -6,7 +6,6 @@ mips-machine.patch
 c11_atomics.patch
 0025-Change-the-default-optimization-from-O3-to-O2-in-mys.patch
 mips-compilation-failure-__bss_start-symbol-miss.patch
-MDEV-18768-automate-auth_socket-to_unix_socket-upgrade.patch
 rocksdb-kfreebsd.patch
 mroonga-path-reproducible-build.patch
 mtr-plugin-path.patch
