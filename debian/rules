@@ -14,16 +14,13 @@ CXXFLAGS+=$(CPPFLAGS)
 
 # Only do a strict symbol checking on Linux
 ifneq (,$(filter linux,$(DEB_HOST_ARCH_OS)))
-  DPKG_GENSYMBOLS_CHECK_LEVEL := 4
+    DPKG_GENSYMBOLS_CHECK_LEVEL := 4
 endif
 
 BUILDDIR := builddir
 DEB_VERSION_REVISION := $(shell echo $(DEB_VERSION) | sed -e 's/^.*-//')
 RELEASE := $(shell lsb_release -r -s) # Use changelog based DEB_DISTRIBUTION instead?
 TMP:=$(CURDIR)/debian/tmp
-
-CC := $(DEB_HOST_GNU_TYPE)-gcc
-CXX := $(DEB_HOST_GNU_TYPE)-g++
 
 # According to Debian Policy version 4.2.0 builds should be as verbose as
 # possible unless 'terse' is specifically passed.
@@ -53,6 +50,15 @@ ifeq (32,$(DEB_HOST_ARCH_BITS))
     CMAKEFLAGS += -DPLUGIN_ROCKSDB=NO
 endif
 
+ifneq ($(DEB_BUILD_ARCH),$(DEB_HOST_ARCH))
+    ifneq (,$(filter $(DEB_HOST_ARCH_CPU),alpha amd64 arm arm64 i386 ia64 m68k mips64el mipsel powerpc ppc64 ppc64el riscv64 s390x sh4 sparc64))
+        CMAKEFLAGS += -DSTACK_DIRECTION=-1
+    endif
+    ifneq (,$(filter $(DEB_HOST_ARCH_CPU),hppa))
+        CMAKEFLAGS += -DSTACK_DIRECTION=1
+    endif
+endif
+
 ifeq ($(DEB_HOST_ARCH),riscv64)
     # riscv64 is currently very slow.
     TESTCASE_TIMEOUT=120
@@ -75,7 +81,7 @@ override_dh_auto_clean:
 	@echo "RULES.$@"
 	dh_testdir
 	dh_testroot
-	rm -rf $(BUILDDIR) builddir-native
+	rm -rf $(BUILDDIR) builddir-native extra/readline
 
 	[ ! -f debian/mysql-test-unstable-tests.orig ] || \
 	    mv debian/mysql-test-unstable-tests.orig mysql-test/unstable-tests
@@ -94,12 +100,10 @@ endif
 	# Remove -DWITH_SSL=bundle if you want to use system OpenSSL, otherwise
 	# the server will use YaSSL and Connector/C will use GnuTLS.
 	# Don't build ColumnStore, not mature enough for Debian yet.
-	mkdir -p $(BUILDDIR) && cd $(BUILDDIR) && \
-	sh -c  'PATH=$${MYSQL_BUILD_PATH:-"/usr/lib/ccache:/usr/local/bin:/usr/bin:/bin"} \
-	    	CC=${CC} \
-	    	CXX=${CXX} \
-	    	NO_UPDATE_BUILD_VERSION=1 \
-	    cmake -DCMAKE_INSTALL_PREFIX=/usr \
+	PATH=$${MYSQL_BUILD_PATH:-"/usr/lib/ccache:/usr/local/bin:/usr/bin:/bin"} \
+	    NO_UPDATE_BUILD_VERSION=1 \
+	    dh_auto_configure --builddirectory=$(BUILDDIR) -- \
+	    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	    $(CMAKEFLAGS) \
 	    $(if $(filter $(DEB_BUILD_ARCH),$(DEB_HOST_ARCH)),,-DIMPORT_EXECUTABLES=$(CURDIR)/builddir-native/import_executables.cmake) \
 	    -DCOMPILATION_COMMENT="$(DEB_VENDOR) $(RELEASE)" \
@@ -114,7 +118,7 @@ endif
 	    -DPLUGIN_AWS_KEY_MANAGEMENT=NO \
 	    -DPLUGIN_COLUMNSTORE=NO \
 	    -DWITH_INNODB_SNAPPY=ON \
-	    -DDEB=$(DEB_VENDOR) ..'
+	    -DDEB=$(DEB_VENDOR)
 
 # This is needed, otherwise 'make test' will run before binaries have been built
 override_dh_auto_build:
