@@ -1,8 +1,18 @@
 mariadb-10.5 (1:10.5.5-2) UNRELEASED; urgency=medium
 
-  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  [ Otto Kekäläinen ]
+  * Salsa-CI: Extend feature tests to ensure TLS connections work at v1.2
+  * Fix x32 compilation issue (Closes: #970662)
+  * Implement unified logrotate from upstream PR#1556 (Closes: #971399)
+  * Fix upgrade from Percona.com by ensuring server uses mariadb.cnf
+  * Revert emptying /etc/mysql/debian.cnf (Closes: #971256)
+  * Use build flag to enforce default charset as utf8mb4 (Closes: #933063)
+  * Remove "Multi-Arch: same" from libmariadbd-dev
 
- -- Otto Kekäläinen <otto@debian.org>  Mon, 28 Sep 2020 20:30:24 +0300
+  [ Daniel Black ]
+  * Fix upgrade from MySQL.com with a new 'auth_socket' rename
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 04 Oct 2020 15:40:18 +0300
 
 mariadb-10.5 (1:10.5.5-1) unstable; urgency=medium
 
