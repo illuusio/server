@@ -1,5 +1,6 @@
-* MYSQL WON'T START OR STOP?:
-=============================
+* MYSQL WON'T START OR STOP?
+============================
+
 The most common reasons the server does not start are:
 - AppArmor is enforced and something is wrong with the confinement profile.
 - Process supervisor scripts (init, systemd etc) fail to execute normally.
@@ -12,15 +13,33 @@ Examples:
   grep mysql /var/log/syslog
   journalctl -u mariadb
 
+
+* NEW SERVICE NAME, PROCESS AND BINARY NAMES IN MARIADB 10.5
+============================================================
+
+Starting form MariaDB 10.5, the default SysV init service name is 'mariadb',
+and can be accessed at path /etc/init.d/mariadb. The alias 'mysql' is only
+created on upgrades.
+
+On systemd services both 'mariadb' and alias 'mysql' are available all the time.
+
+Note that the new daemon name is 'mariadbd' instead of 'mysqld' and also most
+of the binaries have been renamed to mariadb-something, yet the old mysql-something
+name has been kept as a symbolic link to the new name for backwards compatibility.
+
+
 * NATIVE SYSTEMD SERVICE INTRODUCED IN MARIADB 10.1
 ===================================================
+
 From MariaDB 10.1 onwards the upstream mariadb.service and mariadb@.service are
 used to provide the full systemd experience. Some features available in
 traditional /etc/init.d/mysql have been changed. For details see
 https://mariadb.com/kb/en/mariadb/systemd/
 
+
 * MIXING PACKAGES FROM MARIAD.ORG AND OFFICIAL DEBIAN REPOSITORIES
 ==================================================================
+
 Please note that the MariaDB packaging in official Debian repositories are of
 a completely new generation compared to the legacy packaging used in MariaDB.org
 repositories. You cannot mix and match MariaDB 10.1 packages from official
@@ -32,8 +51,10 @@ If a MariaDB.org repository is enabled, learn to use apt pinning properly.
 Please do not file bugs in Debian regarding packages with '+maria' in the
 revision string.
 
+
 * ROOT USER AUTHENTICATION VIA UNIX SOCKET
 ==========================================
+
 On new installs no root password is set and no debian-sys-maint user is
 created anymore. Instead the MariaDB root account is set to be authenticated
 using the unix socket, e.g. any mysqld invocation by root or via sudo will
@@ -48,7 +69,9 @@ init scripts to stop the server and perform logrotation. This used to be the
 debian-sys-maint user which is no longer used as root can run directly.
 
 If you have start/stop problems make sure that the /etc/mysql/debian.cnf file
-specifies the root user and no password.
+specifies the root user and no password. In the long run please stop using that
+file as is has been obsoleted.
+
 
 * MARIADB IS SECURE BY DEFAULT
 ==============================
@@ -71,8 +94,10 @@ MariaDB in Debian is secure by default, because:
 Therefore there is also no need to run the 'mysql_secure_installation'. In fact
 that script will try to do things that are already prevented, and might fail.
 
-* WHAT TO DO AFTER UPGRADES:
-============================
+
+* WHAT TO DO AFTER UPGRADES
+===========================
+
 The privilege tables are automatically updated so all there is left is read
 the release notes on https://mariadb.com/kb/en/release-notes/ to see if any
 changes affect custom apps.
@@ -80,8 +105,10 @@ changes affect custom apps.
 There should not be any need to run 'mysql_upgrade' manually, as the upgrade
 scripts do that automatically.
 
-* WHAT TO DO AFTER INSTALLATION:
-================================
+
+* WHAT TO DO AFTER INSTALLATION
+===============================
+
 The MySQL manual describes certain steps to do at this stage in a separate
 chapter. They are not necessary as the Debian packages does them
 automatically.
@@ -93,19 +120,24 @@ The only thing that is left over for the admin is
  - creating new users and databases
  - read the rest of this text
 
-* NETWORKING:
-=============
+
+* NETWORKING
+============
+
 For security reasons, the Debian package has enabled networking only on the
 loop-back device using "bind-address" in /etc/mysql/my.cnf.  Check with
 "netstat -tlnp" where it is listening. If your connection is aborted
 immediately check your firewall rules or network routes.
 
-* WHERE IS THE DOCUMENTATION?:
-==============================
+* WHERE IS THE DOCUMENTATION?
+=============================
+
 https://mariadb.com/kb
 
-* PASSWORDS:
-============
+
+* PASSWORDS
+===========
+
 It is recommended you create additional admin users for your database
 administration needs in addition to the default root user.
 
@@ -139,8 +171,10 @@ can read it.  Every other configuration parameter can be stored there, too.
 For more information in the MariaDB manual in/usr/share/doc/mariadb-doc or
 https://mariadb.com/kb/en/configuring-mariadb-with-mycnf/.
 
+
 * FURTHER NOTES ON REPLICATION
-===============================
+==============================
+
 If the MySQL server is acting as a replication slave, you should not
 set --tmpdir to point to a directory on a memory-based filesystem or to
 a directory that is cleared when the server host restarts. A replication
@@ -149,8 +183,10 @@ that it can replicate temporary tables or LOAD DATA INFILE operations. If
 files in the temporary file directory are lost when the server restarts,
 replication fails.
 
+
 * DOWNGRADING
-============================
+=============
+
 Unsupported. Period.
 
 You might get lucky downgrading a few minor versions without issued. Take a
@@ -161,6 +197,8 @@ If doing a major version downgrade, take a mysqldump/maria-backup consistent
 backup using the current version and reload after downgrading and purging
 existing databases.
 
+
 * BACKUPS
-============================
+=========
+
 Backups save jobs. Don't get caught without one.

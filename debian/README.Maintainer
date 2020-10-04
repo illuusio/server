@@ -115,7 +115,7 @@ Test more with upload to Launchpad:
 
     COMMIT_ID=`git log -n 1 --oneline | cut -d ' ' -f 1`
     PKG=mariadb-10.5
-    backportpackage --yes -u ppa:mysql-ubuntu/$PKG -d focal -S ~`date '+%s'`.$COMMIT_ID $PKG*.dsc
+    backportpackage --yes -u ppa:mysql-ubuntu/$PKG -d groovy -S ~`date '+%s'`.$COMMIT_ID $PKG*.dsc
 
 When done, push to Salsa:
 
@@ -136,22 +136,11 @@ After the upload, check that everything is OK at
 * https://tracker.debian.org/mariadb-10.5 (Debian)
 * https://launchpad.net/ubuntu/+source/mariadb-10.5 (Ubuntu)
 
-### Maintaining debian/copyright
+## Maintaining translations
 
-First install packages: `license-reconcile devscripts cdbs`
+Running `debconf-updatepo --verbose` will refresh the translation files.
 
-Check if licenses match:
-
-    license-reconcile
-
-Create new copyright file:
-
-    licensecheck --copyright -r . -c . | /usr/lib/cdbs/licensecheck2dep5 > /tmp/copyright
-
-..but you need to do lots of manual work to merge the new file with the old, as
-`licensecheck` has a lot of cruft and the original copyright file already had
-those cleaned up.
-
+A call for translations can be initiated with e.g. `podebconf-report-po --call -v --smtp=smtp.kolumbus.fi`.
 
 ### Launchpad testing matrix
 
@@ -160,34 +149,38 @@ needs to be tested on the Ubuntu release which most closely matches the Debian
 release in question. The following matrix maps what package should be tested
 where:
 
-- 10.3 for sid on launchpad focal
-- 10.3 for eoan on launchpad eoan
-- 10.3 for buster on launchpad disco
-- 10.1 for bionic on launchpad bionic
-- 10.1 for stretch on launchpad xenial
+- 10.5 for sid on Launchpad groovy
+- 10.3 for groovy on Launchpad groovy
+- 10.3 for focal on Launchpad focal
+- 10.3 for buster on Launchpad disco
+- 10.1 for bionic on Launchpad bionic
+- 10.1 for stretch on Launchpad xenial
 
 ## Uploading to Ubuntu security releases
 
 See example with documented procedure:
- * https://bugs.launchpad.net/ubuntu/+source/mariadb-5.5/+bug/1464895
+ * https://bugs.launchpad.net/ubuntu/+source/mariadb-10.3/+bug/1861260
 
 ### Upload priority
 
 Do the security uploads in this order for having the best chance of catching
 regressions before they spread out to too many users.
 
-Upload priority for 10.3
+Upload priority for 10.5
 - debian sid
-- ubuntu-19.10 eoan
+- ubuntu-21.04
+
+Upload priority for 10.3
+- ubuntu-20.10 groovy
+- ubuntu-20.04 focal
 - debian-10 buster
 
-for 10.1
+for 10.1 (only in case there are extra releases after official EOL)
 - ubuntu-18.04 bionic
 - debian-9 stretch
 
 for 10.0 (only in case there are extra releases after official EOL)
 - ubuntu-16.04 xenial
-- debian-8 jessie
 
 ## Comparison to other distributions
 
@@ -204,3 +197,5 @@ Arch Linux:
   * https://projects.archlinux.org/svntogit/packages.git/?h=packages/mariadb
 Mageia:
   * http://svnweb.mageia.org/packages/cauldron/mariadb/current/
+
+See also: https://repology.org/project/mariadb/badges

@@ -106,7 +106,7 @@ The repository has the following branch layout:
   * master - packaging for Debian Sid (unstable)
   * stretch - release branch for Debian 9 (stretch)
   * buster - release branch for Debian 10 (buster)
-  * ubuntu-19.10 - release branch for Ubuntu 19.10 (eoan)
+  * ubuntu-20.14 - release branch for Ubuntu 20.04 (focal)
   * ubuntu-18.04 - release branch for Ubuntu 18.04 (bionic)
 
 All new features and also bugfixes are done only in the master branch. The
@@ -129,8 +129,8 @@ Debian relatively quickly. You can send email to the developers mailing list
 or open a pull request at https://github.com/MariaDB/server.
 
 Follow these instructions if your fix is about packaging in Debian specifically.
-Start by using `gitk` or similar tool to browse the previous changes. Try to
-follow similar pattern in your new changes.
+Start by using `gitk --all` or similar tool to browse the previous changes. Try
+to follow similar pattern in your new changes.
 
 Keep in mind that all changes must done only for files residing in the `debian/`
 sub-directory. If you need to create changes outside the `debian/` directory,
@@ -178,7 +178,7 @@ If there is a core dump file a stack trace can be produced with:
 To see what exactly the Debian maintainer scripts run, a verbose debug mode can be enabled with:
 
     export DEBIAN_SCRIPT_DEBUG=1
-    apt instal ...
+    apt install ...
 
 The source files of the Debian maintainer scripts are not the final ones, as the package building stage may make changes and additions to them. To view a maintainer script in the final form run on installed system:
 

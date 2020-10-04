@@ -7,12 +7,29 @@ mariadb-10.5 (1:10.5.5-1) unstable; urgency=medium
    https://speakerdeck.com/ottok/debconf-2020-whats-new-in-mariadb-server-10-dot-5-and-galera-4
    or video from https://debconf20.debconf.org/.
 
+   Quick summary:
+   - Service name is now 'mariadb', e.g. /etc/init.d/mariadb and systemctl mariadb
+   - The main server binary is now running as 'mariadbd' instead of old 'mysqld'
+   - Many commands are now mariadb-* instead of old mysql*, but old names
+     continue to work as symlinks
+   - Referencing the /etc/mysql/debian.cnf file is not advised anymore. It will
+     be deprecated in a future Debian release and has been obsolete anyway for
+     several years now since MariaDB in Debian introduced Unix socket
+     authentication for the root account in 2015.
+
    MariaDB 10.5 has been tested to be backwards compatible with all previous
    versions of MariaDB and all previous versions of MySQL up until version 5.7.
-   Note that MySQL 8.0 introducess significant backwards incompatible changes
-   compares do MySQL 5.7, and thus in-place binary upgrades from MySQL 8.0 to
+   Note that MySQL 8.0 introduces significant backwards incompatible changes
+   compared to MySQL 5.7, and thus in-place binary upgrades from MySQL 8.0 to
    MariaDB 10.5 are not possible, but sysadmins need to upgrade by exporting and
    importing SQL dumps of their databases.
+
+   If you encounter any bugs, please make sure your bug report is of highest
+   standards so we can quickly reproduce and fix the issue. Even better if you
+   find the solution yourself, and can submit it as a Merge Request at
+   https://salsa.debian.org/mariadb-team/mariadb-10.5/
+
+   If you appreciate the Debian packaging work done, please star us on Salsa!
 
  -- Otto Kekäläinen <otto@debian.org>  Thu, 17 Sep 2020 14:37:47 +0300
 
