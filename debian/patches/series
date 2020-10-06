@@ -15,3 +15,4 @@ fix-spelling.patch
 ftbfs-x32.patch
 1556.patch
 933063-client-utf8mb4-by-default.patch
+riscv64-atomics.patch
