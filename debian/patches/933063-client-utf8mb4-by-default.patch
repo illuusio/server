@@ -1,6 +1,9 @@
+From: https://github.com/mariadb-corporation/mariadb-connector-c/commit/29720950eeae75f1ea7ef1376a6149cabeb79d13
 Author: Georg Richter <georg@mariadb.com>
-  Looks like it was forgotten to add this option when building C/C as a sunproject inside server. I fixed that now:
+  Looks like it was forgotten to add this option when building C/C as a
+  subproject inside server. I fixed that now.
 
+  Patch can be removed once Connector/C version 3.1.11 is imported.
 --- a/libmariadb/CMakeLists.txt
 +++ b/libmariadb/CMakeLists.txt
 @@ -25,7 +25,7 @@ get_directory_property(IS_SUBPROJECT PAR
@@ -11,4 +14,3 @@ Author: Georg Richter <georg@mariadb.com>
 +    DEFAULT_CHARSET INSTALL_LAYOUT WITH_TEST_SRCPKG)
    SET(${V} ${${OPT}${V}})
  ENDFOREACH()
- 

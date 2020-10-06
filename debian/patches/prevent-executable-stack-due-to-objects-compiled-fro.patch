@@ -1,8 +1,10 @@
 From: =?utf-8?q?Christian_G=C3=B6ttsche?= <cgzones@googlemail.com>
 Date: Tue, 25 Feb 2020 10:21:06 +0100
 Subject: prevent executable stack due to objects compiled from assembly
-
+Description:
+ Drop this patch when MariaDB upgrades to WolfSSL 4.5.0.
 Forwarded: https://github.com/wolfSSL/wolfssl/pull/2831
+Forwarded: https://github.com/wolfSSL/wolfssl/pull/3069
 ---
  extra/wolfssl/wolfssl/wolfcrypt/src/aes_gcm_asm.S   | 4 ++++
  extra/wolfssl/wolfssl/wolfcrypt/src/chacha_asm.S    | 4 ++++

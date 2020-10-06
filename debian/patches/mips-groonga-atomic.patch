@@ -1,7 +1,10 @@
 From: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
 Date: Thu, 10 Aug 2017 20:40:28 +0200
 Subject: mips-groonga-atomic
-
+ MIPS (and possibly other) platforms require linking against libatomic to
+ support 64-bit atomic integers. Groonga was failing to do so and all related
+ tests were failing with an atomics relocation error on MIPS.
+Author: James Cowgill <jcowgill@debian.org>
 ---
  storage/mroonga/vendor/groonga/CMakeLists.txt     | 2 ++
  storage/mroonga/vendor/groonga/lib/CMakeLists.txt | 1 +

@@ -1,7 +1,18 @@
 From: Debian MySQL Maintainers <pkg-mysql-maint@lists.alioth.debian.org>
 Date: Thu, 10 Aug 2017 20:40:28 +0200
 Subject: mips-connect-unaligned
-
+Description: Handle unaligned buffers in connect's TYPBLK class
+ On MIPS platforms (and probably others) unaligned memory access results in a
+ bus error. In the connect storage engine, block data for some data formats is
+ stored packed in memory and the TYPBLK class is used to read values from it.
+ Since TYPBLK does not have special handling for this packed memory, it can
+ quite easily result in unaligned memory accesses.
+ .
+ The simple way to fix this is to perform all accesses to the main buffer
+ through memcpy. With GCC and optimizations turned on, this call to memcpy is
+ completely optimized away on architectures where unaligned accesses are ok
+ (like x86).
+Author: James Cowgill <jcowgill@debian.org>
 ---
  storage/connect/valblk.cpp | 41 ++++++++++++++++++-------------------
  storage/connect/valblk.h   | 51 +++++++++++++++++++++++++++++-----------------

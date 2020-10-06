@@ -7,6 +7,16 @@ Date:   Fri Dec 21 19:14:04 2018 +0200
    atomic operations. Check first if support is available without
    linking, otherwise use the library.
 
+   Original commit:
+   Detect whether libatomic is needed rather than hard-coding for mips
+
+   Fixes FTBFS on powerpc, since it needs libatomic too for C11 atomics,
+   and possibly m68k.
+
+   Contributors:
+   James Cowgill <jcowgill@debian.org>
+   Jessica Clarke <jrtc27@debian.org>
+
 --- a/configure.cmake
 +++ b/configure.cmake
 @@ -862,7 +862,25 @@ int main()
