@@ -1,4 +1,4 @@
-mariadb-10.5 (1:10.5.5-2) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.5-2) unstable; urgency=medium
 
   [ Otto Kekäläinen ]
   * Salsa-CI: Extend feature tests to ensure TLS connections work at v1.2
@@ -8,6 +8,8 @@ mariadb-10.5 (1:10.5.5-2) UNRELEASED; urgency=medium
   * Revert emptying /etc/mysql/debian.cnf (Closes: #971256)
   * Use build flag to enforce default charset as utf8mb4 (Closes: #933063)
   * Remove "Multi-Arch: same" from libmariadbd-dev
+  * Disable flaky MTR tests to get builds pass
+  * Automatically use libatomics on 64-bit archs (Closes: #933151)
 
   [ Daniel Black ]
   * Fix upgrade from MySQL.com with a new 'auth_socket' rename
@@ -20,7 +22,7 @@ mariadb-10.5 (1:10.5.5-2) UNRELEASED; urgency=medium
     - Keep default CMAKE_BUILD_TYPE=RelWithDebInfo instead of debhelper's None.
     - Cache the per-architecture stack direction.
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 04 Oct 2020 15:40:18 +0300
+ -- Otto Kekäläinen <otto@debian.org>  Tue, 06 Oct 2020 14:44:39 +0300
 
 mariadb-10.5 (1:10.5.5-1) unstable; urgency=medium
 
