@@ -1,2 +1,0 @@
-repair_symlink-5543  : MDEV-XXXXX - test fails because ELOOP error code is 249 and different to other platforms
-main.index_intersect : https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=968915

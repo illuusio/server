@@ -1,4 +1,3 @@
-debian/unstable-tests.* usr/share/mysql/mysql-test/
 usr/share/mysql/mysql-test/collections
 usr/share/mysql/mysql-test/include
 usr/share/mysql/mysql-test/main

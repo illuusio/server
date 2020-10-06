@@ -14,3 +14,4 @@ Author: Georg Richter <georg@mariadb.com>
 +    DEFAULT_CHARSET INSTALL_LAYOUT WITH_TEST_SRCPKG)
    SET(${V} ${${OPT}${V}})
  ENDFOREACH()
+ 

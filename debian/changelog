@@ -1,3 +1,11 @@
+mariadb-10.5 (1:10.5.5-3~exp2) experimental; urgency=medium
+
+  [ Otto Kekäläinen ]
+  * Remove all potentially unnecessary patches and test overrides to
+    see which ones still fail.
+
+ -- Otto Kekäläinen <otto@debian.org>  Wed, 07 Oct 2020 22:40:01 +0300
+
 mariadb-10.5 (1:10.5.5-3~exp1) experimental; urgency=medium
 
   [ Helmut Grohne ]
