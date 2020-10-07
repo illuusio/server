@@ -38,13 +38,6 @@ else
     NUMJOBS = 1
 endif
 
-# Ignore test suite exit code on unstable platforms
-ifeq ($(DEB_HOST_ARCH),$(filter $(DEB_HOST_ARCH),mips mipsel mips64el alpha powerpc sh4 hurd-i386 sparc64 kfreebsd-i386 kfreebsd-amd64))
-    TESTSUITE_FAIL_CMD:=true
-else
-    TESTSUITE_FAIL_CMD:=exit 1
-endif
-
 # RocksDB cannot build on 32-bit platforms
 ifeq (32,$(DEB_HOST_ARCH_BITS))
     CMAKEFLAGS += -DPLUGIN_ROCKSDB=NO
@@ -57,21 +50,6 @@ ifneq ($(DEB_BUILD_ARCH),$(DEB_HOST_ARCH))
     ifneq (,$(filter $(DEB_HOST_ARCH_CPU),hppa))
         CMAKEFLAGS += -DSTACK_DIRECTION=1
     endif
-endif
-
-ifeq ($(DEB_HOST_ARCH),riscv64)
-    # riscv64 is currently very slow.
-    TESTCASE_TIMEOUT=120
-else
-    TESTCASE_TIMEOUT=30
-endif
-
-# Add extra flag to avoid WolfSSL code crashing the entire mariadbd on s390x. This
-# can be removed once upstream has made the code s390x compatible, see
-# https://jira.mariadb.org/browse/MDEV-21705 and
-# https://github.com/wolfSSL/wolfssl/issues/2828
-ifeq ($(DEB_HOST_ARCH),s390x)
-    CFLAGS += -DWC_NO_CACHE_RESISTANT
 endif
 
 # Add support for verbose builds
@@ -137,7 +115,10 @@ override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	# Don't use --mem here as official Debian builders and most Docker systems don't have a large mem device available and
 	# would fail with errors on lack of disk space.
-	cd $(BUILDDIR)/mysql-test && ./mtr --force --testcase-timeout=$(TESTCASE_TIMEOUT) --suite-timeout=540 --retry=3 --parallel=$(NUMJOBS) --skip-rpl --suite=main --skip-test-list=unstable-tests  || $(TESTSUITE_FAIL_CMD) ;
+	cd $(BUILDDIR)/mysql-test && \
+	./mtr --force --testcase-timeout=120 --suite-timeout=540 \
+	      --retry=3 --parallel=$(NUMJOBS) --skip-rpl --suite=main \
+				--skip-test-list=unstable-tests
 endif
 
 override_dh_auto_install:

@@ -1,23 +1,18 @@
-mariadb-10.5 (1:10.5.5-3~exp2) experimental; urgency=medium
-
-  [ Otto Kekäläinen ]
-  * Remove all potentially unnecessary patches and test overrides to
-    see which ones still fail.
-
- -- Otto Kekäläinen <otto@debian.org>  Wed, 07 Oct 2020 22:40:01 +0300
-
-mariadb-10.5 (1:10.5.5-3~exp1) experimental; urgency=medium
+mariadb-10.5 (1:10.5.5-3) UNRELEASED; urgency=medium
 
   [ Helmut Grohne ]
   * Fix cross-compilation, amend commit f0ba31e1
 
-  [ Otto Kekäläinen ]
-  * Revert "Automatically use libatomics on 64-bit archs (Closes: #933151)"
-
   [ Aurelien Jarno ]
   * Correctly link pthread so riscv64 builds pass (Closes: #933151)
 
- -- Otto Kekäläinen <otto@debian.org>  Wed, 07 Oct 2020 11:18:38 +0300
+  [ Otto Kekäläinen ]
+  * Revert "Automatically use libatomics on 64-bit archs (Closes: #933151)"
+  * Update MTR test skip lists after full test runs in Debian experimental
+  * Clean up d/rules and patches for issues that to best knowledge were
+    temporary and not needed anymore in MariaDB 10.5.5
+
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 08 Oct 2020 00:41:22 +0300
 
 mariadb-10.5 (1:10.5.5-2) unstable; urgency=medium
 
