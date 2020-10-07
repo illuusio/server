@@ -1,8 +1,15 @@
-mariadb-10.5 (1:10.5.5-3) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.5-3~exp1) experimental; urgency=medium
 
-  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  [ Helmut Grohne ]
+  * Fix cross-compilation, amend commit f0ba31e1
 
- -- Otto Kekäläinen <otto@debian.org>  Tue, 06 Oct 2020 16:40:29 +0300
+  [ Otto Kekäläinen ]
+  * Revert "Automatically use libatomics on 64-bit archs (Closes: #933151)"
+
+  [ Aurelien Jarno ]
+  * Correctly link pthread so riscv64 builds pass (Closes: #933151)
+
+ -- Otto Kekäläinen <otto@debian.org>  Wed, 07 Oct 2020 11:18:38 +0300
 
 mariadb-10.5 (1:10.5.5-2) unstable; urgency=medium
 
