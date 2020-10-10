@@ -529,7 +529,7 @@ mysql-8.0 Focal to mariadb-10.5 upgrade:
     - apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 871920D1991BC93C 3B4FE6ACC0B21F32
     - echo 'deb http://archive.ubuntu.com/ubuntu/ focal main restricted' > /etc/apt/sources.list.d/ubuntu.list
     - apt-get update
-    - apt-get install -y mysql-server
+    - apt-get install -y mysql-server 'mysql*' 'libmysqlc*'
     - *test-verify-initial
     # Enable backports to make galera-4 available
     - echo 'deb http://deb.debian.org/debian buster-backports main' > /etc/apt/sources.list.d/backports.list && apt-get update
@@ -561,7 +561,7 @@ mysql-5.7 Bionic to mariadb-10.5 upgrade:
     - apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 871920D1991BC93C 3B4FE6ACC0B21F32
     - echo 'deb http://archive.ubuntu.com/ubuntu/ bionic main restricted' > /etc/apt/sources.list.d/ubuntu.list
     - apt-get update
-    - apt-get install -y mysql-server
+    - apt-get install -y mysql-server 'mysql*' 'libmysqlc*'
     - *test-verify-initial
     # Enable backports to make libzstd1, rocksdb-tools
     - echo 'deb http://deb.debian.org/debian stretch-backports main' >> /etc/apt/sources.list.d/backports.list
@@ -594,9 +594,11 @@ mariadb.org-10.5 to mariadb-10.5 upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo 'deb [arch=amd64,i386] http://mirror.one.com/mariadb/repo/10.5/debian sid main' > /etc/apt/sources.list.d/mariadb.list
+    - echo 'deb http://mirror.one.com/mariadb/repo/10.5/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
-    - apt-get install -y mariadb-server-10.5
+    # Plugins wildcard omitted as mariadb-plugin-tokudb for 10.3 in Debian Sid would mess it up
+    # Also libmariadbclient-dev in Debian Sid would end up depending on libmariadb-dev from 10.3
+    - apt-get install -y mariadb-server-10.5 libmariadb3 'libmariadb-*' 'libmariadbd*'
     - *test-verify-initial
     # Install MariaDB built in this commit
     # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.5.5-1 vs 1:10.5.5+mariadb~sid
@@ -627,9 +629,12 @@ mariadb.org-10.4 to mariadb-10.5 upgrade:
     - *test-prepare-container
     - apt install -y curl systemctl # systemctl shim needed on platforms that don't have systemd
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo 'deb [arch=amd64,i386] http://mirror.one.com/mariadb/repo/10.4/debian sid main' > /etc/apt/sources.list.d/mariadb.list
+    - echo 'deb http://mirror.one.com/mariadb/repo/10.4/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
-    - apt-get install -y mariadb-server-10.4
+    # Plugins wildcard omitted as mariadb-plugin-tokudb for 10.3 in Debian Sid would mess it up
+    # Also libmariadbclient-dev in Debian Sid would end up depending on libmariadb-dev from 10.3
+    # and libmariadb-dev-dbgsym in Debian Sid on libmariadb-dev from 10.4
+    - apt-get install -y mariadb-server-10.4 libmariadb3 libmariadb-dev libmariadb-dev-compat
     # MariaDB.org version of 10.4 and early 10.5 do not install an init file, so
     # it must be installed here manually
     - cp /usr/share/mysql/mysql.init /etc/init.d/mysql; chmod +x /etc/init.d/mysql; service mysql start; sleep 5
@@ -660,9 +665,10 @@ mariadb.org-10.3 to mariadb-10.5 upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo 'deb [arch=amd64,i386] http://mirror.one.com/mariadb/repo/10.3/debian sid main' > /etc/apt/sources.list.d/mariadb.list
+    - echo 'deb http://mirror.one.com/mariadb/repo/10.3/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
-    - apt-get install -y mariadb-server-10.3
+    # See mariadb.org-10.4 comments
+    - apt-get install -y mariadb-server-10.3 libmariadb3 libmariadb-dev libmariadb-dev-compat
     # Verify initial state before upgrade
     - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
     - service mysql status
@@ -696,9 +702,10 @@ mariadb.org-10.2 to mariadb-10.5 upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo 'deb [arch=amd64,i386] http://mirror.one.com/mariadb/repo/10.2/debian sid main' > /etc/apt/sources.list.d/mariadb.list
+    - echo 'deb http://mirror.one.com/mariadb/repo/10.2/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
-    - apt-get install -y mariadb-server-10.2
+    # See mariadb.org-10.4 comments
+    - apt-get install -y mariadb-server-10.2 libmariadb3 libmariadb-dev libmariadb-dev-compat
     # Verify initial state before upgrade
     - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
     - service mysql status
@@ -735,7 +742,7 @@ mysql.com-5.7 to mariadb-10.5 upgrade (MDEV-22678):
       apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 8C718D3B5072E1F5
       echo 'deb https://repo.mysql.com/apt/debian/ buster mysql-5.7' > /etc/apt/sources.list.d/mysql.list
       apt-get update
-      apt-get install -y mysql-server
+      apt-get install -y mysql-server 'mysql*' 'libmysqlc*'
     - *test-verify-initial
     # Enable backports to make galera-4 available
     - echo 'deb http://deb.debian.org/debian buster-backports main' >> /etc/apt/sources.list.d/backports.list && apt-get update
@@ -767,7 +774,7 @@ percona-xtradb-5.7 to mariadb-10.5 upgrade (MDEV-22679):
       apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 9334A25F8507EFA5
       echo 'deb https://repo.percona.com/apt/ buster main' > /etc/apt/sources.list.d/mysql.list
       apt-get update
-      apt-get install -y percona-xtradb-cluster-57
+      apt-get install -y percona-xtradb-cluster-full-57 percona-xtrabackup-24 percona-toolkit pmm2-client
     - service mysql status
     - *test-verify-initial
     # Enable backports to make galera-4 available
