@@ -6,8 +6,9 @@ mariadb-10.5 (1:10.5.6-1) unstable; urgency=medium
     - This will help to follow upstream packaging changes and prevent
       divergence in packaging code upstream vs. downstream.
   * Unify config file syntax style
+  * Allow libnuma-dev on armhf as well
 
- -- Otto Kekäläinen <otto@debian.org>  Mon, 12 Oct 2020 17:34:32 +0300
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 15 Oct 2020 11:55:14 +0300
 
 mariadb-10.5 (1:10.5.5-3) unstable; urgency=medium
 
