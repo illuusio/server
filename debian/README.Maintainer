@@ -156,7 +156,13 @@ where:
 - 10.1 for bionic on Launchpad bionic
 - 10.1 for stretch on Launchpad xenial
 
-## Uploading to Ubuntu security releases
+## Uploading security releases to Debian
+
+After you've got permission from the security team, upload with `dput security-master *.changes`.
+
+For details see https://www.debian.org/doc/manuals/developers-reference/pkgs.html#bug-security
+
+## Uploading security releases to Ubuntu
 
 See example with documented procedure:
  * https://bugs.launchpad.net/ubuntu/+source/mariadb-10.3/+bug/1861260
