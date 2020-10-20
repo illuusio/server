@@ -1,6 +1,6 @@
-From 778e8972e21ef722858d5f64cfbe0a3377397efe Mon Sep 17 00:00:00 2001
+From 3cf95de573a6b10e68df2efc1f8cf2f42fdd2d68 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Otto=20Kek=C3=A4l=C3=A4inen?= <otto@kekalainen.net>
-Date: Mon, 22 Jun 2020 14:02:23 +0300
+Date: Wed, 30 Sep 2020 20:01:35 +0300
 Subject: [PATCH] MDEV-22659: Create one single unified and optimal logrotate
  config
 
@@ -90,7 +90,7 @@ file.
                DESTINATION  ${INSTALL_SYSCONFDIR}/init.d
 --- /dev/null
 +++ b/support-files/mariadb.logrotate.in
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,56 @@
 +# This is the MariaDB configuration for the logrotate utility
 +#
 +# Note that on most Linux systems logs are written to journald, which has its
@@ -108,14 +108,17 @@ file.
 +  # If file exists but is empty, don't rotate it
 +  notifempty
 +
-+  # Run daily
-+  daily
++  # Run monthly
++  monthly
 +
-+  # Keep one week of logs
-+  rotate 7
++  # Keep 6 months of logs
++  rotate 6
 +
 +  # If file is growing too big, rotate immediately
-+  maxsize 100M
++  maxsize 500M
++
++  # If file size is too small, don't rotate at all
++  minsize 50M
 +
 +  # Compress logs, as they are text and compression will save a lot of disk space
 +  compress
@@ -137,8 +140,7 @@ file.
 +      EXTRAPARAM='--defaults-file=/etc/mysql/debian.cnf'
 +    fi
 +
-+    if test -x @bindir@/mariadb-admin && \
-+        @bindir@/mariadb-admin ping &>/dev/null
++    if test -x @bindir@/mariadb-admin
 +    then
 +      @bindir@/mariadb-admin $EXTRAPARAM --local flush-error-log \
 +        flush-engine-log flush-general-log flush-slow-log
