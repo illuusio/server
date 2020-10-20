@@ -90,7 +90,9 @@ blhc:
   echo 'deb http://deb.debian.org/debian sid main' > /etc/apt/sources.list
   # Upgrade minimal stack first
   apt-get update
-  apt-get install -y apt
+  # Due to Bug#972552, libnss-nis fails with exit code 100, so install it here
+  # as a separate step that is safe to ignore
+  apt-get install -y apt libnss-nis || true
 
 .test-install: &test-install |
   # Install MariaDB built in this commit
