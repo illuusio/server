@@ -328,9 +328,9 @@ test basic features:
       grep --quiet "localhost via TCP/IP" result
       mariadb -Bse 'SHOW VARIABLES' | grep -e tls -e ssl | tee result
       grep --quiet "have_ssl	YES" result
-      grep --quiet TLSv1.2 result
+      grep --quiet TLSv1.3 result
       mariadb -Bse 'SHOW SESSION STATUS' | grep -i -e tls -e ssl | tee result
-      grep --quiet TLSv1.2 result
+      grep --quiet TLSv1.3 result
   variables:
     GIT_STRATEGY: none
   except:

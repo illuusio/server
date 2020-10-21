@@ -59,7 +59,7 @@ override_dh_auto_clean:
 	@echo "RULES.$@"
 	dh_testdir
 	dh_testroot
-	rm -rf $(BUILDDIR) builddir-native extra/readline
+	rm -rf $(BUILDDIR) builddir-native extra/readline extra/wolfssl
 
 	[ ! -f debian/mysql-test-unstable-tests.orig ] || \
 	    mv debian/mysql-test-unstable-tests.orig mysql-test/unstable-tests
@@ -75,8 +75,6 @@ ifneq ($(DEB_BUILD_ARCH),$(DEB_HOST_ARCH))
 	dh_auto_build --builddirectory=builddir-native -- import_executables
 endif
 
-	# Remove -DWITH_SSL=bundle if you want to use system OpenSSL, otherwise
-	# the server will use YaSSL and Connector/C will use GnuTLS.
 	# Don't build ColumnStore, not mature enough for Debian yet.
 	PATH=$${MYSQL_BUILD_PATH:-"/usr/lib/ccache:/usr/local/bin:/usr/bin:/bin"} \
 	    NO_UPDATE_BUILD_VERSION=1 \
@@ -89,7 +87,6 @@ endif
 	    -DSYSTEM_TYPE="debian-$(DEB_HOST_GNU_SYSTEM)" \
 	    -DCMAKE_SYSTEM_PROCESSOR=$(DEB_HOST_ARCH) \
 	    -DBUILD_CONFIG=mysql_release \
-	    -DWITH_SSL=bundled \
 	    -DCONC_DEFAULT_CHARSET=utf8mb4 \
 	    -DPLUGIN_TOKUDB=NO \
 	    -DPLUGIN_CASSANDRA=NO \
