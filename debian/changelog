@@ -1,3 +1,9 @@
+mariadb-10.5 (1:10.5.6-3) UNRELEASED; urgency=medium
+
+  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+
+ -- Otto Kekäläinen <otto@debian.org>  Mon, 26 Oct 2020 22:46:49 +0200
+
 mariadb-10.5 (1:10.5.6-2) unstable; urgency=medium
 
   [ Miroslav Kure ]
