@@ -45,11 +45,8 @@ build stretch-backports:
   variables:
     RELEASE: stretch-backports
 
-# Temporairly allow failure in the test above since there seems to be a bug in mtr
-# and https://salsa.debian.org/salsa-ci-team/pipeline/-/issues/173
 autopkgtest:
   extends: .test-autopkgtest
-  allow_failure: true
 
 piuparts:
   extends: .test-piuparts
