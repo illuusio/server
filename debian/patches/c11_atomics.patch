@@ -19,7 +19,7 @@ Date:   Fri Dec 21 19:14:04 2018 +0200
 
 --- a/configure.cmake
 +++ b/configure.cmake
-@@ -862,7 +862,25 @@ int main()
+@@ -861,7 +861,25 @@ int main()
    long long int *ptr= &var;
    return (int)__atomic_load_n(ptr, __ATOMIC_SEQ_CST);
  }"
@@ -48,8 +48,8 @@ Date:   Fri Dec 21 19:14:04 2018 +0200
    SET(HAVE_valgrind 1)
 --- a/mysys/CMakeLists.txt
 +++ b/mysys/CMakeLists.txt
-@@ -130,6 +130,10 @@ TARGET_LINK_LIBRARIES(mysys dbug strings
-  ${LIBNSL} ${LIBM} ${LIBRT} ${LIBDL} ${LIBSOCKET} ${LIBEXECINFO})
+@@ -140,6 +140,10 @@ TARGET_LINK_LIBRARIES(mysys dbug strings
+  ${LIBNSL} ${LIBM} ${LIBRT} ${CMAKE_DL_LIBS} ${LIBSOCKET} ${LIBEXECINFO})
  DTRACE_INSTRUMENT(mysys)
  
 +IF (HAVE_GCC_C11_ATOMICS_WITH_LIBATOMIC)

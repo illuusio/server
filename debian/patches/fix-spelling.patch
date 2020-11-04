@@ -44,7 +44,7 @@ Author: Otto Kekäläinen <otto@debian.org>
 -
 --- a/storage/innobase/handler/ha_innodb.cc
 +++ b/storage/innobase/handler/ha_innodb.cc
-@@ -19919,7 +19919,7 @@ static MYSQL_SYSVAR_UINT(simulate_comp_f
+@@ -19880,7 +19880,7 @@ static MYSQL_SYSVAR_UINT(simulate_comp_f
  static MYSQL_SYSVAR_BOOL(force_primary_key,
    srv_force_primary_key,
    PLUGIN_VAR_OPCMDARG,
@@ -97,7 +97,7 @@ Author: Otto Kekäläinen <otto@debian.org>
  
 --- a/wsrep-lib/src/transaction.cpp
 +++ b/wsrep-lib/src/transaction.cpp
-@@ -915,7 +915,7 @@ bool wsrep::transaction::bf_abort(
+@@ -917,7 +917,7 @@ bool wsrep::transaction::bf_abort(
                  WSREP_LOG_DEBUG(client_state_.debug_log_level(),
                                  wsrep::log::debug_level_transaction,
                                  "Seqno " << bf_seqno
@@ -170,7 +170,7 @@ Author: Otto Kekäläinen <otto@debian.org>
  CREATE TABLE t1 (a VARCHAR(10) CHARACTER SET ascii COLLATE ascii_general_ci, PRIMARY KEY(a)) ENGINE=InnoDB;
 --- a/sql/sql_repl.cc
 +++ b/sql/sql_repl.cc
-@@ -1954,7 +1954,7 @@ send_event_to_slave(binlog_send_info *in
+@@ -1958,7 +1958,7 @@ send_event_to_slave(binlog_send_info *in
      {
        info->error= ER_MASTER_FATAL_ERROR_READING_BINLOG;
        return "Failed to replace GTID event with backwards-compatible event: "
@@ -232,7 +232,7 @@ Author: Otto Kekäläinen <otto@debian.org>
  ");
 --- a/tests/mysql_client_test.c
 +++ b/tests/mysql_client_test.c
-@@ -18882,7 +18882,7 @@ static void test_bug58036()
+@@ -18883,7 +18883,7 @@ static void test_bug58036()
    if (!mysql_change_user(conn, opt_user, opt_password, NULL))
    {
      if (!opt_silent)
@@ -506,7 +506,7 @@ Author: Otto Kekäläinen <otto@debian.org>
    }
 --- a/sql/log_event_server.cc
 +++ b/sql/log_event_server.cc
-@@ -5454,7 +5454,7 @@ int Rows_log_event::do_apply_event(rpl_g
+@@ -5457,7 +5457,7 @@ int Rows_log_event::do_apply_event(rpl_g
      */
  
      {
@@ -571,7 +571,7 @@ Author: Otto Kekäläinen <otto@debian.org>
    @retval TRUE   Default MRR implementation should be used
 --- a/sql/mysqld.cc
 +++ b/sql/mysqld.cc
-@@ -7676,7 +7676,7 @@ static void usage(void)
+@@ -7678,7 +7678,7 @@ static void usage(void)
      It's also needed on some exotic platforms where global variables are
      not set to 0 when a program starts.
  
@@ -582,7 +582,7 @@ Author: Otto Kekäläinen <otto@debian.org>
  
 --- a/sql/opt_subselect.cc
 +++ b/sql/opt_subselect.cc
-@@ -2902,7 +2902,7 @@ void advance_sj_state(JOIN *join, table_
+@@ -2897,7 +2897,7 @@ void advance_sj_state(JOIN *join, table_
          {
            DBUG_ASSERT(pos->sj_strategy != sj_strategy);
            /*
@@ -604,7 +604,7 @@ Author: Otto Kekäläinen <otto@debian.org>
    ulonglong max_relay_log_size;
 --- a/sql/sql_acl.cc
 +++ b/sql/sql_acl.cc
-@@ -5003,7 +5003,7 @@ acl_update_proxy_user(ACL_PROXY_USER *ne
+@@ -5004,7 +5004,7 @@ acl_update_proxy_user(ACL_PROXY_USER *ne
      {
        if (is_revoke)
        {
@@ -671,7 +671,7 @@ Author: Otto Kekäläinen <otto@debian.org>
  		  table->next, table->next->block(),
 --- a/sql/sql_class.cc
 +++ b/sql/sql_class.cc
-@@ -3614,7 +3614,7 @@ int select_max_min_finder_subselect::sen
+@@ -3621,7 +3621,7 @@ int select_max_min_finder_subselect::sen
          break;
        case ROW_RESULT:
        case TIME_RESULT:
@@ -711,7 +711,7 @@ Author: Otto Kekäläinen <otto@debian.org>
        pick equalities that have form "tbl.part_of_key = othertbl.field"
        (where othertbl is a non-const table and othertbl.field may be NULL)
        and add them to conditions on correspoding tables (othertbl in this
-@@ -17854,7 +17854,7 @@ Field *Item_sum::create_tmp_field(MEM_RO
+@@ -17842,7 +17842,7 @@ Field *Item_sum::create_tmp_field(MEM_RO
      new_field= tmp_table_field_from_field_type(root, table);
      break;
    case ROW_RESULT:
@@ -720,7 +720,7 @@ Author: Otto Kekäläinen <otto@debian.org>
      DBUG_ASSERT(0);
      new_field= 0;
      break;
-@@ -24996,7 +24996,7 @@ void calc_group_buffer(TMP_TABLE_PARAM *
+@@ -24977,7 +24977,7 @@ void calc_group_buffer(TMP_TABLE_PARAM *
          break;
        }
        default:
@@ -740,7 +740,7 @@ Author: Otto Kekäläinen <otto@debian.org>
    if (create_info.options & HA_OPTION_CHECKSUM)
      packet->append(STRING_WITH_LEN(" CHECKSUM=1"));
    if (create_info.page_checksum != HA_CHOICE_UNDEF)
-@@ -5496,7 +5496,7 @@ static int get_schema_tables_record(THD
+@@ -5499,7 +5499,7 @@ static int get_schema_tables_record(THD
        str.qs_append(share->stats_sample_pages);
      }
  
@@ -857,7 +857,7 @@ Author: Otto Kekäläinen <otto@debian.org>
  
 --- a/storage/innobase/btr/btr0cur.cc
 +++ b/storage/innobase/btr/btr0cur.cc
-@@ -2154,7 +2154,7 @@ need_opposite_intention:
+@@ -2142,7 +2142,7 @@ need_opposite_intention:
  
  		/* If the first or the last record of the page
  		or the same key value to the first record or last record,
@@ -868,7 +868,7 @@ Author: Otto Kekäläinen <otto@debian.org>
  		if (!detected_same_key_root
 --- a/storage/innobase/fil/fil0fil.cc
 +++ b/storage/innobase/fil/fil0fil.cc
-@@ -2285,7 +2285,7 @@ fil_space_t *fil_truncate_prepare(ulint
+@@ -1962,7 +1962,7 @@ fil_space_t *fil_truncate_prepare(ulint
  /*******************************************************************//**
  Allocates and builds a file name from a path, a table or tablespace name
  and a suffix. The string must be freed by caller with ut_free().
@@ -879,7 +879,7 @@ Author: Otto Kekäläinen <otto@debian.org>
  @param[in] trim_name true if the last name on the path should be trimmed.
 --- a/storage/innobase/include/fil0fil.h
 +++ b/storage/innobase/include/fil0fil.h
-@@ -1568,7 +1568,7 @@ void fil_close_tablespace(ulint id);
+@@ -1562,7 +1562,7 @@ void fil_close_tablespace(ulint id);
  /*******************************************************************//**
  Allocates and builds a file name from a path, a table or tablespace name
  and a suffix. The string must be freed by caller with ut_free().
@@ -921,7 +921,7 @@ Author: Otto Kekäläinen <otto@debian.org>
    @param cap     Capabilities are stored here
 --- a/storage/maria/ma_check.c
 +++ b/storage/maria/ma_check.c
-@@ -6394,7 +6394,7 @@ void _ma_update_auto_increment_key(HA_CH
+@@ -6397,7 +6397,7 @@ void _ma_update_auto_increment_key(HA_CH
           keypart_k=c_k for arbitrary constants c_1 ... c_k)
  
       = {assuming that values have uniform distribution and index contains all

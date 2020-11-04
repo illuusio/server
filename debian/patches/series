@@ -5,10 +5,7 @@ c11_atomics.patch
 mips-compilation-failure-__bss_start-symbol-miss.patch
 rocksdb-kfreebsd.patch
 mroonga-path-reproducible-build.patch
-prevent-executable-stack-due-to-objects-compiled-fro.patch
 env-perl-usr-bin-perl.patch
 fix-spelling.patch
-ftbfs-x32.patch
 1556.patch
-933063-client-utf8mb4-by-default.patch
 riscv64-link-pthread.patch

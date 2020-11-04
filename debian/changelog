@@ -1,8 +1,19 @@
-mariadb-10.5 (1:10.5.6-3) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.7-1) UNRELEASED; urgency=medium
 
-  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  [ Otto Kekäläinen ]
+  * Revert back to 1fc0f45a as the armhf build failure was due to GCC bug
+  * Salsa-CI: salsa-ci-team/pipeline#173 seems fixed, stop allowing failure
+  * Filter out extra 3rd party sources directly when importing new upstream
+  * New upstream version 10.5.7. Includes security fixes for:
+    - CVE-2020-14812
+    - CVE-2020-14789
+    - CVE-2020-14776
+    - CVE-2020-14765
 
- -- Otto Kekäläinen <otto@debian.org>  Mon, 26 Oct 2020 22:46:49 +0200
+  [ Helmut Grohne ]
+  * Fix FTCBFS: Add native libssl-dev to Build-Depends (Closes: #973388)
+
+ -- Otto Kekäläinen <otto@debian.org>  Wed, 04 Nov 2020 20:47:10 +0200
 
 mariadb-10.5 (1:10.5.6-2) unstable; urgency=medium
 
