@@ -8,7 +8,7 @@ Replace mysql-log-rotate.sh and debian/...mysql-server.logrotate with one
 new unified and well documented version.
 
 Name is mariadb.logrotate.in as in 10.5 branch we use now the 'mariadb'
-name, and use 'logrotate' to match the actual name of the utlity, and
+name, and use 'logrotate' to match the actual name of the utility, and
 use '.in' instead of '.sh' as this is not a shell script but a template
 file.
 

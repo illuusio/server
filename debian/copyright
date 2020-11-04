@@ -195,7 +195,6 @@ Files:
  mysql-test/*
  support-files/binary-configure.sh
  support-files/mysqld_multi.server.sh
- support-files/mysql-log-rotate.sh
  support-files/mysql.server-sys5.sh
  Docs/*
 Copyright: UNKNOWN
@@ -431,11 +430,6 @@ Copyright:
  2008-2011 Monty Program Ab
  2004-2008 MySQL AB & MySQL Finland AB & TCX DataKonsult AB
 License: GPL-2
-
-Files: storage/innobase/ut/ut0crc32.cc
-Copyright: 2009, 2010 Facebook, Inc.
-           2011 Oracle and/or its affiliates.
-License: GPL-2 and BSD-2-clause
 
 Files: storage/sphinx/*
 Copyright: 2001-2014 Andrew Aksyonoff
