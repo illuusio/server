@@ -48,3 +48,5 @@ source-contains-prebuilt-java-object storage/connect/mysql-test/connect/std_data
 package-uses-old-debhelper-compat-version 10
 # Intentional as libmariadbd-dev provides libmysqld-dev
 version-substvar-for-external-package libmariadb-dev -> libmysqld-dev
+# ColumnStore not used in Debian, safe to ignore. Reported upstream in https://jira.mariadb.org/browse/MDEV-24124
+source-is-missing storage/columnstore/columnstore/utils/jemalloc/libjemalloc.so.2
