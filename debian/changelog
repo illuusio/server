@@ -1,4 +1,4 @@
-mariadb-10.5 (1:10.5.7-1) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.8-1) UNRELEASED; urgency=medium
 
   [ Otto Kekäläinen ]
   * Revert back to 1fc0f45a as the armhf build failure was due to GCC bug
@@ -9,11 +9,17 @@ mariadb-10.5 (1:10.5.7-1) UNRELEASED; urgency=medium
     - CVE-2020-14789
     - CVE-2020-14776
     - CVE-2020-14765
+  * Clean away from d/copyright files that are no longer in the sources
+  * Sync debian/* changes from upstream 10.5.7 release
+  * Clean away columnstore sources during build and ignore all CS issues
+  * New upstream version 10.5.8
+    - Includes criticat fix for arbitrary InnoDB buffer pool and data file
+      corruption issue (MDEV-24096)
 
   [ Helmut Grohne ]
   * Fix FTCBFS: Add native libssl-dev to Build-Depends (Closes: #973388)
 
- -- Otto Kekäläinen <otto@debian.org>  Wed, 04 Nov 2020 20:47:10 +0200
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 12 Nov 2020 21:36:03 +0200
 
 mariadb-10.5 (1:10.5.6-2) unstable; urgency=medium
 

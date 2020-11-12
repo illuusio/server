@@ -5,7 +5,7 @@ mariadb-10.5 (1:10.5.5-1) unstable; urgency=medium
 
    For more information on what is new in MariaDB 10.5 check out:
    https://speakerdeck.com/ottok/debconf-2020-whats-new-in-mariadb-server-10-dot-5-and-galera-4
-   or video from https://debconf20.debconf.org/.
+   or video from https://peertube.debian.social/videos/watch/bb80cf53-d9ba-4ed9-b472-a21238fb67f5.
 
    Quick summary:
    - Service name is now 'mariadb', e.g. /etc/init.d/mariadb and systemctl mariadb
