@@ -1,0 +1,22 @@
+Subject: Fix armhf build failure due to cmake/gcc segmentation fault
+ This is a temporary and ugly workaround until Bugs#972564 gets a proper solution.
+Credits: Jessica Clarke
+
+diff --git a/storage/innobase/include/rw_lock.h b/storage/innobase/include/rw_lock.h
+index 613adfef3..f5ae01a5b 100644
+--- a/storage/innobase/include/rw_lock.h
++++ b/storage/innobase/include/rw_lock.h
+@@ -75,7 +75,13 @@ class rw_lock
+   /** Release an exclusive lock */
+   void write_unlock()
+   {
++#if defined(__arm__) && defined(__ARM_EABI__) && defined(__ARM_PCS_VFP)
++    /* XXX: Work around https://gcc.gnu.org/PR97534 */
++    volatile uint32_t writer = WRITER;
++    IF_DBUG_ASSERT(auto l=,) lock.fetch_sub(writer, std::memory_order_release);
++#else
+     IF_DBUG_ASSERT(auto l=,) lock.fetch_sub(WRITER, std::memory_order_release);
++#endif
+     DBUG_ASSERT(l & WRITER); /* the write lock must have existed */
+   }
+   /** Try to acquire a shared lock.
