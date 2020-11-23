@@ -1,8 +1,11 @@
-mariadb-10.5 (1:10.5.8-3) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.8-3) unstable; urgency=medium
 
-  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  * Re-introduce deprecated transitional libmariadbclient-dev package
+    so that the libmariadbclient-dev from 10.5 can replace the existing
+    libmariadbclient-dev form 10.3 and thus allow MariaDB 10.5 to
+    migrate from Debian unstable to testing.
 
- -- Otto Kekäläinen <otto@debian.org>  Wed, 18 Nov 2020 18:00:00 +0200
+ -- Otto Kekäläinen <otto@debian.org>  Mon, 23 Nov 2020 22:14:57 +0200
 
 mariadb-10.5 (1:10.5.8-2) unstable; urgency=medium
 
