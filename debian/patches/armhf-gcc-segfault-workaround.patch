@@ -1,12 +1,13 @@
 Subject: Fix armhf build failure due to cmake/gcc segmentation fault
  This is a temporary and ugly workaround until Bugs#972564 gets a proper solution.
+ .
+ This is fixed upstream in gcc-10 and gcc-master (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=97534)
+ and can be removed once a new gcc-10 lands in Debian Sid.
 Credits: Jessica Clarke
 
-diff --git a/storage/innobase/include/rw_lock.h b/storage/innobase/include/rw_lock.h
-index 613adfef3..f5ae01a5b 100644
 --- a/storage/innobase/include/rw_lock.h
 +++ b/storage/innobase/include/rw_lock.h
-@@ -75,7 +75,13 @@ class rw_lock
+@@ -75,7 +75,13 @@ public:
    /** Release an exclusive lock */
    void write_unlock()
    {

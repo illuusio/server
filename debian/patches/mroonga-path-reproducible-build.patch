@@ -1,5 +1,6 @@
 Forwarded: https://github.com/mroonga/mroonga/issues/298
 Subject: Mroonga plugin build in MariaDB is not reproducible
+ This did not make Mroonga reproducible, so we might as well remove this later on.
 
 --- a/storage/mroonga/vendor/groonga/configure.ac
 +++ b/storage/mroonga/vendor/groonga/configure.ac

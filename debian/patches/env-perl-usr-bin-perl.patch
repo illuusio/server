@@ -1,8 +1,11 @@
+Forwarded: https://github.com/MariaDB/server/pull/1718
 Author: Otto Kekäläinen <otto@debian.org>
 Subject: Fix perl path in scripts
-  Fix Lintian issue
-  https://lintian.debian.org/tags/incorrect-path-for-interpreter.html
-  
+ Fix Lintian issue
+ https://lintian.debian.org/tags/incorrect-path-for-interpreter.html
+ .
+ Upstream will never accept this patch, see
+ https://github.com/MariaDB/server/pull/1718
 
 --- a/mysql-test/lib/process-purecov-annotations.pl
 +++ b/mysql-test/lib/process-purecov-annotations.pl

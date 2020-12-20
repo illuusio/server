@@ -1,7 +1,10 @@
+Forwarded: https://github.com/MariaDB/server/pull/1719
+Forwarded: https://github.com/mariadb-corporation/libmarias3/pull/102
+Forwarded: https://github.com/codership/wsrep-API/pull/49
+Forwarded: https://github.com/codership/wsrep-lib/pull/122
+Forwarded: https://github.com/facebook/rocksdb/pull/7785
 Author: Otto Kekäläinen <otto@debian.org>
-
-  Fix various spelling errors still found in code.
-
+Subject: Fix various spelling errors still found in code
   Reseting -> Resetting
   Unknow -> Unknown
   capabilites -> capabilities
