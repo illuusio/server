@@ -72,21 +72,6 @@ Description: MariaDB database development files
  expecting the MariaDB Connector/C to build. Sources that expect the MySQL
  Client libraries should use files from the libmariadb-dev-compat package.
 
-Package: libmariadbclient-dev
-Architecture: any
-Multi-Arch: same
-Section: oldlibs
-Depends: libmariadb-dev (= ${binary:Version}),
-         ${misc:Depends}
-Description: MariaDB database development files (transitional package)
- MariaDB is a fast, stable and true multi-user, multi-threaded SQL database
- server. SQL (Structured Query Language) is the most popular database query
- language in the world. The main goals of MariaDB are speed, robustness and
- ease of use.
- .
- This empty package is intended to ease the switch to libmariadb-dev.
- It can safely removed.
-
 Package: libmariadb-dev-compat
 Architecture: any
 Multi-Arch: same
