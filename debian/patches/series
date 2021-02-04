@@ -11,3 +11,4 @@ fix-spelling.patch
 riscv64-link-pthread.patch
 armhf-gcc-segfault-workaround.patch
 mips-test-failure-main-innodb-drop.patch
+rtld_default-kfreebsd.patch
