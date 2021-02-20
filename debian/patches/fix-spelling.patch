@@ -20,7 +20,7 @@ Subject: Fix various spelling errors still found in code
 
 --- a/storage/federated/ha_federated.cc
 +++ b/storage/federated/ha_federated.cc
-@@ -3395,7 +3395,7 @@ maria_declare_plugin(federated)
+@@ -3394,7 +3394,7 @@ maria_declare_plugin(federated)
    &federated_storage_engine,
    "FEDERATED",
    "Patrick Galbraith and Brian Aker, MySQL AB",
@@ -31,7 +31,7 @@ Subject: Fix various spelling errors still found in code
    federated_done, /* Plugin Deinit */
 --- a/storage/federatedx/ha_federatedx.cc
 +++ b/storage/federatedx/ha_federatedx.cc
-@@ -3716,7 +3716,7 @@ maria_declare_plugin(federatedx)
+@@ -3715,7 +3715,7 @@ maria_declare_plugin(federatedx)
    &federatedx_storage_engine,
    "FEDERATED",
    "Patrick Galbraith",
@@ -40,14 +40,14 @@ Subject: Fix various spelling errors still found in code
    PLUGIN_LICENSE_GPL,
    federatedx_db_init, /* Plugin Init */
    federatedx_done, /* Plugin Deinit */
-@@ -3727,4 +3727,3 @@ maria_declare_plugin(federatedx)
+@@ -3726,4 +3726,3 @@ maria_declare_plugin(federatedx)
    MariaDB_PLUGIN_MATURITY_STABLE /* maturity */
  }
  maria_declare_plugin_end;
 -
 --- a/storage/innobase/handler/ha_innodb.cc
 +++ b/storage/innobase/handler/ha_innodb.cc
-@@ -19880,7 +19880,7 @@ static MYSQL_SYSVAR_UINT(simulate_comp_f
+@@ -19909,7 +19909,7 @@ static MYSQL_SYSVAR_UINT(simulate_comp_f
  static MYSQL_SYSVAR_BOOL(force_primary_key,
    srv_force_primary_key,
    PLUGIN_VAR_OPCMDARG,
@@ -100,7 +100,7 @@ Subject: Fix various spelling errors still found in code
  
 --- a/wsrep-lib/src/transaction.cpp
 +++ b/wsrep-lib/src/transaction.cpp
-@@ -917,7 +917,7 @@ bool wsrep::transaction::bf_abort(
+@@ -962,7 +962,7 @@ bool wsrep::transaction::bf_abort(
                  WSREP_LOG_DEBUG(client_state_.debug_log_level(),
                                  wsrep::log::debug_level_transaction,
                                  "Seqno " << bf_seqno
@@ -193,7 +193,7 @@ Subject: Fix various spelling errors still found in code
  		      fixed with this option.\n\
    -u, --unpack        Unpack file packed with ariapack.\n\
  ");
-@@ -1358,7 +1358,7 @@ static int maria_chk(HA_CHECK *param, ch
+@@ -1359,7 +1359,7 @@ static int maria_chk(HA_CHECK *param, ch
        error= maria_zerofill(param, info, filename);
      if (!error)
      {
@@ -202,7 +202,7 @@ Subject: Fix various spelling errors still found in code
        share->state.changed&= ~(STATE_CHANGED | STATE_CRASHED_FLAGS |
                                 STATE_IN_REPAIR);
      }
-@@ -1422,7 +1422,7 @@ static int maria_chk(HA_CHECK *param, ch
+@@ -1423,7 +1423,7 @@ static int maria_chk(HA_CHECK *param, ch
             share->state.open_count != 0)
            && (param->testflag & T_UPDATE_STATE))
          info->update|=HA_STATE_CHANGED | HA_STATE_ROW_CHANGED;
@@ -509,7 +509,7 @@ Subject: Fix various spelling errors still found in code
    }
 --- a/sql/log_event_server.cc
 +++ b/sql/log_event_server.cc
-@@ -5457,7 +5457,7 @@ int Rows_log_event::do_apply_event(rpl_g
+@@ -5464,7 +5464,7 @@ int Rows_log_event::do_apply_event(rpl_g
      */
  
      {
@@ -574,7 +574,7 @@ Subject: Fix various spelling errors still found in code
    @retval TRUE   Default MRR implementation should be used
 --- a/sql/mysqld.cc
 +++ b/sql/mysqld.cc
-@@ -7678,7 +7678,7 @@ static void usage(void)
+@@ -7668,7 +7668,7 @@ static void usage(void)
      It's also needed on some exotic platforms where global variables are
      not set to 0 when a program starts.
  
@@ -585,7 +585,7 @@ Subject: Fix various spelling errors still found in code
  
 --- a/sql/opt_subselect.cc
 +++ b/sql/opt_subselect.cc
-@@ -2897,7 +2897,7 @@ void advance_sj_state(JOIN *join, table_
+@@ -2901,7 +2901,7 @@ void advance_sj_state(JOIN *join, table_
          {
            DBUG_ASSERT(pos->sj_strategy != sj_strategy);
            /*
@@ -596,7 +596,7 @@ Subject: Fix various spelling errors still found in code
            */
 --- a/sql/rpl_rli.h
 +++ b/sql/rpl_rli.h
-@@ -273,7 +273,7 @@ public:
+@@ -274,7 +274,7 @@ public:
      Needed for problems when slave stops and we want to restart it
      skipping one or more events in the master log that have caused
      errors, and have been manually applied by DBA already.
@@ -607,7 +607,7 @@ Subject: Fix various spelling errors still found in code
    ulonglong max_relay_log_size;
 --- a/sql/sql_acl.cc
 +++ b/sql/sql_acl.cc
-@@ -5004,7 +5004,7 @@ acl_update_proxy_user(ACL_PROXY_USER *ne
+@@ -5023,7 +5023,7 @@ acl_update_proxy_user(ACL_PROXY_USER *ne
      {
        if (is_revoke)
        {
@@ -674,7 +674,7 @@ Subject: Fix various spelling errors still found in code
  		  table->next, table->next->block(),
 --- a/sql/sql_class.cc
 +++ b/sql/sql_class.cc
-@@ -3621,7 +3621,7 @@ int select_max_min_finder_subselect::sen
+@@ -3614,7 +3614,7 @@ int select_max_min_finder_subselect::sen
          break;
        case ROW_RESULT:
        case TIME_RESULT:
@@ -696,7 +696,7 @@ Subject: Fix various spelling errors still found in code
  /* Some general useful functions */
 --- a/sql/sql_select.cc
 +++ b/sql/sql_select.cc
-@@ -7634,7 +7634,7 @@ best_access_path(JOIN      *join,
+@@ -7698,7 +7698,7 @@ best_access_path(JOIN      *join,
                Try re-using E(#rows) from "range" optimizer:
                We can do so if "range" optimizer used the same intervals as
                in (**). The intervals used by range optimizer may be not 
@@ -705,7 +705,7 @@ Subject: Fix various spelling errors still found in code
                create quick select over another index), so we can't compare
                them to (**). We'll make indirect judgements instead.
                The sufficient conditions for re-use are:
-@@ -10942,7 +10942,7 @@ inline void add_cond_and_fix(THD *thd, I
+@@ -11006,7 +11006,7 @@ inline void add_cond_and_fix(THD *thd, I
  
      Description of the optimization:
      
@@ -714,7 +714,7 @@ Subject: Fix various spelling errors still found in code
        pick equalities that have form "tbl.part_of_key = othertbl.field"
        (where othertbl is a non-const table and othertbl.field may be NULL)
        and add them to conditions on correspoding tables (othertbl in this
-@@ -17842,7 +17842,7 @@ Field *Item_sum::create_tmp_field(MEM_RO
+@@ -17907,7 +17907,7 @@ Field *Item_sum::create_tmp_field(MEM_RO
      new_field= tmp_table_field_from_field_type(root, table);
      break;
    case ROW_RESULT:
@@ -723,7 +723,7 @@ Subject: Fix various spelling errors still found in code
      DBUG_ASSERT(0);
      new_field= 0;
      break;
-@@ -24977,7 +24977,7 @@ void calc_group_buffer(TMP_TABLE_PARAM *
+@@ -25046,7 +25046,7 @@ void calc_group_buffer(TMP_TABLE_PARAM *
          break;
        }
        default:
@@ -734,7 +734,7 @@ Subject: Fix various spelling errors still found in code
        }
 --- a/sql/sql_show.cc
 +++ b/sql/sql_show.cc
-@@ -1923,7 +1923,7 @@ static void add_table_options(THD *thd,
+@@ -1924,7 +1924,7 @@ static void add_table_options(THD *thd,
      packet->append_ulonglong(share->stats_sample_pages);
    }
  
@@ -743,7 +743,7 @@ Subject: Fix various spelling errors still found in code
    if (create_info.options & HA_OPTION_CHECKSUM)
      packet->append(STRING_WITH_LEN(" CHECKSUM=1"));
    if (create_info.page_checksum != HA_CHOICE_UNDEF)
-@@ -5499,7 +5499,7 @@ static int get_schema_tables_record(THD
+@@ -5511,7 +5511,7 @@ static int get_schema_tables_record(THD
        str.qs_append(share->stats_sample_pages);
      }
  
@@ -774,7 +774,7 @@ Subject: Fix various spelling errors still found in code
                     const Set_signal_information& set)
 --- a/sql/table.cc
 +++ b/sql/table.cc
-@@ -2282,7 +2282,7 @@ int TABLE_SHARE::init_from_binary_frm_im
+@@ -2283,7 +2283,7 @@ int TABLE_SHARE::init_from_binary_frm_im
    }
    else
    {
@@ -860,7 +860,7 @@ Subject: Fix various spelling errors still found in code
  
 --- a/storage/innobase/btr/btr0cur.cc
 +++ b/storage/innobase/btr/btr0cur.cc
-@@ -2142,7 +2142,7 @@ need_opposite_intention:
+@@ -2145,7 +2145,7 @@ need_opposite_intention:
  
  		/* If the first or the last record of the page
  		or the same key value to the first record or last record,
@@ -871,7 +871,7 @@ Subject: Fix various spelling errors still found in code
  		if (!detected_same_key_root
 --- a/storage/innobase/fil/fil0fil.cc
 +++ b/storage/innobase/fil/fil0fil.cc
-@@ -1962,7 +1962,7 @@ fil_space_t *fil_truncate_prepare(ulint
+@@ -1961,7 +1961,7 @@ fil_space_t *fil_truncate_prepare(ulint
  /*******************************************************************//**
  Allocates and builds a file name from a path, a table or tablespace name
  and a suffix. The string must be freed by caller with ut_free().
@@ -882,7 +882,7 @@ Subject: Fix various spelling errors still found in code
  @param[in] trim_name true if the last name on the path should be trimmed.
 --- a/storage/innobase/include/fil0fil.h
 +++ b/storage/innobase/include/fil0fil.h
-@@ -1562,7 +1562,7 @@ void fil_close_tablespace(ulint id);
+@@ -1559,7 +1559,7 @@ void fil_close_tablespace(ulint id);
  /*******************************************************************//**
  Allocates and builds a file name from a path, a table or tablespace name
  and a suffix. The string must be freed by caller with ut_free().
@@ -924,7 +924,7 @@ Subject: Fix various spelling errors still found in code
    @param cap     Capabilities are stored here
 --- a/storage/maria/ma_check.c
 +++ b/storage/maria/ma_check.c
-@@ -6397,7 +6397,7 @@ void _ma_update_auto_increment_key(HA_CH
+@@ -6427,7 +6427,7 @@ void _ma_update_auto_increment_key(HA_CH
           keypart_k=c_k for arbitrary constants c_1 ... c_k)
  
       = {assuming that values have uniform distribution and index contains all

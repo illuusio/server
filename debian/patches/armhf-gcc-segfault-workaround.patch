@@ -7,7 +7,7 @@ Credits: Jessica Clarke
 
 --- a/storage/innobase/include/rw_lock.h
 +++ b/storage/innobase/include/rw_lock.h
-@@ -75,7 +75,13 @@ public:
+@@ -82,7 +82,13 @@ public:
    /** Release an exclusive lock */
    void write_unlock()
    {

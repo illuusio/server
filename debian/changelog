@@ -1,8 +1,9 @@
-mariadb-10.5 (1:10.5.8-4) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.9-1) UNRELEASED; urgency=medium
 
   * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  * New upstream version 10.5.8
 
- -- Otto Kekäläinen <otto@debian.org>  Tue, 24 Nov 2020 08:58:54 +0200
+ -- Otto Kekäläinen <otto@debian.org>  Sat, 20 Feb 2021 21:33:01 +0200
 
 mariadb-10.5 (1:10.5.8-3) unstable; urgency=medium
 
