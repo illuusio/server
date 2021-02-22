@@ -1,9 +1,9 @@
-mariadb-10.5 (1:10.5.9-1) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.9-1) unstable; urgency=medium
 
-  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
-  * New upstream version 10.5.8
+  * New upstream version 10.5.9
+  * Remove transitional libmariadbclient-dev empty metapackage
 
- -- Otto Kekäläinen <otto@debian.org>  Sat, 20 Feb 2021 21:33:01 +0200
+ -- Otto Kekäläinen <otto@debian.org>  Mon, 22 Feb 2021 21:32:47 +0200
 
 mariadb-10.5 (1:10.5.8-3) unstable; urgency=medium
 
@@ -27,6 +27,7 @@ mariadb-10.5 (1:10.5.8-1) unstable; urgency=medium
   * Salsa-CI: salsa-ci-team/pipeline#173 seems fixed, stop allowing failure
   * Filter out extra 3rd party sources directly when importing new upstream
   * New upstream version 10.5.7. Includes security fixes for:
+    - CVE-2020-28912
     - CVE-2020-14812
     - CVE-2020-14789
     - CVE-2020-14776
