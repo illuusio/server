@@ -1,3 +1,4 @@
+#!/usr/bin/dh-exec
 debian/additions/debian-start etc/mysql
 debian/additions/debian-start.inc.sh usr/share/mysql
 debian/additions/echo_stderr usr/share/mysql
@@ -8,22 +9,22 @@ etc/apparmor.d/usr.sbin.mariadbd
 etc/logrotate.d/mariadb
 etc/security/user_map.conf
 lib/*/security/pam_user_map.so
-lib/systemd/system/mariadb@bootstrap.service.d/use_galera_new_cluster.conf
-lib/systemd/system/mysql.service
-lib/systemd/system/mysqld.service
+[linux-any] lib/systemd/system/mariadb@bootstrap.service.d/use_galera_new_cluster.conf
+[linux-any] lib/systemd/system/mysql.service
+[linux-any] lib/systemd/system/mysqld.service
 usr/bin/aria_chk
 usr/bin/aria_dump_log
 usr/bin/aria_ftdump
 usr/bin/aria_pack
 usr/bin/aria_read_log
-usr/bin/galera_new_cluster
-usr/bin/galera_recovery
+[linux-any] usr/bin/galera_new_cluster
+[linux-any] usr/bin/galera_recovery
 usr/bin/mariadb-binlog
 usr/bin/mariadb-convert-table-format
 usr/bin/mariadb-hotcopy
 usr/bin/mariadb-plugin
 usr/bin/mariadb-secure-installation
-usr/bin/mariadb-service-convert
+[linux-any] usr/bin/mariadb-service-convert
 usr/bin/mariadb-setpermission
 usr/bin/mariadb-tzinfo-to-sql
 usr/bin/mariadbd-multi
@@ -46,7 +47,7 @@ usr/lib/mysql/plugin/auth_ed25519.so
 usr/lib/mysql/plugin/auth_pam.so
 usr/lib/mysql/plugin/auth_pam_tool_dir/auth_pam_tool
 usr/lib/mysql/plugin/auth_pam_v1.so
-usr/lib/mysql/plugin/disks.so
+[linux-any] usr/lib/mysql/plugin/disks.so
 usr/lib/mysql/plugin/file_key_management.so
 usr/lib/mysql/plugin/ha_archive.so
 usr/lib/mysql/plugin/ha_blackhole.so
@@ -69,14 +70,14 @@ usr/share/man/man1/aria_dump_log.1
 usr/share/man/man1/aria_ftdump.1
 usr/share/man/man1/aria_pack.1
 usr/share/man/man1/aria_read_log.1
-usr/share/man/man1/galera_new_cluster.1
-usr/share/man/man1/galera_recovery.1
+[linux-any] usr/share/man/man1/galera_new_cluster.1
+[linux-any] usr/share/man/man1/galera_recovery.1
 usr/share/man/man1/mariadb-binlog.1
 usr/share/man/man1/mariadb-convert-table-format.1
 usr/share/man/man1/mariadb-hotcopy.1
 usr/share/man/man1/mariadb-plugin.1
 usr/share/man/man1/mariadb-secure-installation.1
-usr/share/man/man1/mariadb-service-convert.1
+[linux-any] usr/share/man/man1/mariadb-service-convert.1
 usr/share/man/man1/mariadb-setpermission.1
 usr/share/man/man1/mariadb-tzinfo-to-sql.1
 usr/share/man/man1/mariadbd-multi.1
