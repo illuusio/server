@@ -35,6 +35,10 @@ gnitpick:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
+# build jobs often needs more than default GitLab timeout (1h)
+.build-package:
+  timeout: 3h
+
 build buster-backports:
   extends: .build-package
   variables:
@@ -44,6 +48,9 @@ build stretch-backports:
   extends: .build-package
   variables:
     RELEASE: stretch-backports
+
+autopkgtest:
+  extends: .test-autopkgtest
 
 piuparts:
   extends: .test-piuparts
