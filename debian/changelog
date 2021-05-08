@@ -12,6 +12,7 @@ mariadb-10.5 (1:10.5.10-1) UNRELEASED; urgency=medium
     - CVE-2021-2022
   * Update symbols to include new one from MariaDB Client 3.1.13
   * Misc Salsa-CI fixes for better QA
+  * Innotop: Add support for MariaDB 10.5+ (Closes: #941986)
 
   [ Glenn Strauss ]
   * Mark systemd files [linux-any] in debian/*.install
