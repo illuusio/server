@@ -1,8 +1,22 @@
-mariadb-10.5 (1:10.5.9-2) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.10-1) UNRELEASED; urgency=medium
 
-  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  [ Otto Kekäläinen ]
+  * New upstream version 10.5.10. Includes security fixes for:
+    - CVE-2021-2154
+    - CVE-2021-2166
+  * Previous release 10.5.9 included security fixes additionally for:
+    - CVE-2021-27928
+  * Previous release 10.5.7 included security fixes additionally for:
+    - CVE-2021-2194
+  * Previous release 10.5.5 included security fixes additionally for:
+    - CVE-2021-2022
+  * Update symbols to include new one from MariaDB Client 3.1.13
+  * Misc Salsa-CI fixes for better QA
 
- -- Otto Kekäläinen <otto@debian.org>  Tue, 23 Feb 2021 10:58:08 +0200
+  [ Glenn Strauss ]
+  * Mark systemd files [linux-any] in debian/*.install
+
+ -- Otto Kekäläinen <otto@debian.org>  Fri, 07 May 2021 18:42:28 -0700
 
 mariadb-10.5 (1:10.5.9-1) unstable; urgency=medium
 
