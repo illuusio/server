@@ -175,9 +175,6 @@ EOF
                                    $ERR_LOGGER
     set -e
 
-    # To avoid downgrades.
-    touch "$mysql_statedir/debian-$MAJOR_VER.flag"
-
     # On new installations root user can connect via unix_socket.
     # But on upgrades, scripts rely on debian-sys-maint user and
     # credentials in /etc/mysql/debian.cnf
