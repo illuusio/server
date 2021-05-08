@@ -18,10 +18,20 @@ set -e
 export DEB_BUILD_OPTIONS="nocheck $DEB_BUILD_OPTIONS"
 
 # Take the files and part of control from MCS directory
-if [[ -d storage/columnstore/columnstore/debian ]]; then
+if [[ -d storage/columnstore/columnstore/debian ]]
+then
   cp -v storage/columnstore/columnstore/debian/mariadb-plugin-columnstore.* debian/
   echo >> debian/control
   cat storage/columnstore/columnstore/debian/control >> debian/control
+
+  # From Debian Bullseye/Ubuntu Hirsute onwards libreadline is gone, so build with it
+  # only on older releases where it is still available. This can be removed once
+  # MCOL-4535 lands in MariaDB.
+  if apt-cache madison libreadline-gplv2-dev | grep 'libreadline-gplv2-dev' >/dev/null 2>&1
+  then
+    sed 's/libpcre2-dev,/libpcre2-dev, libreadline-gplv2-dev [amd64],/' -i debian/control
+  fi
+
   # ColumnStore is explcitly disabled in the native build, so allow it now
   # when build it when triggered by autobake-deb.sh
   sed '/-DPLUGIN_COLUMNSTORE=NO/d' -i debian/rules
@@ -72,6 +82,15 @@ then
   sed "/Package: mariadb-plugin-rocksdb/,/^$/d" -i debian/control
 fi
 
+# From Debian Stretch/Ubuntu Bionic onwards dh-systemd is just an empty
+# transitional metapackage and the functionality was merged into debhelper.
+# In Ubuntu Hirsute is was completely removed, so it can't be referenced anymore.
+# Keep using it only on Debian Jessie and Ubuntu Xenial.
+if apt-cache madison dh-systemd | grep 'dh-systemd' >/dev/null 2>&1
+then
+  sed 's/debhelper (>= 9.20160709~),/debhelper (>= 9), dh-systemd,/' -i debian/control
+fi
+
 # If rocksdb-tools is not available (before Debian Buster and Ubuntu Disco)
 # remove the dependency from the RocksDB plugin so it can install properly
 # and instead ship the one built from MariaDB sources
@@ -82,7 +101,7 @@ then
   echo "usr/bin/sst_dump" >> debian/mariadb-plugin-rocksdb.install
 fi
 
-# From Debian Buster/Ubuntu Bionic, libcurl4 replaces libcurl3.
+# From Debian Buster/Ubuntu Bionic, libcurl4 replaces libcurl3
 if ! apt-cache madison libcurl4 | grep 'libcurl4' >/dev/null 2>&1
 then
   sed 's/libcurl4/libcurl3/g' -i debian/control

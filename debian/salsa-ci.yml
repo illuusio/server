@@ -37,6 +37,14 @@ build:
     - apt-get update && eatmydata apt-get install --yes --no-install-recommends aptitude devscripts ccache equivs
     - cd ${WORKING_DIR}/${SOURCE_DIR}
     - eatmydata install-build-deps.sh .
+    - |
+      # From Debian Bullseye/Ubuntu Hirsute onwards libreadline is gone, so build with it
+      # only on older releases where it is still available. This can be removed once
+      # MCOL-4535 lands in MariaDB.
+      if apt-cache madison libreadline-gplv2-dev | grep 'libreadline-gplv2-dev' >/dev/null 2>&1
+      then
+       apt-get install --yes libreadline-gplv2-dev
+      fi
     - update-ccache-symlinks; ccache -z # Zero out ccache counters
     - while true; do sleep 600; echo "10 minutes passed" >&2; done & # Progress keeper since build is long and silent
     - debian/autobake-deb.sh |& tail -n 10000 # Keep Gitlab-CI output under 4 MB
@@ -115,11 +123,6 @@ build native deb:
     ccache -s
     mv ${CCACHE_TMP_DIR} ${CCACHE_WORK_DIR}
 
-# Temporarily ignore until https://github.com/MariaDB/server/pull/1729 is merged
-missing-breaks:
-  extends: .test-missing-breaks
-  allow_failure: true
-
 piuparts:
   extends: .test-piuparts
   stage: test extras
@@ -145,6 +148,12 @@ blhc:
   echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
   # Prime the apt cache so later apt commands can run
   apt-get update
+
+# Readline was removed from Debian Sid (and Bullseye) in Feb 2021. To be able to install older
+# versions of MariaDB that depend on it, fetch and install it from Buster.
+.test-install-readline-in-sid-for-backwards-compat: &test-install-readline-in-sid-for-backwards-compat |
+  curl -O http://ftp.de.debian.org/debian/pool/main/r/readline5/libreadline5_5.2+dfsg-3+b13_amd64.deb
+  apt install -y ./libreadline5_5.2+dfsg-3+b13_amd64.deb
 
 .test-verify-initial: &test-verify-initial |
   dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
@@ -278,7 +287,7 @@ mariadb-10.1 Stretch to mariadb-10.5 upgrade:
     # Install almost everything currently in Debian Stretch,
     # omitting libmariadbclient-dev-compat as it would conflict
     - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadbd*' 'libmariadbclient*'
-    # Verify installation of MariaDB from Buster
+    # Verify installation of MariaDB from Stretch
     - *test-verify-initial
     - *test-enable-sid-repos
     - *test-install
@@ -532,9 +541,8 @@ mysql-8.0 Sid to mariadb-10.5 upgrade:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    # First install often fail due to bug in mysql-8.0
-    - apt-get install -y mysql-server 'libmysqlc*' || true
-    - sleep 10 && apt-get install -f
+    # The postinst fails often if 'ps' is missing from system, so install procps
+    - apt-get install -y procps mysql-server 'libmysqlc*'
     - *test-verify-initial
     - *test-install
     - service mysql status
@@ -547,31 +555,6 @@ mysql-8.0 Sid to mariadb-10.5 upgrade:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
   # Installation often fails (not a MariaDB reason), so do not require this test to pass
   allow_failure: true
-
-mysql-5.7 Sid to mariadb-10.5 upgrade:
-  stage: upgrade in Sid
-  needs:
-    - job: build
-      artifacts: true
-  image: debian:sid
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
-  script:
-    - *test-prepare-container
-    - apt-get install -y mysql-server-5.7 'libmysqlc*'
-    - *test-verify-initial
-    - *test-install
-    - service mysql status
-    - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
-    - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # Upgrading from MySQL 8.0 with datadir in place is not possible. Users need to do a data dump.
 # The Debian maintainer scripts detect this situation and simply moves old datadir aside and start fresh.
@@ -608,8 +591,6 @@ mysql-8.0 Focal to mariadb-10.5 upgrade:
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
-  # Installation often fails (not a MariaDB reason), so do not require this test to pass
-  allow_failure: true
 
 mysql-5.7 Bionic to mariadb-10.5 upgrade:
   stage: upgrade extras
@@ -664,8 +645,14 @@ mariadb.org-10.5 to mariadb-10.5 upgrade:
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo 'deb http://mirror.one.com/mariadb/repo/10.5/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
+    - *test-install-readline-in-sid-for-backwards-compat
+    # The 10.5.9 relase is missing mariadb-plugin-columnstore, define all other packages but it to avoid hitting the error:
+    #   The following packages have unmet dependencies:
+    #   mariadb-plugin-columnstore : Depends: mariadb-server-10.5 (= 1:10.5.8+maria~sid) but 1:10.5.9+maria~sid is to be installed
+    - apt-get install -y libmariadb3 'libmariadb-*' 'libmariadbd*' 'mariadb-c*' 'mariadb-b*' 'mariadb-s*' 'mariadb-t*' 'mariadb-plugin-con*' 'mariadb-plugin-cr*' 'mariadb-plugin-g*' 'mariadb-plugin-m*' 'mariadb-plugin-o*' 'mariadb-plugin-s*'
+    # Once 10.5.10 is out, revert back to:
     # Package libmariadbclient-dev from mariadb.org conficts with libmariadb-dev in Sid, so cannot use wildcard that would include it
-    - apt-get install -y 'mariadb*' libmariadb3 'libmariadb-*' 'libmariadbd*'
+    #- apt-get install -y 'mariadb*' libmariadb3 'libmariadb-*' 'libmariadbd*'
     - *test-verify-initial
     # Install MariaDB built in this commit
     # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.5.5-1 vs 1:10.5.5+mariadb~sid
@@ -698,6 +685,7 @@ mariadb.org-10.4 to mariadb-10.5 upgrade:
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo 'deb http://mirror.one.com/mariadb/repo/10.4/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
+    - *test-install-readline-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.4
     # MariaDB.org version of 10.4 and early 10.5 do not install an init file, so
     # it must be installed here manually
@@ -731,6 +719,7 @@ mariadb.org-10.3 to mariadb-10.5 upgrade:
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo 'deb http://mirror.one.com/mariadb/repo/10.3/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
+    - *test-install-readline-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.3
     # Verify initial state before upgrade
     - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
@@ -767,6 +756,7 @@ mariadb.org-10.2 to mariadb-10.5 upgrade:
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo 'deb http://mirror.one.com/mariadb/repo/10.2/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
+    - *test-install-readline-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.2
     # Verify initial state before upgrade
     - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
