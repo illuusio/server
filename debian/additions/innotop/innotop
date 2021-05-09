@@ -12064,7 +12064,7 @@ This data is from the TRANSACTIONS section of SHOW INNODB STATUS.
 
 =item IO_THREADS
 
-This data is from the list of threads in the the FILE I/O section of SHOW INNODB
+This data is from the list of threads in the FILE I/O section of SHOW INNODB
 STATUS.
 
 =item INNODB_LOCKS

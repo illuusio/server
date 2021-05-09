@@ -109,7 +109,7 @@ The repository has the following branch layout:
   * ubuntu-20.14 - release branch for Ubuntu 20.04 (focal)
   * ubuntu-18.04 - release branch for Ubuntu 18.04 (bionic)
 
-All new features and also bugfixes are done only in the master branch. The
+All new features and also bug fixes are done only in the master branch. The
 release branches for Debian and Ubuntu are only used for security updates.
 
 To prepare the Salsa pull request, create a bugfix branch from master with:

@@ -6,12 +6,12 @@
 # Always keep the actual packaging as up-to-date as possible following the latest
 # Debian policy and targeting Debian Sid. Then case-by-case run in autobake-deb.sh
 # tests for backwards compatibility and strip away parts on older builders or
-# specfic build environments.
+# specific build environments.
 
 # Exit immediately on any error
 set -e
 
-# This file is invocated from Buildbot and Travis-CI to build deb packages.
+# This file is invoked from Buildbot and Travis-CI to build deb packages.
 # As both of those CI systems have many parallel jobs that include different
 # parts of the test suite, we don't need to run the mysql-test-run at all when
 # building the deb packages here.
@@ -30,7 +30,7 @@ then
   sed "/Package: mariadb-plugin-columnstore/,/^$/d" -i debian/control
 fi
 
-# Don't build or try to put files in a package for selected plugins and compontents on Travis-CI
+# Don't build or try to put files in a package for selected plugins and components on Travis-CI
 # in order to keep build small (in both duration and disk space)
 if [[ $TRAVIS ]]
 then

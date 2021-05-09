@@ -600,12 +600,12 @@ mariadb.org-10.5 to mariadb-10.5 upgrade:
     - echo 'deb http://mirror.one.com/mariadb/repo/10.5/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
     - *test-install-readline-in-sid-for-backwards-compat
-    # The 10.5.9 relase is missing mariadb-plugin-columnstore, define all other packages but it to avoid hitting the error:
+    # The 10.5.9 release is missing mariadb-plugin-columnstore, define all other packages but it to avoid hitting the error:
     #   The following packages have unmet dependencies:
     #   mariadb-plugin-columnstore : Depends: mariadb-server-10.5 (= 1:10.5.8+maria~sid) but 1:10.5.9+maria~sid is to be installed
     - apt-get install -y libmariadb3 'libmariadb-*' 'libmariadbd*' 'mariadb-c*' 'mariadb-b*' 'mariadb-s*' 'mariadb-t*' 'mariadb-plugin-con*' 'mariadb-plugin-cr*' 'mariadb-plugin-g*' 'mariadb-plugin-m*' 'mariadb-plugin-o*' 'mariadb-plugin-s*'
     # Once 10.5.10 is out, revert back to:
-    # Package libmariadbclient-dev from mariadb.org conficts with libmariadb-dev in Sid, so cannot use wildcard that would include it
+    # Package libmariadbclient-dev from mariadb.org conflicts with libmariadb-dev in Sid, so cannot use wildcard that would include it
     #- apt-get install -y 'mariadb*' libmariadb3 'libmariadb-*' 'libmariadbd*'
     - *test-verify-initial
     # Install MariaDB built in this commit
