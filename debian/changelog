@@ -13,11 +13,17 @@ mariadb-10.5 (1:10.5.10-1) UNRELEASED; urgency=medium
   * Update symbols to include new one from MariaDB Client 3.1.13
   * Misc Salsa-CI fixes for better QA
   * Innotop: Add support for MariaDB 10.5+ (Closes: #941986)
+  * Bugfix: Ensure upstream 1556 patch is included fully (Closes: 987231)
+  * Bugfix: Don't create /usr/share/mysql/*.flag files (Closes: #985870)
+  * Misc spelling fixes
 
   [ Glenn Strauss ]
   * Mark systemd files [linux-any] in debian/*.install
 
- -- Otto Kekäläinen <otto@debian.org>  Fri, 07 May 2021 18:42:28 -0700
+  [ Arnaud Rebillout ]
+  * Fix postinst trigger when systemd is not running (Closes: #983563)
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 09 May 2021 20:11:33 -0700
 
 mariadb-10.5 (1:10.5.9-1) unstable; urgency=medium
 
