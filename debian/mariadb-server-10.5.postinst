@@ -235,9 +235,9 @@ EOF
   ;;
 
   triggered)
-    if [ -x "$(command -v systemctl)" ]; then
-      systemctl daemon-reload
-    else
+    if [ -d /run/systemd/system ]; then
+      systemctl --system daemon-reload
+    elif [ -x /etc/init.d/mariadb ]; then
       invoke-rc.d mariadb restart
     fi
   ;;
