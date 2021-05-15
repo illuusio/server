@@ -1,7 +1,7 @@
-mariadb-10.5 (1:10.5.10-1) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.10-1) unstable; urgency=medium
 
   [ Otto Kekäläinen ]
-  * New upstream version 10.5.10. Includes security fixes for:
+  * New upstream version 10.5.10. Includes security fixes for (Closes: #988428):
     - CVE-2021-2154
     - CVE-2021-2166
   * Previous release 10.5.9 included security fixes additionally for:
@@ -23,7 +23,10 @@ mariadb-10.5 (1:10.5.10-1) UNRELEASED; urgency=medium
   [ Arnaud Rebillout ]
   * Fix postinst trigger when systemd is not running (Closes: #983563)
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 09 May 2021 20:11:33 -0700
+  [ Faustin Lammler ]
+  * GitLab CI now supports timeout for specific jobs
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 16 May 2021 11:36:38 -0700
 
 mariadb-10.5 (1:10.5.9-1) unstable; urgency=medium
 
