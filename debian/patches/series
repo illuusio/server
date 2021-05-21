@@ -10,3 +10,4 @@ fix-spelling.patch
 1556.patch
 armhf-gcc-segfault-workaround.patch
 rtld_default-kfreebsd.patch
+revert-isb-assembly-instruction.patch
