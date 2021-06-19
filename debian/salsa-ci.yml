@@ -51,6 +51,9 @@ build stretch-backports:
 
 autopkgtest:
   extends: .test-autopkgtest
+  artifacts:
+    reports:
+      junit: ${WORKING_DIR}/debci/artifacts/mysql-test-run-junit.xml
 
 piuparts:
   extends: .test-piuparts
