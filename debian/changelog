@@ -1,8 +1,10 @@
-mariadb-10.5 (1:10.5.10-3) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.11-1) UNRELEASED; urgency=medium
 
   * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  * New upstream version 10.5.11. Includes several important bug fixes.
+  * Drop backported patch for armfh build now in 10.5.11 from upstream.
 
- -- Otto Kekäläinen <otto@debian.org>  Fri, 18 Jun 2021 20:59:40 -0700
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 24 Jun 2021 23:08:26 -0700
 
 mariadb-10.5 (1:10.5.10-2) unstable; urgency=medium
 
