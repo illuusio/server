@@ -165,7 +165,7 @@ static void yyerror(THD *thd, const char *s)
 void _CONCAT_UNDERSCORED(turn_parser_debug_on,yyparse)()
 {
   /*
-     MYSQLdebug is in sql/sql_yacc.cc, in bison generated code.
+     MYSQLdebug is in sql/yy_*.cc, in bison generated code.
      Turning this option on is **VERY** verbose, and should be
      used when investigating a syntax error problem only.
 
@@ -280,6 +280,7 @@ void _CONCAT_UNDERSCORED(turn_parser_debug_on,yyparse)()
   class sp_head *sphead;
   class sp_name *spname;
   class sp_variable *spvar;
+  class With_element_head *with_element_head;
   class With_clause *with_clause;
   class Virtual_column_info *virtual_column;
 
@@ -340,14 +341,11 @@ bool my_yyoverflow(short **a, YYSTYPE **b, size_t *yystacksize);
   We should not introduce any further shift/reduce conflicts.
 */
 
-/* Start SQL_MODE_DEFAULT_SPECIFIC */
+%ifdef MARIADB
 %expect 67
-/* End SQL_MODE_DEFAULT_SPECIFIC */
-
-
-/* Start SQL_MODE_ORACLE_SPECIFIC
+%else
 %expect 69
-End SQL_MODE_ORACLE_SPECIFIC */
+%endif
 
 
 /*
@@ -1753,7 +1751,7 @@ End SQL_MODE_ORACLE_SPECIFIC */
 
 %type <with_clause> with_clause
 
-%type <lex_str_ptr> query_name
+%type <with_element_head> with_element_head
 
 %type <ident_sys_list>
         comma_separated_ident_list
@@ -1765,7 +1763,7 @@ End SQL_MODE_ORACLE_SPECIFIC */
 %type <vers_history_point> history_point
 %type <vers_column_versioning> with_or_without_system
 
-/* Start SQL_MODE_DEFAULT_SPECIFIC */
+%ifdef MARIADB
 %type <NONE> sp_tail_standalone
 %type <NONE> sp_unlabeled_block_not_atomic
 %type <NONE> sp_proc_stmt_in_returns_clause
@@ -1777,10 +1775,7 @@ End SQL_MODE_ORACLE_SPECIFIC */
 %type <spblock> sp_decl_variable_list
 %type <spblock> sp_decl_variable_list_anchored
 %type <kwd> reserved_keyword_udt_param_type
-/* End SQL_MODE_DEFAULT_SPECIFIC */
-
-
-/* Start SQL_MODE_ORACLE_SPECIFIC
+%else
 %type <NONE> set_assign
 %type <spvar_mode> sp_opt_inout
 %type <NONE> sp_tail_standalone
@@ -1815,7 +1810,7 @@ End SQL_MODE_ORACLE_SPECIFIC */
 %type <lex> package_routine_lex
 %type <lex> package_specification_function
 %type <lex> package_specification_procedure
-End SQL_MODE_ORACLE_SPECIFIC */
+%endif ORACLE
 
 %%
 
@@ -2946,7 +2941,11 @@ call:
             if (unlikely(Lex->call_statement_start(thd, $2)))
               MYSQL_YYABORT;
           }
-          opt_sp_cparam_list {}
+          opt_sp_cparam_list
+          {
+            if (Lex->check_cte_dependencies_and_resolve_references())
+              MYSQL_YYABORT;
+          }
         ;
 
 /* CALL parameters */
@@ -3753,6 +3752,8 @@ expr_lex:
             $$->sp_lex_in_use= true;
             $$->set_item($2);
             Lex->pop_select(); //min select
+            if (Lex->check_cte_dependencies_and_resolve_references())
+              MYSQL_YYABORT;
             if ($$->sphead->restore_lex(thd))
               MYSQL_YYABORT;
           }
@@ -12649,6 +12650,8 @@ do:
           {
             Lex->insert_list= $3;
             Lex->pop_select(); //main select
+            if (Lex->check_cte_dependencies_and_resolve_references())
+              MYSQL_YYABORT;
           }
         ;
 
@@ -14831,6 +14834,7 @@ with_clause:
              if (unlikely(with_clause == NULL))
                MYSQL_YYABORT;
              lex->derived_tables|= DERIVED_WITH;
+             lex->with_cte_resolution= true;
              lex->curr_with_clause= with_clause;
              with_clause->add_to_list(Lex->with_clauses_list_last_next);
              if (lex->current_select &&
@@ -14858,7 +14862,7 @@ with_list:
 
 
 with_list_element:
-	  query_name
+          with_element_head
 	  opt_with_column_list 
           AS '(' query_expression ')' opt_cycle
  	  {
@@ -14876,6 +14880,7 @@ with_list_element:
             {
               elem->set_cycle_list($7);
             }
+            elem->set_tables_end_pos(lex->query_tables_last);
 	  }
 	;
 
@@ -14936,12 +14941,15 @@ comma_separated_ident_list:
         ;
 
 
-query_name: 
+with_element_head:
           ident
           {
-            $$= (LEX_CSTRING *) thd->memdup(&$1, sizeof(LEX_CSTRING));
-            if (unlikely($$ == NULL))
+            LEX_CSTRING *name=
+              (LEX_CSTRING *) thd->memdup(&$1, sizeof(LEX_CSTRING));
+            $$= new (thd->mem_root) With_element_head(name);
+            if (unlikely(name == NULL || $$ == NULL))
               MYSQL_YYABORT;
+            $$->tables_pos.set_start_pos(Lex->query_tables_last);
           }
         ;
 
@@ -17783,7 +17791,7 @@ uninstall:
           }
         ;
 
-/* Avoid compiler warning from sql_yacc.cc where yyerrlab1 is not used */
+/* Avoid compiler warning from yy_*.cc where yyerrlab1 is not used */
 keep_gcc_happy:
           IMPOSSIBLE_ACTION
           {
@@ -17795,7 +17803,7 @@ _empty:
           /* Empty */
         ;
 
-/* Start SQL_MODE_DEFAULT_SPECIFIC */
+%ifdef MARIADB
 
 
 statement:
@@ -18194,10 +18202,10 @@ sp_unlabeled_block_not_atomic:
         ;
 
 
-/* End SQL_MODE_DEFAULT_SPECIFIC */
+%endif MARIADB
 
 
-/* Start SQL_MODE_ORACLE_SPECIFIC
+%ifdef ORACLE
 
 statement:
           verb_clause
@@ -19206,7 +19214,7 @@ sp_block_statements_and_exceptions:
           }
         ;
 
-End SQL_MODE_ORACLE_SPECIFIC */
+%endif ORACLE
 
 /**
   @} (end of group Parser)
