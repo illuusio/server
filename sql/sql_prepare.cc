@@ -2321,9 +2321,6 @@ static bool check_prepared_statement(Prepared_statement *stmt)
   if (tables)
     thd->get_stmt_da()->opt_clear_warning_info(thd->query_id);
 
-  if (check_dependencies_in_with_clauses(thd->lex->with_clauses_list))
-    goto error;
-
   if (sql_command_flags[sql_command] & CF_HA_CLOSE)
     mysql_ha_rm_tables(thd, tables);
 
@@ -6082,6 +6079,7 @@ extern "C" int execute_sql_command(const char *command,
     new_thd->store_globals();
     new_thd->security_ctx->skip_grants();
     new_thd->query_cache_is_applicable= 0;
+    new_thd->variables.wsrep_on= 0;
     bzero((char*) &new_thd->net, sizeof(new_thd->net));
     thd= new_thd;
   }

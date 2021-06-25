@@ -30,8 +30,8 @@
    This special exception was added by the Free Software Foundation in
    version 2.2 of Bison.  */
 
-#ifndef YY_ORA_HOME_BUILDBOT_GIT_MKDIST_SQL_SQL_YACC_ORA_HH_INCLUDED
-# define YY_ORA_HOME_BUILDBOT_GIT_MKDIST_SQL_SQL_YACC_ORA_HH_INCLUDED
+#ifndef YY_ORA_HOME_BUILDBOT_GIT_MKDIST_SQL_YY_ORACLE_HH_INCLUDED
+# define YY_ORA_HOME_BUILDBOT_GIT_MKDIST_SQL_YY_ORACLE_HH_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -809,7 +809,8 @@ extern int ORAdebug;
 typedef union YYSTYPE YYSTYPE;
 union YYSTYPE
 {
-#line 199 "/home/buildbot/git/mkdist/sql/sql_yacc_ora.yy" /* yacc.c:1909  */
+#line 199 "/home/buildbot/git/sql/sql_yacc.yy"
+
 
   int  num;
   ulong ulong_num;
@@ -894,6 +895,7 @@ union YYSTYPE
   class sp_head *sphead;
   class sp_name *spname;
   class sp_variable *spvar;
+  class With_element_head *with_element_head;
   class With_clause *with_clause;
   class Virtual_column_info *virtual_column;
 
@@ -940,7 +942,8 @@ union YYSTYPE
   enum plsql_cursor_attr_t plsql_cursor_attr;
   privilege_t privilege;
 
-#line 944 "/home/buildbot/git/mkdist/sql/sql_yacc_ora.hh" /* yacc.c:1909  */
+#line 946 "/home/buildbot/git/mkdist/sql/yy_oracle.hh"
+
 };
 # define YYSTYPE_IS_TRIVIAL 1
 # define YYSTYPE_IS_DECLARED 1
@@ -950,4 +953,4 @@ union YYSTYPE
 
 int ORAparse (THD *thd);
 
-#endif /* !YY_ORA_HOME_BUILDBOT_GIT_MKDIST_SQL_SQL_YACC_ORA_HH_INCLUDED  */
+#endif /* !YY_ORA_HOME_BUILDBOT_GIT_MKDIST_SQL_YY_ORACLE_HH_INCLUDED  */
