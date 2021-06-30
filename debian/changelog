@@ -4,6 +4,9 @@ mariadb-10.5 (1:10.5.11-1) UNRELEASED; urgency=medium
   * New upstream version 10.5.11. Includes several important bug fixes.
   * Drop backported patch for armfh build now in 10.5.11 from upstream.
   * Drop patch no longer needed with latest gcc-10 (Closes: #972564)
+  * Remove rocksdb_build_git_date from RocksDB binaries to make them
+    build in a reproducible way, thus making the entire MariaDB finally
+    reproducible (Closes: #976985)
 
  -- Otto Kekäläinen <otto@debian.org>  Thu, 24 Jun 2021 23:08:26 -0700
 

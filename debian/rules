@@ -77,7 +77,6 @@ endif
 
 	# Don't build ColumnStore, not mature enough for Debian yet.
 	PATH=$${MYSQL_BUILD_PATH:-"/usr/lib/ccache:/usr/local/bin:/usr/bin:/bin"} \
-	    NO_UPDATE_BUILD_VERSION=1 \
 	    dh_auto_configure --builddirectory=$(BUILDDIR) -- \
 	    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
 	    $(CMAKEFLAGS) \
