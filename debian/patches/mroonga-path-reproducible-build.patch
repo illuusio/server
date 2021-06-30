@@ -1,5 +1,5 @@
 Forwarded: https://github.com/mroonga/mroonga/issues/298
-Subject: Mroonga plugin build in MariaDB is not reproducible
+Subject: Mroonga plugin build in MariaDB is not reproducible (Closes: #976984)
  This did not make Mroonga reproducible, so we might as well remove this later on.
 
 --- a/storage/mroonga/vendor/groonga/configure.ac
@@ -10,6 +10,6 @@ Subject: Mroonga plugin build in MariaDB is not reproducible
  LIBS="$LIBS $WINDOWS_LIBS"
 -AC_DEFINE_UNQUOTED(CONFIGURE_OPTIONS, "$ac_configure_args", "specified configure options")
 +AC_DEFINE_UNQUOTED(CONFIGURE_OPTIONS, "$(echo $ac_configure_args | sed -e "s@$(pwd)@<builddir>@g")", "specified configure options")
- 
+
  # For groonga.org
  AC_ARG_WITH(groonga-org-path,

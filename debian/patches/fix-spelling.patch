@@ -1,4 +1,5 @@
 Forwarded: https://github.com/mariadb-corporation/libmarias3/pull/102
+# Already merged in libmarias3, but S3 plugin not updated into MariaDB 10.5
 Forwarded: https://github.com/facebook/rocksdb/pull/7785
 Author: Otto Kekäläinen <otto@debian.org>
 Subject: Fix various spelling errors still found in code
