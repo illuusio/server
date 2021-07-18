@@ -1,14 +1,16 @@
-mariadb-10.5 (1:10.5.11-1) UNRELEASED; urgency=medium
+mariadb-10.5 (1:10.5.11-1~exp1) experimental; urgency=medium
 
-  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
   * New upstream version 10.5.11. Includes several important bug fixes.
-  * Drop backported patch for armfh build now in 10.5.11 from upstream.
-  * Drop patch no longer needed with latest gcc-10 (Closes: #972564)
+  * Cleanup, documentation and testing:
+    * Drop backported patch for armfh build now in 10.5.11 from upstream.
+    * Drop patch no longer needed with latest gcc-10 (Closes: #972564)
+    * Save autopkgtests results as JUnit-compatible XML-report
+    * Salsa-CI: Verify wrap-and-sort usage and correctness of patches/series
   * Remove rocksdb_build_git_date from RocksDB binaries to make them
     build in a reproducible way, thus making the entire MariaDB finally
     reproducible (Closes: #976985)
 
- -- Otto Kekäläinen <otto@debian.org>  Thu, 24 Jun 2021 23:08:26 -0700
+ -- Otto Kekäläinen <otto@debian.org>  Sat, 17 Jul 2021 15:33:00 -0700
 
 mariadb-10.5 (1:10.5.10-2) unstable; urgency=medium
 
