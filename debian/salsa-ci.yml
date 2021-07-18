@@ -17,7 +17,7 @@ stages:
   - build
   - test
   - upgrade in Sid
-  - upgrade from Buster/Stretch
+  - upgrade from Bullseye/Buster/Stretch
   - upgrade extras
   - test extras
   - publish # Stage referenced by Salsa-CI template aptly stanza, so must exist even though not used
@@ -72,6 +72,11 @@ packaging-fix-checks:
 # build jobs often needs more than default GitLab timeout (1h)
 .build-package:
   timeout: 3h
+
+build bullseye-backports:
+  extends: .build-package
+  variables:
+    RELEASE: bullseye-backports
 
 build buster-backports:
   extends: .build-package
@@ -244,8 +249,34 @@ mariadb-10.5 Sid upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
+mariadb-10.5 Bullseye to mariadb-10.5 upgrade:
+  stage: upgrade from Bullseye/Buster/Stretch
+  needs:
+    - job: build
+  image: debian:bullseye
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    # Install everything MariaDB currently in Debian Buster
+    - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
+    # Verify installation of MariaDB from Buster
+    - *test-verify-initial
+    - *test-enable-sid-repos
+    - *test-install
+    - service mariadb status
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
 mariadb-10.3 Buster to mariadb-10.5 upgrade:
-  stage: upgrade from Buster/Stretch
+  stage: upgrade from Bullseye/Buster/Stretch
   needs:
     - job: build
   image: debian:buster
@@ -271,7 +302,7 @@ mariadb-10.3 Buster to mariadb-10.5 upgrade:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb-10.1 Stretch to mariadb-10.5 upgrade:
-  stage: upgrade from Buster/Stretch
+  stage: upgrade from Bullseye/Buster/Stretch
   needs:
     - job: build
   image: debian:stretch
@@ -456,7 +487,7 @@ default-libmysqlclient-dev Sid upgrade:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 default-libmysqlclient-dev Buster upgrade:
-  stage: upgrade from Buster/Stretch
+  stage: upgrade from Bullseye/Buster/Stretch
   needs:
     - job: build
   image: debian:buster
@@ -477,7 +508,7 @@ default-libmysqlclient-dev Buster upgrade:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 default-libmysqlclient-dev Stretch upgrade:
-  stage: upgrade from Buster/Stretch
+  stage: upgrade from Bullseye/Buster/Stretch
   needs:
     - job: build
   image: debian:stretch
@@ -499,7 +530,7 @@ default-libmysqlclient-dev Stretch upgrade:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb-connector-c Stretch upgrade:
-  stage: upgrade from Buster/Stretch
+  stage: upgrade from Bullseye/Buster/Stretch
   needs:
     - job: build
   image: debian:stretch
