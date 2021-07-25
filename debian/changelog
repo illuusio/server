@@ -1,6 +1,7 @@
-mariadb-10.5 (1:10.5.11-1~exp1) experimental; urgency=medium
+mariadb-10.5 (1:10.5.11-1) unstable; urgency=medium
 
-  * New upstream version 10.5.11. Includes several important bug fixes.
+  * New upstream version 10.5.11. Includes several important bug fixes,
+    including a replication hang (Closes: #991399, Closes: #989400)
   * Cleanup, documentation and testing:
     * Drop backported patch for armfh build now in 10.5.11 from upstream.
     * Drop patch no longer needed with latest gcc-10 (Closes: #972564)
@@ -10,7 +11,11 @@ mariadb-10.5 (1:10.5.11-1~exp1) experimental; urgency=medium
     build in a reproducible way, thus making the entire MariaDB finally
     reproducible (Closes: #976985)
 
- -- Otto Kekäläinen <otto@debian.org>  Sat, 17 Jul 2021 15:33:00 -0700
+  [ Andreas Beckmann ]
+  * Ease switching from galera-3 to galera-4 on upgrades from buster
+    (Closes: #990708, Closes: #976147, Closes: #977137)
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 25 Jul 2021 15:38:34 -0700
 
 mariadb-10.5 (1:10.5.10-2) unstable; urgency=medium
 
