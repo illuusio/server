@@ -7980,6 +7980,7 @@ void mysql_parse(THD *thd, char *rawbuf, uint length,
     LEX *lex= thd->lex;
 
     bool err= parse_sql(thd, parser_state, NULL, true);
+    thd->current_insert_index= 0;
 
     if (likely(!err))
     {

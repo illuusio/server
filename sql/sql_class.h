@@ -560,6 +560,7 @@ typedef enum enum_diag_condition_item_name
   DIAG_CURSOR_NAME= 9,
   DIAG_MESSAGE_TEXT= 10,
   DIAG_MYSQL_ERRNO= 11,
+  DIAG_ERROR_INDEX= 12,
   LAST_DIAG_SET_PROPERTY= DIAG_MYSQL_ERRNO
 } Diag_condition_item_name;
 
@@ -5504,6 +5505,24 @@ public:
   void restore_current_lex(LEX *backup_lex)
   {
     lex= backup_lex;
+  }
+
+  /*
+    Stores the the processed record during INSERT/REPLACE. Used for assigning
+     value of error_index in case of warning or error.
+  */
+  ulonglong current_insert_index;
+
+  ulonglong correct_error_index(uint error_no)
+  {
+
+    if (error_no == ER_FIELD_SPECIFIED_TWICE ||
+        error_no == ER_BAD_FIELD_ERROR ||
+        error_no == ER_VIEW_NO_INSERT_FIELD_LIST ||
+        error_no == ER_VIEW_MULTIUPDATE)
+     return 0;
+    else
+      return current_insert_index;
   }
 };
 
