@@ -4100,35 +4100,34 @@ static void commit_unlock_and_unlink(trx_t *trx)
   unlock_and_close_files(deleted, trx);
 }
 
-/********************************************************************//**
+/**
 Drop any indexes that we were not able to free previously due to
-open table handles. */
-static MY_ATTRIBUTE((nonnull))
-void
-online_retry_drop_indexes(
-/*======================*/
-	dict_table_t*	table,		/*!< in/out: table */
-	THD*		user_thd)	/*!< in/out: MySQL connection */
+open table handles.
+@param table     InnoDB table
+@param thd       connection handle
+*/
+static void online_retry_drop_indexes(dict_table_t *table, THD *thd)
 {
-	if (table->drop_aborted) {
-		trx_t*	trx = innobase_trx_allocate(user_thd);
+  if (table->drop_aborted)
+  {
+    trx_t *trx= innobase_trx_allocate(thd);
 
-		trx_start_for_ddl(trx);
-		if (lock_sys_tables(trx) != DB_SUCCESS) {
-			trx->commit();
-			trx->free();
-			return;
-		}
-		row_mysql_lock_data_dictionary(trx);
-		online_retry_drop_indexes_low(table, trx);
-		commit_unlock_and_unlink(trx);
-		trx->free();
-	}
+    trx_start_for_ddl(trx);
+    if (lock_sys_tables(trx) == DB_SUCCESS)
+    {
+      row_mysql_lock_data_dictionary(trx);
+      online_retry_drop_indexes_low(table, trx);
+      commit_unlock_and_unlink(trx);
+    }
+    else
+      trx->commit();
+    trx->free();
+  }
 
-	ut_d(dict_sys.freeze(SRW_LOCK_CALL));
-	ut_d(dict_table_check_for_dup_indexes(table, CHECK_ALL_COMPLETE));
-	ut_d(dict_sys.unfreeze());
-	ut_ad(!table->drop_aborted);
+  ut_d(dict_sys.freeze(SRW_LOCK_CALL));
+  ut_d(dict_table_check_for_dup_indexes(table, CHECK_ALL_COMPLETE));
+  ut_d(dict_sys.unfreeze());
+  ut_ad(!table->drop_aborted);
 }
 
 /** Determines if InnoDB is dropping a foreign key constraint.

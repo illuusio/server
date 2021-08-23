@@ -3834,8 +3834,6 @@ row_merge_drop_indexes(
 
 	if (!locked && (table->get_ref_count() > 1
 			|| table->has_lock_other_than(alter_trx))) {
-		/* FIXME: adjust this */
-
 		while ((index = dict_table_get_next_index(index)) != NULL) {
 			ut_ad(!dict_index_is_clust(index));
 
