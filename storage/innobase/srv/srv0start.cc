@@ -816,9 +816,7 @@ static void srv_shutdown_threads()
 	srv_master_timer.reset();
 	srv_shutdown_state = SRV_SHUTDOWN_EXIT_THREADS;
 
-	if (purge_sys.enabled()) {
-		srv_purge_shutdown();
-	}
+	srv_purge_shutdown();
 
 	if (srv_n_fil_crypt_threads) {
 		fil_crypt_set_thread_cnt(0);

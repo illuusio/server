@@ -1911,11 +1911,6 @@ static void srv_shutdown_purge_tasks()
   delete purge_coordinator_timer;
   purge_coordinator_timer= nullptr;
   purge_worker_task.wait();
-  while (!purge_thds.empty())
-  {
-    innobase_destroy_background_thd(purge_thds.front());
-    purge_thds.pop_front();
-  }
 }
 
 /**********************************************************************//**
@@ -1955,15 +1950,22 @@ ulint srv_get_task_queue_length()
 /** Shut down the purge threads. */
 void srv_purge_shutdown()
 {
-	if (purge_sys.enabled()) {
-		srv_update_purge_thread_count(innodb_purge_threads_MAX);
-		while(!srv_purge_should_exit()) {
-			ut_a(!purge_sys.paused());
-			srv_wake_purge_thread_if_not_active();
-			std::this_thread::sleep_for(
-				std::chrono::milliseconds(1));
-		}
-		purge_sys.coordinator_shutdown();
-		srv_shutdown_purge_tasks();
-	}
+  if (purge_sys.enabled())
+  {
+    srv_update_purge_thread_count(innodb_purge_threads_MAX);
+    while (!srv_purge_should_exit())
+    {
+      ut_a(!purge_sys.paused());
+      srv_wake_purge_thread_if_not_active();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    purge_sys.coordinator_shutdown();
+    srv_shutdown_purge_tasks();
+  }
+
+  while (!purge_thds.empty())
+  {
+    innobase_destroy_background_thd(purge_thds.front());
+    purge_thds.pop_front();
+  }
 }
