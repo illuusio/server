@@ -3251,13 +3251,7 @@ dict_stats_fetch_from_ps(
 
 	trx = trx_create();
 
-	/* Use 'read-uncommitted' so that the SELECTs we execute
-	do not get blocked in case some user has locked the rows we
-	are SELECTing */
-
-	trx->isolation_level = TRX_ISO_READ_UNCOMMITTED;
-
-	trx_start_internal(trx);
+	trx_start_internal_read_only(trx);
 
 	dict_fs2utf8(table->name.m_name, db_utf8, sizeof(db_utf8),
 		     table_utf8, sizeof(table_utf8));

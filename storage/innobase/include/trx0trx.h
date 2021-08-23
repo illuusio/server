@@ -122,11 +122,18 @@ void trx_start_internal_low(trx_t *trx, bool read_write);
 	(t)->start_file = __FILE__;				\
 	trx_start_internal_low(t, true);			\
 	} while (false)
+#define trx_start_internal_read_only(t)				\
+	do {							\
+	(t)->start_line = __LINE__;				\
+	(t)->start_file = __FILE__;				\
+	trx_start_internal_low(t, false);			\
+	} while (false)
 #else
 #define trx_start_if_not_started(t, rw)				\
 	trx_start_if_not_started_low((t), rw)
 
 #define trx_start_internal(t) trx_start_internal_low(t, true)
+#define trx_start_internal_read_only(t) trx_start_internal_low(t, false)
 
 #define trx_start_if_not_started_xa(t, rw)			\
 	trx_start_if_not_started_xa_low((t), (rw))
