@@ -34,7 +34,6 @@ SHOW CREATE TABLE innodb_stats_drop_locked;
 --error ER_LOCK_WAIT_TIMEOUT
 DROP TABLE innodb_stats_drop_locked;
 
---error ER_LOCK_WAIT_TIMEOUT
 DROP DATABASE unlocked;
 --error ER_LOCK_WAIT_TIMEOUT
 DROP DATABASE locked;
@@ -42,7 +41,6 @@ DROP DATABASE locked;
 -- connection default
 COMMIT;
 
-DROP DATABASE unlocked;
 DROP DATABASE locked;
 
 # the stats should be there
