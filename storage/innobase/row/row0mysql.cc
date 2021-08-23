@@ -2671,7 +2671,6 @@ row_rename_table_for_mysql(
 	ulint		n_constraints_to_drop	= 0;
 	ibool		old_is_tmp, new_is_tmp;
 	pars_info_t*	info			= NULL;
-	char*		is_part 		= NULL;
 
 	ut_a(old_name != NULL);
 	ut_a(new_name != NULL);
@@ -2690,14 +2689,6 @@ row_rename_table_for_mysql(
 	table = dict_table_open_on_name(old_name, true,
 					DICT_ERR_IGNORE_FK_NOKEY);
 
-	/* We look for pattern #P# to see if the table is partitioned
-	MySQL table. */
-#ifdef _WIN32
-	is_part = strstr((char *)old_name, (char *)"#p#");
-#else
-	is_part = strstr((char *)old_name, (char *)"#P#");
-#endif /* _WIN32 */
-
 	/* MariaDB partition engine hard codes the file name
 	separator as "#P#" and "#SP#". The text case is fixed even if
 	lower_case_table_names is set to 1 or 2. InnoDB always
@@ -2714,7 +2705,8 @@ row_rename_table_for_mysql(
 	sensitive platform in Windows, we might need to
 	check the existence of table name without lowering
 	case them in the system table. */
-	if (!table && is_part && lower_case_table_names == 1) {
+	if (!table && lower_case_table_names == 1
+	    && strstr(old_name, IF_WIN("#p#", "#P#"))) {
 		char par_case_name[MAX_FULL_NAME_LEN + 1];
 #ifndef _WIN32
 		/* Check for the table using lower
