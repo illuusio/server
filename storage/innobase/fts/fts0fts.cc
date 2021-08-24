@@ -1508,19 +1508,15 @@ static dberr_t fts_lock_table(trx_t *trx, const char *table_name)
   {
     dberr_t err= lock_table_for_trx(table, trx, LOCK_X);
     /* Wait for purge threads to stop using the table. */
-    dict_sys.freeze(SRW_LOCK_CALL);
     for (uint n= 15; table->get_ref_count() > 1; )
     {
-      dict_sys.unfreeze();
       if (!--n)
       {
         err= DB_LOCK_WAIT_TIMEOUT;
         goto fail;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
-      dict_sys.freeze(SRW_LOCK_CALL);
     }
-    dict_sys.unfreeze();
 fail:
     table->release();
     return err;

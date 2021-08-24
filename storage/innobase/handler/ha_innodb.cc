@@ -13423,6 +13423,34 @@ int ha_innobase::delete_table(const char *name)
   dict_table_t *table_stats= nullptr, *index_stats= nullptr;
   MDL_ticket *mdl_table= nullptr, *mdl_index= nullptr;
   dberr_t err= lock_table_for_trx(table, trx, LOCK_X);
+
+  const bool fts= err == DB_SUCCESS &&
+    (table->flags2 & (DICT_TF2_FTS_HAS_DOC_ID | DICT_TF2_FTS));
+
+  if (fts)
+  {
+    fts_optimize_remove_table(table);
+    purge_sys.stop_FTS();
+    err= fts_lock_tables(trx, *table);
+  }
+
+  if (!table->release() && err == DB_SUCCESS)
+  {
+    /* Wait for purge threads to stop using the table. */
+    for (uint n= 15;;)
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+      if (!--n)
+      {
+        err= DB_LOCK_WAIT_TIMEOUT;
+        break;
+      }
+      if (!table->get_ref_count())
+        break;
+    }
+  }
+
   if (err == DB_SUCCESS && dict_stats_is_persistent_enabled(table) &&
       !table->is_stats_table())
   {
@@ -13442,43 +13470,14 @@ int ha_innobase::delete_table(const char *name)
     if (table_stats && index_stats &&
         !strcmp(table_stats->name.m_name, TABLE_STATS_NAME) &&
         !strcmp(index_stats->name.m_name, INDEX_STATS_NAME) &&
-	!(err= lock_table_for_trx(table_stats, trx, LOCK_X)))
+        !(err= lock_table_for_trx(table_stats, trx, LOCK_X)))
       err= lock_table_for_trx(index_stats, trx, LOCK_X);
-  }
-
-  const bool fts= err == DB_SUCCESS &&
-    (table->flags2 & (DICT_TF2_FTS_HAS_DOC_ID | DICT_TF2_FTS));
-
-  if (fts)
-  {
-    fts_optimize_remove_table(table);
-    purge_sys.stop_FTS();
-    err= fts_lock_tables(trx, *table);
   }
 
   if (err == DB_SUCCESS)
     err= lock_sys_tables(trx);
 
   dict_sys.lock(SRW_LOCK_CALL);
-  if (!table->release() && err == DB_SUCCESS)
-  {
-    /* Wait for purge threads to stop using the table. */
-    for (uint n= 15;;)
-    {
-      dict_sys.unlock();
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
-      dict_sys.lock(SRW_LOCK_CALL);
-
-      if (!--n)
-      {
-        err= DB_LOCK_WAIT_TIMEOUT;
-        break;
-      }
-      if (!table->get_ref_count())
-        break;
-    }
-  }
-
   trx->dict_operation_lock_mode= RW_X_LATCH;
 
   if (err != DB_SUCCESS)
@@ -13727,6 +13726,25 @@ int ha_innobase::truncate()
 	MDL_ticket *mdl_table = nullptr, *mdl_index = nullptr;
 
 	dberr_t error = lock_table_for_trx(ib_table, trx, LOCK_X);
+	const bool fts = error == DB_SUCCESS
+		&& ib_table->flags2 & (DICT_TF2_FTS_HAS_DOC_ID | DICT_TF2_FTS);
+
+	if (fts) {
+		fts_optimize_remove_table(ib_table);
+		purge_sys.stop_FTS();
+		error = fts_lock_tables(trx, *ib_table);
+	}
+
+	/* Wait for purge threads to stop using the table. */
+	for (uint n = 15; ib_table->get_ref_count() > 1; ) {
+		if (!--n) {
+			error = DB_LOCK_WAIT_TIMEOUT;
+			break;
+		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	}
+
 	if (error == DB_SUCCESS && dict_stats_is_persistent_enabled(ib_table)
 	    && !ib_table->is_stats_table()) {
 		dict_sys.lock(SRW_LOCK_CALL);
@@ -13752,31 +13770,11 @@ int ha_innobase::truncate()
 		}
 	}
 
-	const bool fts = error == DB_SUCCESS
-		&& ib_table->flags2 & (DICT_TF2_FTS_HAS_DOC_ID | DICT_TF2_FTS);
-
-	if (fts) {
-		fts_optimize_remove_table(ib_table);
-		purge_sys.stop_FTS();
-		error = fts_lock_tables(trx, *ib_table);
-	}
-
 	if (error == DB_SUCCESS) {
 		error = lock_sys_tables(trx);
 	}
 
 	row_mysql_lock_data_dictionary(trx);
-	/* Wait for purge threads to stop using the table. */
-	for (uint n = 15; ib_table->get_ref_count() > 1; ) {
-		if (!--n) {
-			error = DB_LOCK_WAIT_TIMEOUT;
-			break;
-		}
-
-		row_mysql_unlock_data_dictionary(trx);
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
-		row_mysql_lock_data_dictionary(trx);
-	}
 
 	if (error == DB_SUCCESS) {
 		error = innobase_rename_table(trx, ib_table->name.m_name,
