@@ -235,28 +235,22 @@ void srw_mutex::wait_and_lock()
   uint32_t lk= 1 + lock.fetch_add(1, std::memory_order_relaxed);
   for (auto spin= srv_n_spin_wait_rounds; spin; spin--)
   {
-    lk&= ~HOLDER;
-    DBUG_ASSERT(lk);
-    while (!lock.compare_exchange_weak(lk, HOLDER | (lk - 1),
-                                       std::memory_order_acquire,
-                                       std::memory_order_relaxed))
-      if (lk & HOLDER)
-        goto occupied;
-    return;
-occupied:
+    DBUG_ASSERT(~HOLDER & lk);
+    lk = lock.fetch_or(HOLDER, std::memory_order_relaxed);
+    if (!(lk & HOLDER))
+      goto acquired;
     ut_delay(srv_spin_wait_delay);
   }
 
   for (;;)
   {
-    lk= lock.load(std::memory_order_relaxed);
-    while (!(lk & HOLDER))
+    lk= lock.fetch_or(HOLDER, std::memory_order_relaxed);
+    if (!(lk & HOLDER))
     {
+acquired:
       DBUG_ASSERT(lk);
-      if (lock.compare_exchange_weak(lk, HOLDER | (lk - 1),
-                                     std::memory_order_acquire,
-                                     std::memory_order_relaxed))
-        return;
+      std::atomic_thread_fence(std::memory_order_acquire);
+      return;
     }
     DBUG_ASSERT(lk > HOLDER);
     wait(lk);
