@@ -2706,7 +2706,7 @@ row_rename_table_for_mysql(
 	check the existence of table name without lowering
 	case them in the system table. */
 	if (!table && lower_case_table_names == 1
-	    && strstr(old_name, IF_WIN("#p#", "#P#"))) {
+	    && strstr(old_name, table_name_t::part_suffix)) {
 		char par_case_name[MAX_FULL_NAME_LEN + 1];
 #ifndef _WIN32
 		/* Check for the table using lower
