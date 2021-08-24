@@ -1339,26 +1339,9 @@ static void innodb_drop_database(handlerton*, char *path)
 
   THD * const thd= current_thd;
   trx_t *trx= innobase_trx_allocate(thd);
-retry:
-  dict_sys.lock(SRW_LOCK_CALL);
-
-  for (auto i= dict_sys.table_id_hash.n_cells; i--; )
-  {
-    for (dict_table_t *table= static_cast<dict_table_t*>
-         (dict_sys.table_id_hash.array[i].node); table; table= table->id_hash)
-    {
-      ut_ad(table->cached);
-      if (!strncmp(table->name.m_name, namebuf, len) &&
-          !dict_stats_stop_bg(table))
-      {
-        dict_sys.unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
-        goto retry;
-      }
-    }
-  }
-
   dberr_t err= DB_SUCCESS;
+
+  dict_sys.lock(SRW_LOCK_CALL);
 
   for (auto i= dict_sys.table_id_hash.n_cells; i--; )
   {
@@ -2051,7 +2034,6 @@ static void drop_garbage_tables_after_restore()
         ({reinterpret_cast<const char*>(pcur.old_rec), len},
          DICT_ERR_IGNORE_DROP))
     {
-      ut_ad(table->stats_bg_flag == BG_STAT_NONE);
       table->acquire();
       row_mysql_unlock_data_dictionary(trx);
       err= lock_table_for_trx(table, trx, LOCK_X);
@@ -13381,7 +13363,6 @@ int ha_innobase::delete_table(const char *name)
   trx_t *parent_trx= check_trx_exists(thd);
   dict_table_t *table;
 
-  for (;;)
   {
     char norm_name[FN_REFLEN];
     normalize_table_name(norm_name, name);
@@ -13402,10 +13383,6 @@ int ha_innobase::delete_table(const char *name)
       dict_sys.unlock();
       DBUG_RETURN(HA_ERR_NO_SUCH_TABLE);
     }
-
-    if (dict_stats_stop_bg(table))
-      break;
-    dict_sys.unlock();
   }
 
   if (table->is_temporary())
@@ -13516,7 +13493,6 @@ err_exit:
     default:
       ib::error() << "DROP TABLE " << table->name << ": " << err;
     }
-    table->stats_bg_flag= BG_STAT_NONE;
     if (fts)
     {
       fts_optimize_add_table(table);
@@ -13790,7 +13766,6 @@ int ha_innobase::truncate()
 	}
 
 	row_mysql_lock_data_dictionary(trx);
-	dict_stats_wait_bg_to_stop_using_table(ib_table);
 	/* Wait for purge threads to stop using the table. */
 	for (uint n = 15; ib_table->get_ref_count() > 1; ) {
 		if (!--n) {
@@ -14508,11 +14483,14 @@ ha_innobase::info_low(
 			if (dict_stats_is_persistent_enabled(ib_table)) {
 
 				if (is_analyze) {
-					dict_sys.lock(SRW_LOCK_CALL);
-					dict_stats_recalc_pool_del(ib_table);
+					if (!srv_read_only_mode) {
+						dict_stats_recalc_pool_del(
+							ib_table);
+					}
+#if 0 // FIXME
 					dict_stats_wait_bg_to_stop_using_table(
 						ib_table);
-					dict_sys.unlock();
+#endif
 					opt = DICT_STATS_RECALC_PERSISTENT;
 				} else {
 					/* This is e.g. 'SHOW INDEXES', fetch
@@ -14524,15 +14502,6 @@ ha_innobase::info_low(
 			}
 
 			ret = dict_stats_update(ib_table, opt);
-
-			if (opt == DICT_STATS_RECALC_PERSISTENT) {
-				dict_sys.freeze(SRW_LOCK_CALL);
-				ib_table->stats_mutex_lock();
-				ib_table->stats_bg_flag
-					&= byte(~BG_STAT_SHOULD_QUIT);
-				ib_table->stats_mutex_unlock();
-				dict_sys.unfreeze();
-			}
 
 			if (ret != DB_SUCCESS) {
 				m_prebuilt->trx->op_info = "";

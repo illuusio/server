@@ -256,7 +256,7 @@ dict_stats_recalc_pool_del(
 	const dict_table_t*	table)	/*!< in: table to remove */
 {
 	ut_ad(!srv_read_only_mode);
-	ut_ad(dict_sys.frozen());
+	ut_ad(table->get_ref_count() || dict_sys.frozen());
 
 	mysql_mutex_lock(&recalc_pool_mutex);
 
@@ -274,17 +274,6 @@ dict_stats_recalc_pool_del(
 	}
 
 	mysql_mutex_unlock(&recalc_pool_mutex);
-}
-
-/*****************************************************************//**
-Wait until background stats thread has stopped using the specified table.
-The background stats thread is guaranteed not to start using the specified
-table after this function returns and before the caller releases
-dict_sys.latch. */
-void dict_stats_wait_bg_to_stop_using_table(dict_table_t *table)
-{
-  while (!dict_stats_stop_bg(table))
-    DICT_BG_YIELD;
 }
 
 /*****************************************************************//**
@@ -320,7 +309,7 @@ void dict_stats_deinit()
 Get the first table that has been added for auto recalc and eventually
 update its stats.
 @return whether the first entry can be processed immediately */
-static bool dict_stats_process_entry_from_recalc_pool()
+static bool dict_stats_process_entry_from_recalc_pool(THD *thd)
 {
 	table_id_t	table_id;
 
@@ -333,30 +322,24 @@ next_table_id:
 		return false;
 	}
 
-	dict_table_t*	table;
+	MDL_ticket* mdl = nullptr;
 
-	dict_sys.lock(SRW_LOCK_CALL);
+	dict_table_t* table = dict_table_open_on_id(table_id, false,
+						    DICT_TABLE_OP_NORMAL,
+						    thd, &mdl);
 
-	table = dict_table_open_on_id(table_id, TRUE, DICT_TABLE_OP_NORMAL);
-
-	if (table == NULL) {
+	if (!table) {
 		/* table does not exist, must have been DROPped
 		after its id was enqueued */
-		goto no_table;
+		goto next_table_id;
 	}
 
 	ut_ad(!table->is_temporary());
 
 	if (!table->is_accessible()) {
-		table->release();
-no_table:
-		dict_sys.unlock();
+		dict_table_close(table, false, thd, mdl);
 		goto next_table_id;
 	}
-
-	table->stats_bg_flag |= BG_STAT_IN_PROGRESS;
-
-	dict_sys.unlock();
 
 	/* time() could be expensive, the current function
 	is called once every time a table has been changed more than 10% and
@@ -381,11 +364,7 @@ no_table:
 		ret = true;
 	}
 
-	dict_sys.lock(SRW_LOCK_CALL);
-	table->stats_bg_flag = BG_STAT_NONE;
-	dict_table_close(table, true);
-	dict_sys.unlock();
-
+	dict_table_close(table, false, thd, mdl);
 	return ret;
 }
 
@@ -411,7 +390,7 @@ static void dict_stats_func(void*)
 {
   void *ctx;
   THD *thd= acquire_thd(&ctx);
-  while (dict_stats_process_entry_from_recalc_pool()) {}
+  while (dict_stats_process_entry_from_recalc_pool(thd)) {}
   dict_defrag_process_entries_from_defrag_pool();
   release_thd(thd, ctx);
 }

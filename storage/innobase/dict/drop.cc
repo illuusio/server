@@ -59,7 +59,6 @@ that would cause the InnoDB to hang or to intentionally crash.
 (d) The only changes to the data dictionary cache that are performed
 before transaction commit and must be rolled back explicitly are as follows:
 (d1) fts_optimize_add_table() to undo fts_optimize_remove_table()
-(d2) stats_bg_flag= BG_STAT_NONE to undo dict_stats_stop_bg()
 */
 
 #include "trx0purge.h"
@@ -148,7 +147,6 @@ dberr_t trx_t::drop_table(const dict_table_t &table)
   ut_ad(dict_operation);
   ut_ad(dict_operation_lock_mode == RW_X_LATCH);
   ut_ad(!table.is_temporary());
-  ut_ad(!(table.stats_bg_flag & BG_STAT_IN_PROGRESS));
   /* The table must be exclusively locked by this transaction. */
   ut_ad(table.get_ref_count() <= 1);
   ut_ad(table.n_lock_x_or_s == 1);
