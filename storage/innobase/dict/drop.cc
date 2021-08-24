@@ -239,7 +239,7 @@ void trx_t::commit(std::vector<pfs_os_file_t> &deleted)
       if (p.second.is_dropped())
       {
         dict_table_t *table= p.first;
-        dict_stats_recalc_pool_del(table);
+        dict_stats_recalc_pool_del(table->id, true);
         dict_stats_defrag_pool_del(table, nullptr);
         if (btr_defragment_active)
           btr_defragment_remove_table(table);

@@ -14479,16 +14479,11 @@ ha_innobase::info_low(
 			m_prebuilt->trx->op_info = "updating table statistics";
 
 			if (dict_stats_is_persistent_enabled(ib_table)) {
-
 				if (is_analyze) {
 					if (!srv_read_only_mode) {
 						dict_stats_recalc_pool_del(
-							ib_table);
+							ib_table->id, false);
 					}
-#if 0 // FIXME
-					dict_stats_wait_bg_to_stop_using_table(
-						ib_table);
-#endif
 					opt = DICT_STATS_RECALC_PERSISTENT;
 				} else {
 					/* This is e.g. 'SHOW INDEXES', fetch

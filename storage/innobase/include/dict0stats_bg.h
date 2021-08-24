@@ -39,13 +39,9 @@ extern mysql_pfs_key_t	recalc_pool_mutex_key;
 extern my_bool		innodb_dict_stats_disabled_debug;
 #endif /* UNIV_DEBUG */
 
-/*****************************************************************//**
-Delete a given table from the auto recalc pool.
-dict_stats_recalc_pool_del() */
-void
-dict_stats_recalc_pool_del(
-/*=======================*/
-	const dict_table_t*	table);	/*!< in: table to remove */
+/** Delete a table from the auto recalc pool, and ensure that
+no statistics are being updated on it. */
+void dict_stats_recalc_pool_del(table_id_t id, bool have_mdl_exclusive);
 
 /*****************************************************************//**
 Initialize global variables needed for the operation of dict_stats_thread().
