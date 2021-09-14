@@ -287,6 +287,7 @@ mariadb-10.1 Stretch to mariadb-10.5 upgrade:
     - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadbd*' 'libmariadbclient*'
     # Verify installation of MariaDB from Stretch
     - *test-verify-initial
+    - apt-get remove -y manpages  # Workaround for Bug#99375
     - *test-enable-sid-repos
     - *test-install
     - service mysql status
@@ -489,6 +490,7 @@ default-libmysqlclient-dev Stretch upgrade:
     - *test-prepare-container
     - apt-get install -y pkg-config default-libmysqlclient-dev
     - pkg-config --list-all
+    - apt-get remove -y manpages  # Workaround for Bug#99375
     - *test-enable-sid-repos
     - *test-install-all-libs
     - *test-verify-libs
@@ -510,12 +512,15 @@ mariadb-connector-c Stretch upgrade:
     - *test-prepare-container
     - apt-get install -y pkg-config libmariadb2 libmariadb-dev libmariadb-dev-compat
     - pkg-config --list-all
+    - apt-get remove -y manpages  # Workaround for Bug#99375
     - *test-enable-sid-repos
     - *test-install-all-libs
     - *test-verify-libs
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+  allow_failure: true
+  # Upgrading libc from Stretch to Bookworm is not possible due to Bug#993755
 
 # Upgrading from MySQL 8.0 with datadir in place is not possible. Users need to do a data dump.
 # The Debian maintainer scripts detect this situation and simply moves old datadir aside and start fresh.
