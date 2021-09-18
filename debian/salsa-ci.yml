@@ -57,7 +57,7 @@ packaging-fix-checks:
       git checkout debian/tests/control # Revert touching this file, wrap-and-sort shouldn't do it
       if [ "$(git diff --name-only | wc -l)" -eq 0 ]
       then
-        echo "No uncommited changes after 'wrap-and-sort -av', maintainer has done good job keeping files in order."
+        echo "No uncommitted changes after 'wrap-and-sort -av', maintainer has done good job keeping files in order."
       else
         git diff
         echo
@@ -261,9 +261,9 @@ mariadb-10.5 Bullseye to mariadb-10.5 upgrade:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    # Install everything MariaDB currently in Debian Buster
+    # Install everything MariaDB currently in Debian Bullseye
     - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
-    # Verify installation of MariaDB from Buster
+    # Verify installation of MariaDB from Bullseye
     - *test-verify-initial
     - *test-enable-sid-repos
     - *test-install
@@ -781,8 +781,8 @@ mariadb.org-10.2 to mariadb-10.5 upgrade:
     # prepending with --defaults-file=/etc/mysql/debian.cnf is needed in upstream 5.5–10.3
     - mysql --defaults-file=/etc/mysql/debian.cnf --skip-column-names -e "SELECT @@version, @@version_comment"
     - echo 'SHOW DATABASES;' | mysql --defaults-file=/etc/mysql/debian.cnf
-    - mysql --defaults-file=/etc/mysql/debian.cnf -e "SELECT Host,User,plugin,authentication_string FROM user;" mysql
-    - mysql --defaults-file=/etc/mysql/debian.cnf -e "SELECT * FROM plugin;" mysql
+    - mysql --defaults-file=/etc/mysql/debian.cnf -e "SELECT * FROM mysql.user; SHOW CREATE USER root@localhost"
+    - mysql --defaults-file=/etc/mysql/debian.cnf -e "SELECT * FROM mysql.plugin; SHOW PLUGINS"
     - *test-install
     - service mysql status
     - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
