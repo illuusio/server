@@ -23,7 +23,7 @@
 
 #include "my_decimal_limits.h"
 
-#define HOSTNAME_LENGTH 60
+#define HOSTNAME_LENGTH 255
 #define HOSTNAME_LENGTH_STR STRINGIFY_ARG(HOSTNAME_LENGTH)
 #define SYSTEM_CHARSET_MBMAXLEN 3
 #define NAME_CHAR_LEN	64              /* Field/table name length */
@@ -96,10 +96,10 @@
 #define LOCAL_HOST_NAMEDPIPE "."
 
 
-#if defined(__WIN__) && !defined( _CUSTOMCONFIG_)
+#if defined(_WIN32) && !defined( _CUSTOMCONFIG_)
 #define MYSQL_NAMEDPIPE "MySQL"
 #define MYSQL_SERVICENAME "MySQL"
-#endif /* __WIN__ */
+#endif
 
 /*
   You should add new commands to the end of this list, otherwise old
@@ -124,7 +124,7 @@ enum enum_server_command
   COM_SLAVE_WORKER=251,
   COM_SLAVE_IO=252,
   COM_SLAVE_SQL=253,
-  COM_MULTI=254,
+  COM_RESERVED_1=254, /* Old COM_MULTI, now removed */
   /* Must be last */
   COM_END=255
 };
@@ -297,12 +297,17 @@ enum enum_indicator_type
 #define MARIADB_CLIENT_FLAGS_MASK 0xffffffff00000000ULL
 /* Client support progress indicator */
 #define MARIADB_CLIENT_PROGRESS (1ULL << 32)
-/* support COM_MULTI */
-#define MARIADB_CLIENT_COM_MULTI (1ULL << 33)
+
+/* Old COM_MULTI experiment (functionality removed).*/
+#define MARIADB_CLIENT_RESERVED_1 (1ULL << 33)
+
 /* support of array binding */
 #define MARIADB_CLIENT_STMT_BULK_OPERATIONS (1ULL << 34)
 /* support of extended metadata (e.g. type/format information) */
 #define MARIADB_CLIENT_EXTENDED_METADATA (1ULL << 35)
+
+/* Do not resend metadata for prepared statements, since 10.6*/
+#define MARIADB_CLIENT_CACHE_METADATA (1ULL << 36)
 
 #ifdef HAVE_COMPRESS
 #define CAN_CLIENT_COMPRESS CLIENT_COMPRESS
@@ -342,11 +347,10 @@ enum enum_indicator_type
                            CLIENT_SESSION_TRACK |\
                            CLIENT_DEPRECATE_EOF |\
                            CLIENT_CONNECT_ATTRS |\
-                           MARIADB_CLIENT_COM_MULTI |\
                            MARIADB_CLIENT_STMT_BULK_OPERATIONS |\
                            MARIADB_CLIENT_EXTENDED_METADATA|\
+                           MARIADB_CLIENT_CACHE_METADATA |\
                            CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS)
-
 /*
   Switch off the flags that are optional and depending on build flags
   If any of the optional flags is supported by the build it will be switched

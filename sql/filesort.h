@@ -45,33 +45,47 @@ public:
   ha_rows limit;
   /** ORDER BY list with some precalculated info for filesort */
   SORT_FIELD *sortorder;
+  /* Used with ROWNUM. Contains the number of rows filesort has found so far */
+  ha_rows *accepted_rows;
   /** select to use for getting records */
   SQL_SELECT *select;
+
   /** TRUE <=> free select on destruction */
   bool own_select;
-  /** true means we are using Priority Queue for order by with limit. */
+  /** TRUE means we are using Priority Queue for order by with limit. */
   bool using_pq;
-  
   /* 
     TRUE means sort operation must produce table rowids. 
     FALSE means that it halso has an option of producing {sort_key,
     addon_fields} pairs.
   */
   bool sort_positions;
+  /*
+    TRUE means all the fields of table of whose bitmap read_set is set
+         need to be read while reading records in the sort buffer.
+    FALSE otherwise
+  */
+  bool set_all_read_bits;
 
   Filesort_tracker *tracker;
   Sort_keys *sort_keys;
+
+  /* Unpack temp table columns to base table columns*/
+  void (*unpack)(TABLE *);
 
   Filesort(ORDER *order_arg, ha_rows limit_arg, bool sort_positions_arg,
            SQL_SELECT *select_arg):
     order(order_arg),
     limit(limit_arg),
     sortorder(NULL),
+    accepted_rows(0),
     select(select_arg),
     own_select(false), 
     using_pq(false),
     sort_positions(sort_positions_arg),
-    sort_keys(NULL)
+    set_all_read_bits(false),
+    sort_keys(NULL),
+    unpack(NULL)
   {
     DBUG_ASSERT(order);
   };

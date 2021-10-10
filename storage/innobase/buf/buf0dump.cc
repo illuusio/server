@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 2011, 2017, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2017, 2020, MariaDB Corporation.
+Copyright (c) 2017, 2021, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -38,7 +38,6 @@ Created April 08, 2011 Vasil Dimov
 #include "os0thread.h"
 #include "srv0srv.h"
 #include "srv0start.h"
-#include "sync0rw.h"
 #include "ut0byte.h"
 
 #include <algorithm>
@@ -182,8 +181,8 @@ static void buf_dump_generate_path(char *path, size_t path_size)
 	char	buf[FN_REFLEN];
 
 	mysql_mutex_lock(&LOCK_global_system_variables);
-	snprintf(buf, sizeof(buf), "%s%c%s", get_buf_dump_dir(),
-		 OS_PATH_SEPARATOR, srv_buf_dump_filename);
+	snprintf(buf, sizeof buf, "%s/%s", get_buf_dump_dir(),
+		 srv_buf_dump_filename);
 	mysql_mutex_unlock(&LOCK_global_system_variables);
 
 	os_file_type_t	type;
@@ -206,21 +205,24 @@ static void buf_dump_generate_path(char *path, size_t path_size)
 		char	srv_data_home_full[FN_REFLEN];
 
 		my_realpath(srv_data_home_full, get_buf_dump_dir(), 0);
+		const char *format;
 
-		if (srv_data_home_full[strlen(srv_data_home_full) - 1]
-		    == OS_PATH_SEPARATOR) {
-
-			snprintf(path, path_size, "%s%s",
-				 srv_data_home_full,
-				 srv_buf_dump_filename);
-		} else {
-			snprintf(path, path_size, "%s%c%s",
-				 srv_data_home_full,
-				 OS_PATH_SEPARATOR,
-				 srv_buf_dump_filename);
+		switch (srv_data_home_full[strlen(srv_data_home_full) - 1]) {
+#ifdef _WIN32
+		case '\\':
+#endif
+		case '/':
+			format = "%s%s";
+			break;
+		default:
+			format = "%s/%s";
 		}
+
+		snprintf(path, path_size, format,
+			 srv_data_home_full, srv_buf_dump_filename);
 	}
 }
+
 
 /*****************************************************************//**
 Perform a buffer pool dump into the file specified by
@@ -251,7 +253,10 @@ buf_dump(
 	buf_dump_status(STATUS_INFO, "Dumping buffer pool(s) to %s",
 			full_filename);
 
-#if defined(__GLIBC__) || defined(__WIN__) || O_CLOEXEC == 0
+#ifdef _WIN32
+	/* use my_fopen() for correct permissions during bootstrap*/
+	f = my_fopen(tmp_filename, O_RDWR|O_TRUNC|O_CREAT, 0);
+#elif defined(__GLIBC__) || O_CLOEXEC == 0
 	f = fopen(tmp_filename, "w" STR_O_CLOEXEC);
 #else
 	{
@@ -367,7 +372,7 @@ buf_dump(
 	ut_free(dump);
 
 done:
-	ret = fclose(f);
+	ret = IF_WIN(my_fclose(f,0),fclose(f));
 	if (ret != 0) {
 		buf_dump_status(STATUS_ERR,
 				"Cannot close '%s': %s",
@@ -469,7 +474,8 @@ buf_load_throttle_if_needed(
 	ut_time_ms() that often may turn out to be too expensive. */
 
 	if (elapsed_time < 1000 /* 1 sec (1000 milli secs) */) {
-		os_thread_sleep((1000 - elapsed_time) * 1000 /* micro secs */);
+		std::this_thread::sleep_for(
+			std::chrono::milliseconds(1000 - elapsed_time));
 	}
 
 	*last_check_time = ut_time_ms();

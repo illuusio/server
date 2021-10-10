@@ -65,12 +65,15 @@ savepoint. */
 /** Push an object to an mtr memo stack. */
 #define mtr_memo_push(m, o, t)	(m)->memo_push(o, t)
 
-#define mtr_x_lock_space(s, m)	(m)->x_lock_space((s), __FILE__, __LINE__)
-#define mtr_sx_lock_space(s, m) (m)->sx_lock_space((s), __FILE__, __LINE__)
-
-#define mtr_s_lock_index(i, m)	(m)->s_lock(&(i)->lock, __FILE__, __LINE__)
-#define mtr_x_lock_index(i, m)	(m)->x_lock(&(i)->lock, __FILE__, __LINE__)
-#define mtr_sx_lock_index(i, m)	(m)->sx_lock(&(i)->lock, __FILE__, __LINE__)
+#ifdef UNIV_PFS_RWLOCK
+# define mtr_s_lock_index(i,m)	(m)->s_lock(__FILE__, __LINE__, &(i)->lock)
+# define mtr_x_lock_index(i,m)	(m)->x_lock(__FILE__, __LINE__, &(i)->lock)
+# define mtr_sx_lock_index(i,m)	(m)->u_lock(__FILE__, __LINE__, &(i)->lock)
+#else
+# define mtr_s_lock_index(i,m)	(m)->s_lock(&(i)->lock)
+# define mtr_x_lock_index(i,m)	(m)->x_lock(&(i)->lock)
+# define mtr_sx_lock_index(i,m)	(m)->u_lock(&(i)->lock)
+#endif
 
 #define mtr_release_block_at_savepoint(m, s, b)				\
 				(m)->release_block_at_savepoint((s), (b))
@@ -115,7 +118,7 @@ struct mtr_t {
 	@param lock		latch to release */
 	inline void release_s_latch_at_savepoint(
 		ulint		savepoint,
-		rw_lock_t*	lock);
+		index_lock*	lock);
 
 	/** Release the block in an mtr memo after a savepoint. */
 	inline void release_block_at_savepoint(
@@ -209,78 +212,65 @@ struct mtr_t {
 
 	/** Acquire a tablespace X-latch.
 	@param[in]	space_id	tablespace ID
-	@param[in]	file		file name from where called
-	@param[in]	line		line number in file
 	@return the tablespace object (never NULL) */
-	fil_space_t* x_lock_space(
-		ulint		space_id,
-		const char*	file,
-		unsigned	line);
+	fil_space_t* x_lock_space(ulint space_id);
 
-	/** Acquire a shared rw-latch.
-	@param[in]	lock	rw-latch
-	@param[in]	file	file name from where called
-	@param[in]	line	line number in file */
-	void s_lock(rw_lock_t* lock, const char* file, unsigned line)
-	{
-		rw_lock_s_lock_inline(lock, 0, file, line);
-		memo_push(lock, MTR_MEMO_S_LOCK);
-	}
+  /** Acquire a shared rw-latch. */
+  void s_lock(
+#ifdef UNIV_PFS_RWLOCK
+    const char *file, unsigned line,
+#endif
+    index_lock *lock)
+  {
+    lock->s_lock(SRW_LOCK_ARGS(file, line));
+    memo_push(lock, MTR_MEMO_S_LOCK);
+  }
 
-	/** Acquire an exclusive rw-latch.
-	@param[in]	lock	rw-latch
-	@param[in]	file	file name from where called
-	@param[in]	line	line number in file */
-	void x_lock(rw_lock_t* lock, const char* file, unsigned line)
-	{
-		rw_lock_x_lock_inline(lock, 0, file, line);
-		memo_push(lock, MTR_MEMO_X_LOCK);
-	}
+  /** Acquire an exclusive rw-latch. */
+  void x_lock(
+#ifdef UNIV_PFS_RWLOCK
+    const char *file, unsigned line,
+#endif
+    index_lock *lock)
+  {
+    lock->x_lock(SRW_LOCK_ARGS(file, line));
+    memo_push(lock, MTR_MEMO_X_LOCK);
+  }
 
-	/** Acquire an shared/exclusive rw-latch.
-	@param[in]	lock	rw-latch
-	@param[in]	file	file name from where called
-	@param[in]	line	line number in file */
-	void sx_lock(rw_lock_t* lock, const char* file, unsigned line)
-	{
-		rw_lock_sx_lock_inline(lock, 0, file, line);
-		memo_push(lock, MTR_MEMO_SX_LOCK);
-	}
+  /** Acquire an update latch. */
+  void u_lock(
+#ifdef UNIV_PFS_RWLOCK
+    const char *file, unsigned line,
+#endif
+    index_lock *lock)
+  {
+    lock->u_lock(SRW_LOCK_ARGS(file, line));
+    memo_push(lock, MTR_MEMO_SX_LOCK);
+  }
 
-	/** Acquire a tablespace X-latch.
-	@param[in]	space	tablespace
-	@param[in]	file	file name from where called
-	@param[in]	line	line number in file */
-	void x_lock_space(fil_space_t* space, const char* file, unsigned line)
-	{
-		ut_ad(space->purpose == FIL_TYPE_TEMPORARY
-		      || space->purpose == FIL_TYPE_IMPORT
-		      || space->purpose == FIL_TYPE_TABLESPACE);
-		memo_push(space, MTR_MEMO_SPACE_X_LOCK);
-		rw_lock_x_lock_inline(&space->latch, 0, file, line);
-	}
+  /** Acquire a tablespace S-latch.
+  @param space  tablespace */
+  void s_lock_space(fil_space_t *space)
+  {
+    ut_ad(space->purpose == FIL_TYPE_TEMPORARY ||
+          space->purpose == FIL_TYPE_IMPORT ||
+          space->purpose == FIL_TYPE_TABLESPACE);
+    memo_push(space, MTR_MEMO_SPACE_S_LOCK);
+    space->s_lock();
+  }
 
- /** Acquire a tablespace SX-latch.
- @param[in]	space	tablespace
- @param[in]	file	file name from where called
- @param[in]	line	line number in file */
- void sx_lock_space(fil_space_t *space, const char *file, unsigned line)
- {
-   ut_ad(space->purpose == FIL_TYPE_TEMPORARY
-         || space->purpose == FIL_TYPE_IMPORT
-	 || space->purpose == FIL_TYPE_TABLESPACE);
-   sx_lock(&space->latch, file, line);
- }
-
-	/** Release an object in the memo stack.
-	@param object	object
-	@param type	object type
-	@return bool if lock released */
-	bool memo_release(const void* object, ulint type);
-	/** Release a page latch.
-	@param[in]	ptr	pointer to within a page frame
-	@param[in]	type	object type: MTR_MEMO_PAGE_X_FIX, ... */
-	void release_page(const void* ptr, mtr_memo_type_t type);
+  /** Acquire an exclusive tablespace latch.
+  @param space  tablespace */
+  void x_lock_space(fil_space_t *space);
+  /** Release an object in the memo stack.
+  @param object	object
+  @param type	object type
+  @return bool if lock released */
+  bool memo_release(const void *object, ulint type);
+  /** Release a page latch.
+  @param[in]	ptr	pointer to within a page frame
+  @param[in]	type	object type: MTR_MEMO_PAGE_X_FIX, ... */
+  void release_page(const void *ptr, mtr_memo_type_t type);
 
 private:
   /** Note that the mini-transaction will modify data. */
@@ -317,19 +307,29 @@ public:
   /** @return true if pages has been trimed */
   bool is_trim_pages() { return m_trim_pages; }
 
+  /** Latch a buffer pool block.
+  @param block    block to be latched
+  @param rw_latch RW_S_LATCH, RW_SX_LATCH, RW_X_LATCH, RW_NO_LATCH */
+  void page_lock(buf_block_t *block, ulint rw_latch);
+
+  /** Upgrade U locks on a block to X */
+  void page_lock_upgrade(const buf_block_t &block);
+  /** Upgrade X lock to X */
+  void lock_upgrade(const index_lock &lock);
+
+  /** Check if we are holding tablespace latch
+  @param space  tablespace to search for
+  @param shared whether to look for shared latch, instead of exclusive
+  @return whether space.latch is being held */
+  bool memo_contains(const fil_space_t& space, bool shared= false)
+    MY_ATTRIBUTE((warn_unused_result));
 #ifdef UNIV_DEBUG
   /** Check if we are holding an rw-latch in this mini-transaction
   @param lock   latch to search for
   @param type   held latch type
   @return whether (lock,type) is contained */
-  bool memo_contains(const rw_lock_t &lock, mtr_memo_type_t type)
+  bool memo_contains(const index_lock &lock, mtr_memo_type_t type)
     MY_ATTRIBUTE((warn_unused_result));
-  /** Check if we are holding exclusive tablespace latch
-  @param space  tablespace to search for
-  @return whether space.latch is being held */
-  bool memo_contains(const fil_space_t& space)
-    MY_ATTRIBUTE((warn_unused_result));
-
 
 	/** Check if memo contains the given item.
 	@param object		object to search
@@ -639,11 +639,17 @@ public:
   { ut_ad(!m_commit || m_start); return m_start && !m_commit; }
   /** @return whether the mini-transaction has been committed */
   bool has_committed() const { ut_ad(!m_commit || m_start); return m_commit; }
+  /** @return whether the mini-transaction is freeing an index tree */
+  bool is_freeing_tree() const { return m_freeing_tree; }
+  /** Notify that the mini-transaction is freeing an index tree */
+  void freeing_tree() { m_freeing_tree= true; }
 private:
   /** whether start() has been called */
   bool m_start= false;
   /** whether commit() has been called */
   bool m_commit= false;
+  /** whether freeing_tree() has been called */
+  bool m_freeing_tree= false;
 #endif
 
   /** The page of the most recent m_log record written, or NULL */

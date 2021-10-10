@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2013, 2020, MariaDB Corporation.
+Copyright (c) 2013, 2021, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -342,17 +342,6 @@ fsp_header_check_encryption_key(
 	ulint			fsp_flags,
 	page_t*			page);
 
-/**********************************************************************//**
-Writes the space id and flags to a tablespace header.  The flags contain
-row type, physical/compressed page size, and logical/uncompressed page
-size of the tablespace. */
-void
-fsp_header_init_fields(
-/*===================*/
-	page_t*	page,		/*!< in/out: first page in the space */
-	ulint	space_id,	/*!< in: space id */
-	ulint	flags);		/*!< in: tablespace flags (FSP_SPACE_FLAGS):
-				0, or table->flags if newer than COMPACT */
 /** Initialize a tablespace header.
 @param[in,out]	space	tablespace
 @param[in]	size	current size in blocks
@@ -477,13 +466,15 @@ fsp_reserve_free_extents(
 @param[in,out]	seg_header	file segment header
 @param[in,out]	space		tablespace
 @param[in]	offset		page number
-@param[in,out]	mtr		mini-transaction */
+@param[in,out]	mtr		mini-transaction
+@param[in]	have_latch	whether space->x_lock() was already called */
 void
 fseg_free_page(
 	fseg_header_t*	seg_header,
 	fil_space_t*	space,
 	uint32_t	offset,
-	mtr_t*		mtr);
+	mtr_t*		mtr,
+	bool		have_latch = false);
 /** Determine whether a page is free.
 @param[in,out]	space	tablespace
 @param[in]	page	page number
@@ -491,29 +482,42 @@ fseg_free_page(
 bool
 fseg_page_is_free(fil_space_t* space, unsigned page)
 	MY_ATTRIBUTE((nonnull, warn_unused_result));
-/**********************************************************************//**
-Frees part of a segment. This function can be used to free a segment
-by repeatedly calling this function in different mini-transactions.
-Doing the freeing in a single mini-transaction might result in
-too big a mini-transaction.
+
+/** Frees part of a segment. This function can be used to free
+a segment by repeatedly calling this function in different
+mini-transactions. Doing the freeing in a single mini-transaction
+might result in too big a mini-transaction.
+@param	header	segment header; NOTE: if the header resides on first
+		page of the frag list of the segment, this pointer
+		becomes obsolete after the last freeing step
+@param	mtr	mini-transaction
+@param	ahi	Drop the adaptive hash index
 @return whether the freeing was completed */
 bool
 fseg_free_step(
-	fseg_header_t*	header,	/*!< in, own: segment header; NOTE: if the header
-				resides on the first page of the frag list
-				of the segment, this pointer becomes obsolete
-				after the last freeing step */
-	mtr_t*		mtr)	/*!< in/out: mini-transaction */
+	fseg_header_t*	header,
+	mtr_t*		mtr
+#ifdef BTR_CUR_HASH_ADAPT
+	,bool		ahi=false
+#endif /* BTR_CUR_HASH_ADAPT */
+	)
 	MY_ATTRIBUTE((warn_unused_result));
-/**********************************************************************//**
-Frees part of a segment. Differs from fseg_free_step because this function
-leaves the header page unfreed.
+
+/** Frees part of a segment. Differs from fseg_free_step because
+this function leaves the header page unfreed.
+@param	header	segment header which must reside on the first
+		fragment page of the segment
+@param	mtr	mini-transaction
+@param	ahi	drop the adaptive hash index
 @return whether the freeing was completed, except for the header page */
 bool
 fseg_free_step_not_header(
-	fseg_header_t*	header,	/*!< in: segment header which must reside on
-				the first fragment page of the segment */
-	mtr_t*		mtr)	/*!< in/out: mini-transaction */
+	fseg_header_t*	header,
+	mtr_t*		mtr
+#ifdef BTR_CUR_HASH_ADAPT
+	,bool		ahi=false
+#endif /* BTR_CUR_HASH_ADAPT */
+	)
 	MY_ATTRIBUTE((warn_unused_result));
 
 /** Reset the page type.

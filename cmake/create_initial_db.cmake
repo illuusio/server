@@ -15,6 +15,10 @@
 
 # This script creates initial database for packaging on Windows
 # Force Visual Studio to output to stdout
+
+# This script can be run with "make initial_database" or
+# "cmake --build .--target initial_database"
+
 IF(ENV{VS_UNICODE_OUTPUT})
  SET ($ENV{VS_UNICODE_OUTPUT})
 ENDIF()
@@ -34,9 +38,11 @@ FOREACH(FILENAME mysql_system_tables.sql mysql_system_tables_data.sql mysql_perf
     ENDIF()
   ENDFOREACH()
 ENDFOREACH()
-FILE(READ ${TOP_SRCDIR}/scripts/fill_help_tables.sql CONTENTS)
-FILE(APPEND bootstrap.sql "${CONTENTS}")
 
+FOREACH(FILENAME ${TOP_SRCDIR}/scripts/fill_help_tables.sql ${TOP_SRCDIR}/scripts/mysql_sys_schema.sql)
+  FILE(READ ${FILENAME} CONTENTS)
+  FILE(APPEND bootstrap.sql "${CONTENTS}")
+ENDFOREACH()
 
 MAKE_DIRECTORY(mysql)
 

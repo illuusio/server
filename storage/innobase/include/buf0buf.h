@@ -32,9 +32,9 @@ Created 11/5/1995 Heikki Tuuri
 
 #include "fil0fil.h"
 #include "mtr0types.h"
-#include "buf0types.h"
 #include "span.h"
 #include "assume_aligned.h"
+#include "buf0types.h"
 #ifndef UNIV_INNOCHECKSUM
 #include "hash0hash.h"
 #include "ut0byte.h"
@@ -210,7 +210,7 @@ NOTE! The following macros should be used instead of buf_page_get_gen,
 to improve debugging. Only values RW_S_LATCH and RW_X_LATCH are allowed
 in LA! */
 #define buf_page_get(ID, SIZE, LA, MTR)					\
-	buf_page_get_gen(ID, SIZE, LA, NULL, BUF_GET, __FILE__, __LINE__, MTR)
+	buf_page_get_gen(ID, SIZE, LA, NULL, BUF_GET, MTR)
 
 /**************************************************************//**
 Use these macros to bufferfix a page with no latching. Remember not to
@@ -219,8 +219,7 @@ the contents of the page! We have separated this case, because it is
 error-prone programming not to set a latch, and it should be used
 with care. */
 #define buf_page_get_with_no_latch(ID, SIZE, MTR)	\
-	buf_page_get_gen(ID, SIZE, RW_NO_LATCH, NULL, BUF_GET_NO_LATCH, \
-			 __FILE__, __LINE__, MTR)
+	buf_page_get_gen(ID, SIZE, RW_NO_LATCH, NULL, BUF_GET_NO_LATCH, MTR)
 /********************************************************************//**
 This is the general function used to get optimistic access to a database
 page.
@@ -231,33 +230,15 @@ buf_page_optimistic_get(
 	ulint		rw_latch,/*!< in: RW_S_LATCH, RW_X_LATCH */
 	buf_block_t*	block,	/*!< in: guessed block */
 	ib_uint64_t	modify_clock,/*!< in: modify clock value */
-	const char*	file,	/*!< in: file name */
-	unsigned	line,	/*!< in: line where called */
 	mtr_t*		mtr);	/*!< in: mini-transaction */
 
-/** Given a tablespace id and page number tries to get that page. If the
-page is not in the buffer pool it is not loaded and NULL is returned.
-Suitable for using when holding the lock_sys_t::mutex.
-@param[in]	page_id	page id
-@param[in]	file	file name
-@param[in]	line	line where called
-@param[in]	mtr	mini-transaction
-@return pointer to a page or NULL */
-buf_block_t*
-buf_page_try_get_func(
-	const page_id_t		page_id,
-	const char*		file,
-	unsigned		line,
-	mtr_t*			mtr);
-
-/** Tries to get a page.
-If the page is not in the buffer pool it is not loaded. Suitable for using
-when holding the lock_sys_t::mutex.
+/** Try to S-latch a page.
+Suitable for using when holding the lock_sys latches (as it avoids deadlock).
 @param[in]	page_id	page identifier
-@param[in]	mtr	mini-transaction
-@return the page if in buffer pool, NULL if not */
-#define buf_page_try_get(page_id, mtr)	\
-	buf_page_try_get_func((page_id), __FILE__, __LINE__, mtr);
+@param[in,out]	mtr	mini-transaction
+@return the block
+@retval nullptr if an S-latch cannot be granted immediately */
+buf_block_t *buf_page_try_get(const page_id_t page_id, mtr_t *mtr);
 
 /** Get read access to a compressed page (usually of type
 FIL_PAGE_TYPE_ZBLOB or FIL_PAGE_TYPE_ZBLOB2).
@@ -278,8 +259,6 @@ buf_page_t* buf_page_get_zip(const page_id_t page_id, ulint zip_size);
 @param[in]	guess			guessed block or NULL
 @param[in]	mode			BUF_GET, BUF_GET_IF_IN_POOL,
 BUF_PEEK_IF_IN_POOL, BUF_GET_NO_LATCH, or BUF_GET_IF_IN_POOL_OR_WATCH
-@param[in]	file			file name
-@param[in]	line			line where called
 @param[in]	mtr			mini-transaction
 @param[out]	err			DB_SUCCESS or error code
 @param[in]	allow_ibuf_merge	Allow change buffer merge while
@@ -292,8 +271,6 @@ buf_page_get_gen(
 	ulint			rw_latch,
 	buf_block_t*		guess,
 	ulint			mode,
-	const char*		file,
-	unsigned		line,
 	mtr_t*			mtr,
 	dberr_t*		err = NULL,
 	bool			allow_ibuf_merge = false);
@@ -305,8 +282,6 @@ buf_page_get_gen(
 @param[in]	guess			guessed block or NULL
 @param[in]	mode			BUF_GET, BUF_GET_IF_IN_POOL,
 BUF_PEEK_IF_IN_POOL, BUF_GET_NO_LATCH, or BUF_GET_IF_IN_POOL_OR_WATCH
-@param[in]	file			file name
-@param[in]	line			line where called
 @param[in]	mtr			mini-transaction
 @param[out]	err			DB_SUCCESS or error code
 @param[in]	allow_ibuf_merge	Allow change buffer merge to happen
@@ -321,8 +296,6 @@ buf_page_get_low(
 	ulint			rw_latch,
 	buf_block_t*		guess,
 	ulint			mode,
-	const char*		file,
-	unsigned		line,
 	mtr_t*			mtr,
 	dberr_t*		err,
 	bool			allow_ibuf_merge);
@@ -340,6 +313,17 @@ FILE_PAGE (the other is buf_page_get_gen).
 buf_block_t*
 buf_page_create(fil_space_t *space, uint32_t offset,
                 ulint zip_size, mtr_t *mtr, buf_block_t *free_block);
+
+/** Initialize a page in buffer pool while initializing the
+deferred tablespace
+@param space_id         space identfier
+@param zip_size         ROW_FORMAT=COMPRESSED page size or 0
+@param mtr              mini-transaction
+@param free_block       pre-allocated buffer block
+@return pointer to the block, page bufferfixed */
+buf_block_t*
+buf_page_create_deferred(uint32_t space_id, ulint zip_size, mtr_t *mtr,
+                         buf_block_t *free_block);
 
 /********************************************************************//**
 Releases a compressed-only page acquired with buf_page_get_zip(). */
@@ -359,15 +343,11 @@ buf_page_release_latch(
 					RW_NO_LATCH */
 /** Move a block to the start of the LRU list. */
 void buf_page_make_young(buf_page_t *bpage);
-/** Mark the page status as FREED for the given tablespace id and
-page number. If the page is not in buffer pool then ignore it.
+/** Mark the page status as FREED for the given tablespace and page number.
 @param[in,out]	space	tablespace
 @param[in]	page	page number
-@param[in,out]	mtr	mini-transaction
-@param[in]	file	file name
-@param[in]	line	line where called */
-void buf_page_free(fil_space_t *space, uint32_t page, mtr_t *mtr,
-                   const char *file, unsigned line);
+@param[in,out]	mtr	mini-transaction */
+void buf_page_free(fil_space_t *space, uint32_t page, mtr_t *mtr);
 
 /********************************************************************//**
 Reads the freed_page_clock of a buffer block.
@@ -432,72 +412,17 @@ buf_block_get_modify_clock(
 	buf_block_t*	block);	/*!< in: block */
 /*******************************************************************//**
 Increments the bufferfix count. */
-UNIV_INLINE
-void
-buf_block_buf_fix_inc_func(
-/*=======================*/
-# ifdef UNIV_DEBUG
-	const char*	file,	/*!< in: file name */
-	unsigned	line,	/*!< in: line */
-# endif /* UNIV_DEBUG */
-	buf_block_t*	block)	/*!< in/out: block to bufferfix */
-	MY_ATTRIBUTE((nonnull));
+# define buf_block_buf_fix_inc(block) (block)->fix()
 
-# ifdef UNIV_DEBUG
-/** Increments the bufferfix count.
-@param[in,out]	b	block to bufferfix
-@param[in]	f	file name where requested
-@param[in]	l	line number where requested */
-#  define buf_block_buf_fix_inc(b,f,l) buf_block_buf_fix_inc_func(f,l,b)
-# else /* UNIV_DEBUG */
-/** Increments the bufferfix count.
-@param[in,out]	b	block to bufferfix
-@param[in]	f	file name where requested
-@param[in]	l	line number where requested */
-#  define buf_block_buf_fix_inc(b,f,l) buf_block_buf_fix_inc_func(b)
-# endif /* UNIV_DEBUG */
+/*******************************************************************//**
+Decrements the bufferfix count. */
+# define buf_block_buf_fix_dec(block) (block)->unfix()
 #endif /* !UNIV_INNOCHECKSUM */
 
 /** Check if a buffer is all zeroes.
 @param[in]	buf	data to check
 @return whether the buffer is all zeroes */
 bool buf_is_zeroes(st_::span<const byte> buf);
-
-/** Checks if the page is in crc32 checksum format.
-@param[in]	read_buf		database page
-@param[in]	checksum_field1		new checksum field
-@param[in]	checksum_field2		old checksum field
-@return true if the page is in crc32 checksum format. */
-bool
-buf_page_is_checksum_valid_crc32(
-	const byte*			read_buf,
-	ulint				checksum_field1,
-	ulint				checksum_field2)
-	MY_ATTRIBUTE((nonnull(1), warn_unused_result));
-
-/** Checks if the page is in innodb checksum format.
-@param[in]	read_buf	database page
-@param[in]	checksum_field1	new checksum field
-@param[in]	checksum_field2	old checksum field
-@return true if the page is in innodb checksum format. */
-bool
-buf_page_is_checksum_valid_innodb(
-	const byte*			read_buf,
-	ulint				checksum_field1,
-	ulint				checksum_field2)
-	MY_ATTRIBUTE((nonnull(1), warn_unused_result));
-
-/** Checks if the page is in none checksum format.
-@param[in]	read_buf	database page
-@param[in]	checksum_field1	new checksum field
-@param[in]	checksum_field2	old checksum field
-@return true if the page is in none checksum format. */
-bool
-buf_page_is_checksum_valid_none(
-	const byte*			read_buf,
-	ulint				checksum_field1,
-	ulint				checksum_field2)
-	MY_ATTRIBUTE((nonnull(1), warn_unused_result));
 
 /** Check if a page is corrupt.
 @param[in]	check_lsn	whether the LSN should be checked
@@ -629,22 +554,6 @@ void buf_pool_invalidate();
 /*========================================================================
 --------------------------- LOWER LEVEL ROUTINES -------------------------
 =========================================================================*/
-
-#ifdef UNIV_DEBUG
-/*********************************************************************//**
-Adds latch level info for the rw-lock protecting the buffer frame. This
-should be called in the debug version after a successful latching of a
-page if we know the latching order level of the acquired latch. */
-UNIV_INLINE
-void
-buf_block_dbg_add_level(
-/*====================*/
-	buf_block_t*	block,	/*!< in: buffer page
-				where we have acquired latch */
-	latch_level_t	level);	/*!< in: latching order level */
-#else /* UNIV_DEBUG */
-# define buf_block_dbg_add_level(block, level) /* nothing */
-#endif /* UNIV_DEBUG */
 
 #ifdef UNIV_DEBUG
 /*********************************************************************//**
@@ -1063,8 +972,8 @@ struct buf_block_t{
 					is of size srv_page_size, and
 					aligned to an address divisible by
 					srv_page_size */
-	rw_lock_t	lock;		/*!< read-write lock of the buffer
-					frame */
+  /** read-write lock covering frame */
+  block_lock lock;
 #ifdef UNIV_DEBUG
   /** whether page.list is in buf_pool.withdraw
   ((state() == BUF_BLOCK_NOT_USED)) and the buffer pool is being shrunk;
@@ -1188,22 +1097,12 @@ struct buf_block_t{
 # define assert_block_ahi_empty_on_init(block) /* nothing */
 # define assert_block_ahi_valid(block) /* nothing */
 #endif /* BTR_CUR_HASH_ADAPT */
-# ifdef UNIV_DEBUG
-	/** @name Debug fields */
-	/* @{ */
-	rw_lock_t*	debug_latch;	/*!< in the debug version, each thread
-					which bufferfixes the block acquires
-					an s-latch here; so we can use the
-					debug utilities in sync0rw */
-	/* @} */
-# endif
   void fix() { page.fix(); }
   uint32_t unfix()
   {
     ut_ad(page.buf_fix_count() || page.io_fix() != BUF_IO_NONE ||
           page.state() == BUF_BLOCK_ZIP_PAGE ||
-          !rw_lock_own_flagged(&lock, RW_LOCK_FLAG_X | RW_LOCK_FLAG_S |
-                               RW_LOCK_FLAG_SX));
+          !lock.have_any());
     return page.unfix();
   }
 
@@ -1351,7 +1250,11 @@ struct buf_buddy_free_t {
 
 /** @brief The buffer pool statistics structure. */
 struct buf_pool_stat_t{
-	ulint	n_page_gets;	/*!< number of page gets performed;
+	/** Initialize the counters */
+	void init() { memset((void*) this, 0, sizeof *this); }
+
+	ib_counter_t<ulint, ib_counter_element_t>	n_page_gets;
+				/*!< number of page gets performed;
 				also successful searches through
 				the adaptive hash index are
 				counted as page gets; this field
@@ -1508,7 +1411,7 @@ public:
   {
     ut_ad(curr_size < old_size);
 #ifdef SAFE_MUTEX
-    if (resizing.load(std::memory_order_relaxed))
+    if (resize_in_progress())
       mysql_mutex_assert_owner(&mutex);
 #endif /* SAFE_MUTEX */
 
@@ -1528,7 +1431,7 @@ public:
   {
     ut_ad(curr_size < old_size);
 #ifdef SAFE_MUTEX
-    if (resizing.load(std::memory_order_relaxed))
+    if (resize_in_progress())
       mysql_mutex_assert_owner(&mutex);
 #endif /* SAFE_MUTEX */
 
@@ -1577,9 +1480,6 @@ public:
   @return pointer to block, never NULL */
   inline buf_block_t *block_from_ahi(const byte *ptr) const;
 #endif /* BTR_CUR_HASH_ADAPT */
-
-  bool is_block_lock(const rw_lock_t *l) const
-  { return is_block_field(static_cast<const void*>(l)); }
 
   /**
   @return the smallest oldest_modification lsn for any page

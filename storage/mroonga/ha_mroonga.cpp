@@ -361,6 +361,9 @@ static const char *mrn_inspect_thr_lock_type(enum thr_lock_type lock_type)
   case TL_READ_NO_INSERT:
     inspected = "TL_READ_NO_INSERT";
     break;
+  case TL_READ_SKIP_LOCKED:
+    inspected = "TL_READ_SKIP_LOCKED";
+    break;
   case TL_WRITE_ALLOW_WRITE:
     inspected = "TL_WRITE_ALLOW_WRITE";
     break;
@@ -385,6 +388,9 @@ static const char *mrn_inspect_thr_lock_type(enum thr_lock_type lock_type)
     break;
   case TL_WRITE:
     inspected = "TL_WRITE";
+    break;
+  case TL_WRITE_SKIP_LOCKED:
+    inspected = "TL_WRITE_SKIP_LOCKED";
     break;
   case TL_WRITE_ONLY:
     inspected = "TL_WRITE_ONLY";
@@ -590,6 +596,9 @@ static const char *mrn_inspect_extra_function(enum ha_extra_function operation)
     inspected = "HA_EXTRA_NO_AUTOINC_LOCKING";
     break;
 #endif
+  case HA_EXTRA_IGNORE_INSERT:
+    inspected = "HA_EXTRA_IGNORE_INSERT";
+    break;
   }
   return inspected;
 }
@@ -10172,16 +10181,16 @@ void ha_mroonga::check_fast_order_limit(grn_table_sort_key **sort_keys,
     !MRN_SELECT_LEX_GET_HAVING_COND(select_lex) &&
     select_lex->table_list.elements == 1 &&
     select_lex->order_list.elements &&
-    select_lex->explicit_limit &&
-    select_lex->select_limit &&
-    select_lex->select_limit->val_int() > 0
+    select_lex->limit_params.explicit_limit &&
+    select_lex->limit_params.select_limit &&
+    select_lex->limit_params.select_limit->val_int() > 0
   ) {
-    if (select_lex->offset_limit) {
-      *limit = select_lex->offset_limit->val_int();
+    if (select_lex->limit_params.offset_limit) {
+      *limit = select_lex->limit_params.offset_limit->val_int();
     } else {
       *limit = 0;
     }
-    *limit += select_lex->select_limit->val_int();
+    *limit += select_lex->limit_params.select_limit->val_int();
     if (*limit > (longlong)INT_MAX) {
       DBUG_PRINT("info",
                  ("mroonga: fast_order_limit = false: "

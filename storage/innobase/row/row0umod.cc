@@ -158,21 +158,43 @@ row_undo_mod_clust_low(
 		}
 	}
 
-	if (err == DB_SUCCESS
-	    && btr_cur_get_index(btr_cur)->table->id == DICT_COLUMNS_ID) {
+	if (err != DB_SUCCESS) {
+		return err;
+	}
+
+	switch (const auto id = btr_cur_get_index(btr_cur)->table->id) {
+		unsigned c;
+	case DICT_TABLES_ID:
+		if (node->trx != trx_roll_crash_recv_trx) {
+			break;
+		}
+		c = DICT_COL__SYS_TABLES__ID;
+		goto evict;
+	case DICT_INDEXES_ID:
+		if (node->trx != trx_roll_crash_recv_trx) {
+			break;
+		}
+		/* fall through */
+	case DICT_COLUMNS_ID:
+		static_assert(!DICT_COL__SYS_INDEXES__TABLE_ID, "");
+		static_assert(!DICT_COL__SYS_COLUMNS__TABLE_ID, "");
+		c = DICT_COL__SYS_COLUMNS__TABLE_ID;
 		/* This is rolling back an UPDATE or DELETE on SYS_COLUMNS.
 		If it was part of an instant ALTER TABLE operation, we
 		must evict the table definition, so that it can be
 		reloaded after the dictionary operation has been
 		completed. At this point, any corresponding operation
 		to the metadata record will have been rolled back. */
-		const dfield_t& table_id = *dtuple_get_nth_field(node->row, 0);
+	evict:
+		const dfield_t& table_id = *dtuple_get_nth_field(node->row, c);
 		ut_ad(dfield_get_len(&table_id) == 8);
-		node->trx->evict_table(mach_read_from_8(static_cast<byte*>(
-					table_id.data)));
+		node->trx->evict_table(mach_read_from_8(
+					       static_cast<byte*>(
+						       table_id.data)),
+				       id == DICT_COLUMNS_ID);
 	}
 
-	return(err);
+	return DB_SUCCESS;
 }
 
 /** Get the byte offset of the DB_TRX_ID column
@@ -216,8 +238,6 @@ static bool row_undo_mod_must_purge(undo_node_t* node, mtr_t* mtr)
 	ut_ad(btr_cur->index->is_primary());
 	DEBUG_SYNC_C("rollback_purge_clust");
 
-	mtr->s_lock(&purge_sys.latch, __FILE__, __LINE__);
-
 	if (!purge_sys.changes_visible(node->new_trx_id, node->table->name)) {
 		return false;
 	}
@@ -241,15 +261,13 @@ row_undo_mod_clust(
 {
 	btr_pcur_t*	pcur;
 	mtr_t		mtr;
+	bool		have_latch = false;
 	dberr_t		err;
 	dict_index_t*	index;
 	bool		online;
 
 	ut_ad(thr_get_trx(thr) == node->trx);
-	ut_ad(node->trx->dict_operation_lock_mode);
 	ut_ad(node->trx->in_rollback);
-	ut_ad(rw_lock_own_flagged(&dict_sys.latch,
-				  RW_LOCK_FLAG_X | RW_LOCK_FLAG_S));
 
 	log_free_check();
 	pcur = &node->pcur;
@@ -266,7 +284,7 @@ row_undo_mod_clust(
 
 	online = dict_index_is_online_ddl(index);
 	if (online) {
-		ut_ad(node->trx->dict_operation_lock_mode != RW_X_LATCH);
+		ut_ad(!node->trx->dict_operation_lock_mode);
 		mtr_s_lock_index(index, &mtr);
 	}
 
@@ -305,17 +323,7 @@ row_undo_mod_clust(
 		ut_ad(err == DB_SUCCESS || err == DB_OUT_OF_FILE_SPACE);
 	}
 
-	/* Online rebuild cannot be initiated while we are holding
-	dict_sys.latch and index->lock. (It can be aborted.) */
-	ut_ad(online || !dict_index_is_online_ddl(index));
-
-	if (err == DB_SUCCESS && online) {
-
-		ut_ad(rw_lock_own_flagged(
-				&index->lock,
-				RW_LOCK_FLAG_S | RW_LOCK_FLAG_X
-				| RW_LOCK_FLAG_SX));
-
+	if (err == DB_SUCCESS && online && dict_index_is_online_ddl(index)) {
 		switch (node->rec_type) {
 		case TRX_UNDO_DEL_MARK_REC:
 			row_log_table_insert(
@@ -367,22 +375,31 @@ row_undo_mod_clust(
 			goto mtr_commit_exit;
 		}
 
+		ut_ad(rec_get_deleted_flag(btr_pcur_get_rec(pcur),
+					   dict_table_is_comp(node->table)));
+
 		if (index->table->is_temporary()) {
 			mtr.set_log_mode(MTR_LOG_NO_REDO);
+			if (btr_cur_optimistic_delete(&pcur->btr_cur, 0,
+						      &mtr)) {
+				goto mtr_commit_exit;
+			}
+			btr_pcur_commit_specify_mtr(pcur, &mtr);
 		} else {
+			index->set_modified(mtr);
+			have_latch = true;
+			purge_sys.latch.rd_lock(SRW_LOCK_CALL);
 			if (!row_undo_mod_must_purge(node, &mtr)) {
 				goto mtr_commit_exit;
 			}
-			index->set_modified(mtr);
+			if (btr_cur_optimistic_delete(&pcur->btr_cur, 0,
+						      &mtr)) {
+				goto mtr_commit_exit;
+			}
+			purge_sys.latch.rd_unlock();
+			btr_pcur_commit_specify_mtr(pcur, &mtr);
+			have_latch = false;
 		}
-
-		ut_ad(rec_get_deleted_flag(btr_pcur_get_rec(pcur),
-					   dict_table_is_comp(node->table)));
-		if (btr_cur_optimistic_delete(&pcur->btr_cur, 0, &mtr)) {
-			goto mtr_commit_exit;
-		}
-
-		btr_pcur_commit_specify_mtr(pcur, &mtr);
 
 		mtr.start();
 		if (!btr_pcur_restore_position(
@@ -391,17 +408,19 @@ row_undo_mod_clust(
 			goto mtr_commit_exit;
 		}
 
+		ut_ad(rec_get_deleted_flag(btr_pcur_get_rec(pcur),
+					   dict_table_is_comp(node->table)));
+
 		if (index->table->is_temporary()) {
 			mtr.set_log_mode(MTR_LOG_NO_REDO);
 		} else {
+			have_latch = true;
+			purge_sys.latch.rd_lock(SRW_LOCK_CALL);
 			if (!row_undo_mod_must_purge(node, &mtr)) {
 				goto mtr_commit_exit;
 			}
 			index->set_modified(mtr);
 		}
-
-		ut_ad(rec_get_deleted_flag(btr_pcur_get_rec(pcur),
-					   dict_table_is_comp(node->table)));
 
 		/* This operation is analogous to purge, we can free
 		also inherited externally stored fields. We can also
@@ -411,8 +430,7 @@ row_undo_mod_clust(
 		rollback=false, just like purge does. */
 		btr_cur_pessimistic_delete(&err, FALSE, &pcur->btr_cur, 0,
 					   false, &mtr);
-		ut_ad(err == DB_SUCCESS
-		      || err == DB_OUT_OF_FILE_SPACE);
+		ut_ad(err == DB_SUCCESS || err == DB_OUT_OF_FILE_SPACE);
 	} else if (!index->table->is_temporary() && node->new_trx_id) {
 		/* We rolled back a record so that it still exists.
 		We must reset the DB_TRX_ID if the history is no
@@ -423,7 +441,8 @@ row_undo_mod_clust(
 			goto mtr_commit_exit;
 		}
 		rec_t* rec = btr_pcur_get_rec(pcur);
-		mtr.s_lock(&purge_sys.latch, __FILE__, __LINE__);
+		have_latch = true;
+		purge_sys.latch.rd_lock(SRW_LOCK_CALL);
 		if (!purge_sys.changes_visible(node->new_trx_id,
 					       node->table->name)) {
 			goto mtr_commit_exit;
@@ -495,6 +514,10 @@ row_undo_mod_clust(
 	}
 
 mtr_commit_exit:
+	if (have_latch) {
+		purge_sys.latch.rd_unlock();
+	}
+
 	btr_pcur_commit_specify_mtr(pcur, &mtr);
 
 func_exit:
@@ -891,37 +914,6 @@ func_exit_no_pcur:
 }
 
 /***********************************************************//**
-Flags a secondary index corrupted. */
-static MY_ATTRIBUTE((nonnull))
-void
-row_undo_mod_sec_flag_corrupted(
-/*============================*/
-	trx_t*		trx,	/*!< in/out: transaction */
-	dict_index_t*	index)	/*!< in: secondary index */
-{
-	ut_ad(!dict_index_is_clust(index));
-
-	switch (trx->dict_operation_lock_mode) {
-	case RW_S_LATCH:
-		/* Because row_undo() is holding an S-latch
-		on the data dictionary during normal rollback,
-		we can only mark the index corrupted in the
-		data dictionary cache. TODO: fix this somehow.*/
-		mutex_enter(&dict_sys.mutex);
-		dict_set_corrupted_index_cache_only(index);
-		mutex_exit(&dict_sys.mutex);
-		break;
-	default:
-		ut_ad(0);
-		/* fall through */
-	case RW_X_LATCH:
-		/* This should be the rollback of a data dictionary
-		transaction. */
-		dict_set_corrupted(index, trx, "rollback");
-	}
-}
-
-/***********************************************************//**
 Undoes a modify in secondary indexes when undo record type is UPD_DEL.
 @return DB_SUCCESS or DB_OUT_OF_FILE_SPACE */
 static MY_ATTRIBUTE((nonnull, warn_unused_result))
@@ -1034,8 +1026,7 @@ row_undo_mod_del_mark_sec(
 		}
 
 		if (err == DB_DUPLICATE_KEY) {
-			row_undo_mod_sec_flag_corrupted(
-				thr_get_trx(thr), index);
+			index->type |= DICT_CORRUPT;
 			err = DB_SUCCESS;
 			/* Do not return any error to the caller. The
 			duplicate will be reported by ALTER TABLE or
@@ -1180,8 +1171,7 @@ row_undo_mod_upd_exist_sec(
 		}
 
 		if (err == DB_DUPLICATE_KEY) {
-			row_undo_mod_sec_flag_corrupted(
-				thr_get_trx(thr), index);
+			index->type |= DICT_CORRUPT;
 			err = DB_SUCCESS;
 		} else if (err != DB_SUCCESS) {
 			break;
@@ -1225,11 +1215,11 @@ static bool row_undo_mod_parse_undo_rec(undo_node_t* node, bool dict_locked)
 		node->table = dict_table_open_on_id(table_id, dict_locked,
 						    DICT_TABLE_OP_NORMAL);
 	} else if (!dict_locked) {
-		mutex_enter(&dict_sys.mutex);
-		node->table = dict_sys.get_temporary_table(table_id);
-		mutex_exit(&dict_sys.mutex);
+		dict_sys.mutex_lock();
+		node->table = dict_sys.acquire_temporary_table(table_id);
+		dict_sys.mutex_unlock();
 	} else {
-		node->table = dict_sys.get_temporary_table(table_id);
+		node->table = dict_sys.acquire_temporary_table(table_id);
 	}
 
 	if (!node->table) {
@@ -1344,6 +1334,8 @@ row_undo_mod(
 		return DB_SUCCESS;
 	}
 
+	ut_ad(node->table->is_temporary()
+	      || lock_table_has_locks(node->table));
 	node->index = dict_table_get_first_index(node->table);
 	ut_ad(dict_index_is_clust(node->index));
 

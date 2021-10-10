@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2018, 2020, MariaDB Corporation.
+Copyright (c) 2018, 2021, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -1783,8 +1783,9 @@ pars_create_table(
 
 	n_cols = que_node_list_get_len(column_defs);
 
-	table = dict_mem_table_create(
-		table_sym->name, NULL, n_cols, 0, flags, flags2);
+	table = dict_table_t::create(
+		{table_sym->name, strlen(table_sym->name)},
+		nullptr, n_cols, 0, flags, flags2);
 
 	mem_heap_t* heap = pars_sym_tab_global->heap;
 	column = column_defs;
@@ -1802,9 +1803,7 @@ pars_create_table(
 	}
 
 	dict_table_add_system_columns(table, heap);
-	node = tab_create_graph_create(table, heap,
-				       FIL_ENCRYPTION_DEFAULT,
-				       FIL_DEFAULT_ENCRYPTION_KEY);
+	node = tab_create_graph_create(table, heap);
 
 	table_sym->resolved = TRUE;
 	table_sym->token_type = SYM_TABLE;
@@ -1858,7 +1857,9 @@ pars_create_index(
 	}
 
 	node = ind_create_graph_create(index, table_sym->name,
-				       pars_sym_tab_global->heap);
+				       pars_sym_tab_global->heap,
+				       FIL_ENCRYPTION_DEFAULT,
+				       FIL_DEFAULT_ENCRYPTION_KEY);
 
 	table_sym->resolved = TRUE;
 	table_sym->token_type = SYM_TABLE;
@@ -1886,7 +1887,7 @@ pars_procedure_definition(
 
 	heap = pars_sym_tab_global->heap;
 
-	fork = que_fork_create(NULL, NULL, QUE_FORK_PROCEDURE, heap);
+	fork = que_fork_create(heap);
 	fork->trx = NULL;
 
 	thr = que_thr_create(fork, heap, NULL);
@@ -1912,22 +1913,6 @@ pars_procedure_definition(
 	pars_sym_tab_global->query_graph = fork;
 
 	return(fork);
-}
-
-/*************************************************************//**
-Parses a stored procedure call, when this is not within another stored
-procedure, that is, the client issues a procedure call directly.
-In MySQL/InnoDB, stored InnoDB procedures are invoked via the
-parsed procedure tree, not via InnoDB SQL, so this function is not used.
-@return query graph */
-que_fork_t*
-pars_stored_procedure_call(
-/*=======================*/
-	sym_node_t*	sym_node MY_ATTRIBUTE((unused)))
-					/*!< in: stored procedure name */
-{
-	ut_error;
-	return(NULL);
 }
 
 /*************************************************************//**
@@ -1988,7 +1973,7 @@ pars_sql(
 	heap = mem_heap_create(16000);
 
 	/* Currently, the parser is not reentrant: */
-	ut_ad(mutex_own(&dict_sys.mutex));
+	dict_sys.assert_locked();
 
 	pars_sym_tab_global = sym_tab_create(heap);
 
@@ -2021,8 +2006,7 @@ pars_sql(
 }
 
 /** Completes a query graph by adding query thread and fork nodes
-above it and prepares the graph for running. The fork created is of
-type QUE_FORK_MYSQL_INTERFACE.
+above it and prepares the graph for running.
 @param[in]	node		root node for an incomplete query
 				graph, or NULL for dummy graph
 @param[in]	trx		transaction handle
@@ -2039,7 +2023,7 @@ pars_complete_graph_for_exec(
 	que_fork_t*	fork;
 	que_thr_t*	thr;
 
-	fork = que_fork_create(NULL, NULL, QUE_FORK_MYSQL_INTERFACE, heap);
+	fork = que_fork_create(heap);
 	fork->trx = trx;
 
 	thr = que_thr_create(fork, heap, prebuilt);

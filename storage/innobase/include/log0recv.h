@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1997, 2016, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2017, 2020, MariaDB Corporation.
+Copyright (c) 2017, 2021, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -26,12 +26,13 @@ Created 9/20/1997 Heikki Tuuri
 
 #pragma once
 
-#include "ut0byte.h"
+#include "ut0new.h"
 #include "buf0types.h"
 #include "log0log.h"
 #include "mtr0types.h"
 
 #include <deque>
+#include <map>
 
 /** @return whether recovery is currently running. */
 #define recv_recovery_is_on() UNIV_UNLIKELY(recv_sys.recovery_on)
@@ -208,14 +209,25 @@ struct page_recv_t
 struct recv_sys_t
 {
   /** mutex protecting apply_log_recs and page_recv_t::state */
-  ib_mutex_t mutex;
+  mysql_mutex_t mutex;
+private:
+  /** condition variable for
+  !apply_batch_on || pages.empty() || found_corrupt_log || found_corrupt_fs */
+  pthread_cond_t cond;
+  /** whether recv_apply_hashed_log_recs() is running */
+  bool apply_batch_on;
+  /** set when finding a corrupt log block or record, or there is a
+  log parsing buffer overflow */
+  bool found_corrupt_log;
+  /** set when an inconsistency with the file system contents is detected
+  during log scan or apply */
+  bool found_corrupt_fs;
+public:
   /** whether we are applying redo log records during crash recovery */
   bool recovery_on;
   /** whether recv_recover_page(), invoked from buf_page_read_complete(),
   should apply log records*/
   bool apply_log_recs;
-	/** whether recv_apply_hashed_log_recs() is running */
-	bool		apply_batch_on;
 	byte*		buf;	/*!< buffer for parsing log records */
 	ulint		len;	/*!< amount of data in buf */
 	lsn_t		parse_start_lsn;
@@ -235,14 +247,6 @@ struct recv_sys_t
 	lsn_t		recovered_lsn;
 				/*!< the log records have been parsed up to
 				this lsn */
-	bool		found_corrupt_log;
-				/*!< set when finding a corrupt log
-				block or record, or there is a log
-				parsing buffer overflow */
-	bool		found_corrupt_fs;
-				/*!< set when an inconsistency with
-				the file system contents is detected
-				during log scan or apply */
 	lsn_t		mlog_checkpoint_lsn;
 				/*!< the LSN of a FILE_CHECKPOINT
 				record, or 0 if none was parsed */
@@ -381,6 +385,18 @@ public:
   @param page_id  corrupted page identifier */
   ATTRIBUTE_COLD void free_corrupted_page(page_id_t page_id);
 
+  /** Flag data file corruption during recovery. */
+  ATTRIBUTE_COLD void set_corrupt_fs();
+  /** Flag log file corruption during recovery. */
+  ATTRIBUTE_COLD void set_corrupt_log();
+  /** Possibly finish a recovery batch. */
+  inline void maybe_finish_batch();
+
+  /** @return whether data file corruption was found */
+  bool is_corrupt_fs() const { return UNIV_UNLIKELY(found_corrupt_fs); }
+  /** @return whether log file corruption was found */
+  bool is_corrupt_log() const { return UNIV_UNLIKELY(found_corrupt_log); }
+
   /** Attempt to initialize a page based on redo log records.
   @param page_id  page identifier
   @return the recovered block
@@ -389,6 +405,15 @@ public:
   {
     return UNIV_UNLIKELY(recovery_on) ? recover_low(page_id) : nullptr;
   }
+
+  /** Try to recover a tablespace that was not readable earlier
+  @param p          iterator, initially pointing to page_id_t{space_id,0};
+                    the records will be freed and the iterator advanced
+  @param name       tablespace file name
+  @param free_block spare buffer block
+  @return whether recovery failed */
+  bool recover_deferred(map::iterator &p, const std::string &name,
+                        buf_block_t *&free_block);
 };
 
 /** The recovery system */

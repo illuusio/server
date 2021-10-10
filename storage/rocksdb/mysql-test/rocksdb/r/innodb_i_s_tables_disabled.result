@@ -19,10 +19,8 @@ page_size	buffer_pool_instance	pages_used	pages_free	relocation_ops	relocation_t
 SELECT * FROM INFORMATION_SCHEMA.INNODB_METRICS;
 NAME	SUBSYSTEM	COUNT	MAX_COUNT	MIN_COUNT	AVG_COUNT	COUNT_RESET	MAX_COUNT_RESET	MIN_COUNT_RESET	AVG_COUNT_RESET	TIME_ENABLED	TIME_DISABLED	TIME_ELAPSED	TIME_RESET	ENABLED	TYPE	COMMENT
 metadata_table_handles_opened	metadata	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of table handles opened
-metadata_table_handles_closed	metadata	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of table handles closed
-metadata_table_reference_count	metadata	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Table reference counter
-lock_deadlocks	lock	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of deadlocks
-lock_timeouts	lock	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of lock timeouts
+lock_deadlocks	lock	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	value	Number of deadlocks
+lock_timeouts	lock	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	value	Number of lock timeouts
 lock_rec_lock_waits	lock	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of times enqueued into record lock wait queue
 lock_table_lock_waits	lock	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of times enqueued into table lock wait queue
 lock_rec_lock_requests	lock	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of record locks requested
@@ -92,12 +90,8 @@ buffer_flush_background_pages	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL
 buffer_LRU_batch_scanned	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	set_owner	Total pages scanned as part of LRU batch
 buffer_LRU_batch_num_scan	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	set_member	Number of times LRU batch is called
 buffer_LRU_batch_scanned_per_call	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	set_member	Pages scanned per LRU batch call
-buffer_LRU_batch_flush_total_pages	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	set_owner	Total pages flushed as part of LRU batches
-buffer_LRU_batches_flush	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	set_member	Number of LRU batches
-buffer_LRU_batch_flush_pages	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	set_member	Pages queued as an LRU batch
-buffer_LRU_batch_evict_total_pages	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	set_owner	Total pages evicted as part of LRU batches
-buffer_LRU_batches_evict	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	set_member	Number of LRU batches
-buffer_LRU_batch_evict_pages	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	set_member	Pages queued as an LRU batch
+buffer_LRU_batch_flush_total_pages	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Total pages flushed as part of LRU batches
+buffer_LRU_batch_evict_total_pages	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Total pages evicted as part of LRU batches
 buffer_LRU_single_flush_failure_count	Buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of times attempt to flush a single page from LRU failed
 buffer_LRU_get_free_search	Buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of searches performed for a clean page
 buffer_LRU_search_scanned	buffer	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	set_owner	Total pages scanned as part of LRU search
@@ -153,7 +147,6 @@ trx_nl_ro_commits	transaction	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	N
 trx_commits_insert_update	transaction	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of transactions committed with inserts and updates
 trx_rollbacks	transaction	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of transactions rolled back
 trx_rollbacks_savepoint	transaction	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of transactions rolled back to savepoint
-trx_active_transactions	transaction	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of active transactions
 trx_rseg_history_len	transaction	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	value	Length of the TRX_RSEG_HISTORY list
 trx_undo_slots_used	transaction	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of undo slots used
 trx_undo_slots_cached	transaction	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of undo slots cached
@@ -217,7 +210,6 @@ innodb_master_thread_sleeps	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	N
 innodb_activity_count	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Current server activity count
 innodb_master_active_loops	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of times master thread performs its tasks when server is active
 innodb_master_idle_loops	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of times master thread performs its tasks when server is idle
-innodb_background_drop_table_usec	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Time (in microseconds) spent to process drop table list
 innodb_log_flush_usec	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Time (in microseconds) spent to flush log records
 innodb_dict_lru_usec	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Time (in microseconds) spent to process DICT LRU list
 innodb_dict_lru_count_active	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of tables evicted from DICT LRU list in the active loop
@@ -225,15 +217,6 @@ innodb_dict_lru_count_idle	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NU
 innodb_dblwr_writes	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of doublewrite operations that have been performed (innodb_dblwr_writes)
 innodb_dblwr_pages_written	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of pages that have been written for doublewrite operations (innodb_dblwr_pages_written)
 innodb_page_size	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	value	InnoDB page size in bytes (innodb_page_size)
-innodb_rwlock_s_spin_waits	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of rwlock spin waits due to shared latch request
-innodb_rwlock_x_spin_waits	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of rwlock spin waits due to exclusive latch request
-innodb_rwlock_sx_spin_waits	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of rwlock spin waits due to sx latch request
-innodb_rwlock_s_spin_rounds	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of rwlock spin loop rounds due to shared latch request
-innodb_rwlock_x_spin_rounds	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of rwlock spin loop rounds due to exclusive latch request
-innodb_rwlock_sx_spin_rounds	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of rwlock spin loop rounds due to sx latch request
-innodb_rwlock_s_os_waits	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of OS waits due to shared latch request
-innodb_rwlock_x_os_waits	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of OS waits due to exclusive latch request
-innodb_rwlock_sx_os_waits	server	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of OS waits due to sx latch request
 dml_reads	dml	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of rows read
 dml_inserts	dml	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of rows inserted
 dml_deletes	dml	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of rows deleted
@@ -243,7 +226,6 @@ dml_system_inserts	dml	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	s
 dml_system_deletes	dml	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of system rows deleted
 dml_system_updates	dml	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	status_counter	Number of system rows updated
 ddl_background_drop_indexes	ddl	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of indexes waiting to be dropped after failed index creation
-ddl_background_drop_tables	ddl	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of tables in background drop table list
 ddl_online_create_index	ddl	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of indexes being created online
 ddl_pending_alter_table	ddl	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of ALTER TABLE, CREATE INDEX, DROP INDEX in progress
 ddl_sort_file_alter_table	ddl	0	NULL	NULL	NULL	0	NULL	NULL	NULL	NULL	NULL	NULL	NULL	0	counter	Number of sort files created during alter table
@@ -321,6 +303,4 @@ ID	FOR_NAME	REF_NAME	N_COLS	TYPE
 SELECT * FROM INFORMATION_SCHEMA.INNODB_SYS_FOREIGN_COLS;
 ID	FOR_COL_NAME	REF_COL_NAME	POS
 SELECT * FROM INFORMATION_SCHEMA.INNODB_SYS_TABLESPACES;
-SPACE	NAME	FLAG	ROW_FORMAT	PAGE_SIZE	ZIP_PAGE_SIZE	FS_BLOCK_SIZE	FILE_SIZE	ALLOCATED_SIZE
-SELECT * FROM INFORMATION_SCHEMA.INNODB_SYS_DATAFILES;
-SPACE	PATH
+SPACE	NAME	FLAG	ROW_FORMAT	PAGE_SIZE	FILENAME	FS_BLOCK_SIZE	FILE_SIZE	ALLOCATED_SIZE

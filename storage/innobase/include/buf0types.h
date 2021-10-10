@@ -24,9 +24,7 @@ The database buffer pool global types for the directory
 Created 11/17/1995 Heikki Tuuri
 *******************************************************/
 
-#ifndef buf0types_h
-#define buf0types_h
-
+#pragma once
 #include "univ.i"
 
 /** Buffer page (uncompressed or compressed) */
@@ -54,44 +52,26 @@ enum buf_io_fix {
 /** Alternatives for srv_checksum_algorithm, which can be changed by
 setting innodb_checksum_algorithm */
 enum srv_checksum_algorithm_t {
-	SRV_CHECKSUM_ALGORITHM_CRC32,		/*!< Write crc32, allow crc32,
-						innodb or none when reading */
-	SRV_CHECKSUM_ALGORITHM_STRICT_CRC32,	/*!< Write crc32, allow crc32
-						when reading */
-	SRV_CHECKSUM_ALGORITHM_INNODB,		/*!< Write innodb, allow crc32,
-						innodb or none when reading */
-	SRV_CHECKSUM_ALGORITHM_STRICT_INNODB,	/*!< Write innodb, allow
-						innodb when reading */
-	SRV_CHECKSUM_ALGORITHM_NONE,		/*!< Write none, allow crc32,
-						innodb or none when reading */
-	SRV_CHECKSUM_ALGORITHM_STRICT_NONE,	/*!< Write none, allow none
-						when reading */
-
-	/** For new files, always compute CRC-32C for the whole page.
-	For old files, allow crc32, innodb or none when reading. */
-	SRV_CHECKSUM_ALGORITHM_FULL_CRC32,
-
-	/** For new files, always compute CRC-32C for the whole page.
-	For old files, allow crc32 when reading. */
-	SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32
+  /** Write crc32; allow full_crc32,crc32,innodb,none when reading */
+  SRV_CHECKSUM_ALGORITHM_CRC32,
+  /** Write crc32; allow full_crc23,crc32 when reading */
+  SRV_CHECKSUM_ALGORITHM_STRICT_CRC32,
+  /** For new files, always compute CRC-32C for the whole page.
+  For old files, allow crc32, innodb or none when reading. */
+  SRV_CHECKSUM_ALGORITHM_FULL_CRC32,
+  /** For new files, always compute CRC-32C for the whole page.
+  For old files, allow crc32 when reading. */
+  SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32
 };
 
-inline
-bool
-is_checksum_strict(srv_checksum_algorithm_t algo)
+inline bool is_checksum_strict(srv_checksum_algorithm_t algo)
 {
-	return(algo == SRV_CHECKSUM_ALGORITHM_STRICT_CRC32
-	       || algo == SRV_CHECKSUM_ALGORITHM_STRICT_INNODB
-	       || algo == SRV_CHECKSUM_ALGORITHM_STRICT_NONE);
+  return algo == SRV_CHECKSUM_ALGORITHM_STRICT_CRC32;
 }
 
-inline
-bool
-is_checksum_strict(ulint algo)
+inline bool is_checksum_strict(ulint algo)
 {
-	return(algo == SRV_CHECKSUM_ALGORITHM_STRICT_CRC32
-	       || algo == SRV_CHECKSUM_ALGORITHM_STRICT_INNODB
-	       || algo == SRV_CHECKSUM_ALGORITHM_STRICT_NONE);
+  return algo == SRV_CHECKSUM_ALGORITHM_STRICT_CRC32;
 }
 
 /** Parameters of binary buddy system for compressed pages (buf0buddy.h) */
@@ -119,6 +99,7 @@ this must be equal to srv_page_size */
 class page_id_t
 {
 public:
+
   /** Constructor from (space, page_no).
   @param[in]	space	tablespace id
   @param[in]	page_no	page number */
@@ -172,6 +153,7 @@ public:
   }
 
   ulonglong raw() { return m_id; }
+
 private:
   /** The page identifier */
   uint64_t m_id;
@@ -185,9 +167,16 @@ extern const byte *field_ref_zero;
 
 #ifndef UNIV_INNOCHECKSUM
 
-#include "ut0mutex.h"
-#include "sync0rw.h"
-#include "rw_lock.h"
+/** Latch types */
+enum rw_lock_type_t
+{
+  RW_S_LATCH= 1 << 0,
+  RW_X_LATCH= 1 << 1,
+  RW_SX_LATCH= 1 << 2,
+  RW_NO_LATCH= 1 << 3
+};
+
+#include "sux_lock.h"
 
 class page_hash_latch : public rw_lock
 {
@@ -221,5 +210,3 @@ public:
 };
 
 #endif /* !UNIV_INNOCHECKSUM */
-
-#endif /* buf0types.h */

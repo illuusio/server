@@ -40,16 +40,22 @@ then
 git clean -fdX
 cd ./libmariadb
 git submodule update
+git clean -fdX
 cd ../storage/rocksdb/rocksdb
+git clean -fdX
 git submodule update
+git clean -fdX
 cd ../../maria/libmarias3
 git submodule update
+git clean -fdX
 cd ../../..
 cd storage/columnstore/columnstore
 git submodule update
+git clean -fdX
 cd ../../..
 cd wsrep-lib
 git submodule update
+git clean -fdX
 cd .."
 fi
 commands="$commands
@@ -67,7 +73,8 @@ if [ -z "$just_configure" -a -z "$just_clean" ]
 then
   commands="$commands
 
-$make $AM_MAKEFLAGS $AM_EXTRA_MAKEFLAGS"
+$make $AM_MAKEFLAGS $AM_EXTRA_MAKEFLAGS
+$make tags"
 
   if [ "x$strip" = "xyes" ]
   then

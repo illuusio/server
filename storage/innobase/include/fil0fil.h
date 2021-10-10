@@ -33,6 +33,7 @@ Created 10/25/1995 Heikki Tuuri
 
 #ifndef UNIV_INNOCHECKSUM
 
+#include "srw_lock.h"
 #include "buf0dblwr.h"
 #include "hash0hash.h"
 #include "log0recv.h"
@@ -43,6 +44,10 @@ Created 10/25/1995 Heikki Tuuri
 
 struct unflushed_spaces_tag_t;
 struct rotation_list_tag_t;
+struct space_list_tag_t;
+struct named_spaces_tag_t;
+
+using space_list_t= ilist<fil_space_t, space_list_tag_t>;
 
 // Forward declaration
 extern my_bool srv_use_doublewrite_buf;
@@ -60,13 +65,11 @@ enum srv_flush_t
   /** do not flush after writing */
   SRV_NOSYNC,
   /** invoke os_file_set_nocache() on data files. This implies using
-  non-buffered IO but still using fsync, the reason for which is that
-  some FS do not flush meta-data when unbuffered IO happens */
+  unbuffered I/O but still fdatasync(), because some filesystems might
+  not flush meta-data on write completion */
   SRV_O_DIRECT,
-  /** do not use fsync() when using direct IO i.e.: it can be set to
-  avoid the fsync() call that we make when using SRV_UNIX_O_DIRECT.
-  However, in this case user/DBA should be sure about the integrity of
-  the meta-data */
+  /** Like O_DIRECT, but skip fdatasync(), assuming that the data is
+  durable on write completion */
   SRV_O_DIRECT_NO_FSYNC
 #ifdef _WIN32
   /** Traditional Windows appoach to open all files without caching,
@@ -332,17 +335,27 @@ enum fil_encryption_t
   FIL_ENCRYPTION_OFF
 };
 
-struct fil_space_t final :
-  ilist_node<unflushed_spaces_tag_t>, ilist_node<rotation_list_tag_t>
+struct fil_space_t final : ilist_node<unflushed_spaces_tag_t>,
+                           ilist_node<rotation_list_tag_t>,
+                           ilist_node<space_list_tag_t>,
+                           ilist_node<named_spaces_tag_t>
 #else
 struct fil_space_t final
 #endif
 {
 #ifndef UNIV_INNOCHECKSUM
   friend fil_node_t;
+  ~fil_space_t()
+  {
+    ut_ad(!latch_owner);
+    ut_ad(!latch_count);
+    latch.destroy();
+  }
+
 	ulint		id;	/*!< space id */
-	hash_node_t	hash;	/*!< hash chain node */
-	char*		name;	/*!< Tablespace name */
+
+  /** fil_system.spaces chain node */
+  fil_space_t *hash;
 	lsn_t		max_lsn;
 				/*!< LSN of the most recent
 				fil_names_write_if_was_clean().
@@ -372,6 +385,14 @@ struct fil_space_t final
 				/*!< number of reserved free extents for
 				ongoing operations like B-tree page split */
 private:
+#ifdef UNIV_DEBUG
+  fil_space_t *next_in_space_list();
+  fil_space_t *prev_in_space_list();
+
+  fil_space_t *next_in_unflushed_spaces();
+  fil_space_t *prev_in_unflushed_spaces();
+#endif
+
   /** the committed size of the tablespace in pages */
   Atomic_relaxed<uint32_t> committed_size;
   /** Number of pending operations on the file.
@@ -389,15 +410,11 @@ private:
   static constexpr uint32_t NEEDS_FSYNC= 1U << 29;
   /** The reference count */
   static constexpr uint32_t PENDING= ~(STOPPING | CLOSING | NEEDS_FSYNC);
+  /** latch protecting all page allocation bitmap pages */
+  srw_lock latch;
+  os_thread_id_t latch_owner;
+  ut_d(Atomic_relaxed<uint32_t> latch_count;)
 public:
-	rw_lock_t	latch;	/*!< latch protecting the file space storage
-				allocation */
-	UT_LIST_NODE_T(fil_space_t) named_spaces;
-				/*!< list of spaces for which FILE_MODIFY
-				records have been issued */
-	UT_LIST_NODE_T(fil_space_t) space_list;
-				/*!< list of all spaces */
-
 	/** MariaDB encryption data */
 	fil_space_crypt_t* crypt_data;
 
@@ -406,13 +423,6 @@ public:
 
 	/** Checks that this tablespace needs key rotation. */
 	bool is_in_default_encrypt;
-
-	/** True if the device this filespace is on supports atomic writes */
-	bool		atomic_write_supported;
-
-	/** True if file system storing this tablespace supports
-	punch hole */
-	bool		punch_hole;
 
 	/** mutex to protect freed ranges */
 	std::mutex	freed_range_mutex;
@@ -427,11 +437,7 @@ public:
 	ulint		magic_n;/*!< FIL_SPACE_MAGIC_N */
 
   /** @return whether doublewrite buffering is needed */
-  bool use_doublewrite() const
-  {
-    return !atomic_write_supported && srv_use_doublewrite_buf &&
-      buf_dblwr.is_initialised();
-  }
+  inline bool use_doublewrite() const;
 
 	/** Append a file to the chain of files of a space.
 	@param[in]	name		file name of a file that is not open
@@ -458,7 +464,6 @@ public:
 	@return	whether the reservation succeeded */
 	bool reserve_free_extents(uint32_t n_free_now, uint32_t n_to_reserve)
 	{
-		ut_ad(rw_lock_own(&latch, RW_LOCK_X));
 		if (n_reserved_extents + n_to_reserve > n_free_now) {
 			return false;
 		}
@@ -472,20 +477,18 @@ public:
 	void release_free_extents(uint32_t n_reserved)
 	{
 		if (!n_reserved) return;
-		ut_ad(rw_lock_own(&latch, RW_LOCK_X));
 		ut_a(n_reserved_extents >= n_reserved);
 		n_reserved_extents -= n_reserved;
 	}
 
-	/** Rename a file.
-	@param[in]	name	table name after renaming
-	@param[in]	path	tablespace file name after renaming
-	@param[in]	log	whether to write redo log
-	@param[in]	replace	whether to ignore the existence of path
-	@return	error code
-	@retval	DB_SUCCESS	on success */
-	dberr_t rename(const char* name, const char* path, bool log,
-		       bool replace = false);
+  /** Rename a file.
+  @param[in]	path	tablespace file name after renaming
+  @param[in]	log	whether to write redo log
+  @param[in]	replace	whether to ignore the existence of path
+  @return	error code
+  @retval	DB_SUCCESS	on success */
+  dberr_t rename(const char *path, bool log, bool replace= false)
+    MY_ATTRIBUTE((nonnull));
 
   /** Note that the tablespace has been imported.
   Initially, purpose=FIL_TYPE_IMPORT so that no redo log is
@@ -495,6 +498,10 @@ public:
   /** @return whether the storage device is rotational (HDD, not SSD) */
   inline bool is_rotational() const;
 
+  /** whether the tablespace discovery is being deferred during crash
+  recovery due to incompletely written page 0 */
+  inline bool is_deferred() const;
+
   /** Open each file. Never invoked on .ibd files.
   @param create_new_db    whether to skip the call to fil_node_t::read_page0()
   @return whether all files were opened */
@@ -502,8 +509,18 @@ public:
   /** Close each file. Only invoked on fil_system.temp_space. */
   void close();
 
-  /** Note that operations on the tablespace must stop or can resume */
-  inline void set_stopping(bool stopping);
+  /** Note that operations on the tablespace must stop.
+  @return whether the operations were already stopped */
+  inline bool set_stopping();
+
+  /** Note that operations on the tablespace can resume after truncation */
+  inline void clear_stopping();
+
+  /** Look up the tablespace and wait for pending operations to cease
+  @param id  tablespace identifier
+  @return tablespace
+  @retval nullptr if no tablespace was found */
+  static fil_space_t *check_pending_operations(ulint id);
 
 private:
   MY_ATTRIBUTE((warn_unused_result))
@@ -895,7 +912,6 @@ public:
 #ifndef UNIV_INNOCHECKSUM
   MY_ATTRIBUTE((warn_unused_result))
   /** Create a tablespace in fil_system.
-  @param name       tablespace name
   @param id         tablespace identifier
   @param flags      tablespace flags
   @param purpose    tablespace purpose
@@ -903,7 +919,7 @@ public:
   @param mode       encryption mode
   @return pointer to created tablespace, to be filled in with add()
   @retval nullptr on failure (such as when the same tablespace exists) */
-  static fil_space_t *create(const char *name, ulint id, ulint flags,
+  static fil_space_t *create(ulint id, ulint flags,
                              fil_type_t purpose, fil_space_crypt_t *crypt_data,
                              fil_encryption_t mode= FIL_ENCRYPTION_DEFAULT);
 
@@ -951,11 +967,7 @@ public:
   }
 
   /** Update committed_size in mtr_t::commit() */
-  void set_committed_size()
-  {
-    ut_ad(rw_lock_own(&latch, RW_LOCK_X));
-    committed_size= size;
-  }
+  void set_committed_size() { committed_size= size; }
 
   /** @return the last persisted page number */
   uint32_t last_page_number() const { return committed_size - 1; }
@@ -988,8 +1000,49 @@ public:
   @param encrypt  expected state of innodb_encrypt_tables
   @return the next tablespace
   @retval nullptr upon reaching the end of the iteration */
-  static inline fil_space_t *next(fil_space_t *space, bool recheck,
-                                  bool encrypt);
+  static space_list_t::iterator next(space_list_t::iterator space,
+                                     bool recheck, bool encrypt);
+
+#ifdef UNIV_DEBUG
+  bool is_latched() const { return latch_count != 0; }
+#endif
+  bool is_owner() const { return latch_owner == os_thread_get_curr_id(); }
+  /** Acquire the allocation latch in exclusive mode */
+  void x_lock()
+  {
+    latch.wr_lock(SRW_LOCK_CALL);
+    ut_ad(!latch_owner);
+    latch_owner= os_thread_get_curr_id();
+    ut_ad(!latch_count.fetch_add(1));
+  }
+  /** Release the allocation latch from exclusive mode */
+  void x_unlock()
+  {
+    ut_ad(latch_count.fetch_sub(1) == 1);
+    ut_ad(latch_owner == os_thread_get_curr_id());
+    latch_owner= 0;
+    latch.wr_unlock();
+  }
+  /** Acquire the allocation latch in shared mode */
+  void s_lock()
+  {
+    ut_ad(!is_owner());
+    latch.rd_lock(SRW_LOCK_CALL);
+    ut_ad(!latch_owner);
+    ut_d(latch_count.fetch_add(1));
+  }
+  /** Release the allocation latch from shared mode */
+  void s_unlock()
+  {
+    ut_ad(latch_count.fetch_sub(1));
+    ut_ad(!latch_owner);
+    latch.rd_unlock();
+  }
+
+  typedef span<const char> name_type;
+
+  /** @return the tablespace name (databasename/tablename) */
+  name_type name() const;
 
 private:
   /** @return whether the file is usable for io() */
@@ -1004,56 +1057,56 @@ private:
 /** File node of a tablespace or the log data space */
 struct fil_node_t final
 {
-	/** tablespace containing this file */
-	fil_space_t*	space;
-	/** file name; protected by fil_system.mutex and log_sys.mutex. */
-	char*		name;
-	/** file handle (valid if is_open) */
-	pfs_os_file_t	handle;
-	/** whether the file actually is a raw device or disk partition */
-	bool		is_raw_disk;
-	/** whether the file is on non-rotational media (SSD) */
-	bool		on_ssd;
-	/** size of the file in database pages (0 if not known yet);
-	the possible last incomplete megabyte may be ignored
-	if space->id == 0 */
-	uint32_t	size;
-	/** initial size of the file in database pages;
-	FIL_IBD_FILE_INITIAL_SIZE by default */
-	uint32_t	init_size;
-	/** maximum size of the file in database pages (0 if unlimited) */
-	uint32_t	max_size;
-	/** whether the file is currently being extended */
-	Atomic_relaxed<bool> being_extended;
-	/** link to other files in this tablespace */
-	UT_LIST_NODE_T(fil_node_t) chain;
+  /** tablespace containing this file */
+  fil_space_t *space;
+  /** file name; protected by fil_system.mutex and log_sys.mutex */
+  char *name;
+  /** file handle */
+  pfs_os_file_t handle;
+  /** whether the file is on non-rotational media (SSD) */
+  unsigned on_ssd:1;
+  /** how to write page_compressed tables
+  (0=do not punch holes but write minimal amount of data, 1=punch holes,
+  2=always write the same amount; thinly provisioned storage will compress) */
+  unsigned punch_hole:2;
+  /** whether this file could use atomic write */
+  unsigned atomic_write:1;
+  /** whether the file actually is a raw device or disk partition */
+  unsigned is_raw_disk:1;
+  /** whether the tablespace discovery is being deferred during crash
+  recovery due to incompletely written page 0 */
+  unsigned deferred:1;
 
-	/** whether this file could use atomic write (data file) */
-	bool		atomic_write;
+  /** size of the file in database pages (0 if not known yet);
+  the possible last incomplete megabyte may be ignored if space->id == 0 */
+  uint32_t size;
+  /** initial size of the file in database pages;
+  FIL_IBD_FILE_INITIAL_SIZE by default */
+  uint32_t init_size;
+  /** maximum size of the file in database pages (0 if unlimited) */
+  uint32_t max_size;
+  /** whether the file is currently being extended */
+  Atomic_relaxed<bool> being_extended;
+  /** link to other files in this tablespace */
+  UT_LIST_NODE_T(fil_node_t) chain;
 
-	/** Filesystem block size */
-	ulint		block_size;
+  /** Filesystem block size */
+  ulint block_size;
 
-	/** FIL_NODE_MAGIC_N */
-	ulint		magic_n;
+  /** @return whether this file is open */
+  bool is_open() const { return handle != OS_FILE_CLOSED; }
 
-	/** @return whether this file is open */
-	bool is_open() const
-	{
-		return(handle != OS_FILE_CLOSED);
-	}
+  /** Read the first page of a data file.
+  @return whether the page was found valid */
+  bool read_page0();
 
-	/** Read the first page of a data file.
-	@return	whether the page was found valid */
-	bool read_page0();
-
-	/** Determine some file metadata when creating or reading the file.
-	@param	file	the file that is being created, or OS_FILE_CLOSED */
-	void find_metadata(os_file_t file = OS_FILE_CLOSED
+  /** Determine some file metadata when creating or reading the file.
+  @param file   the file that is being created, or OS_FILE_CLOSED */
+  void find_metadata(os_file_t file= OS_FILE_CLOSED
 #ifndef _WIN32
-			   , struct stat* statbuf = NULL
+                     , bool create= false, struct stat *statbuf= nullptr
 #endif
-			   );
+                     );
 
   /** Close the file handle. */
   void close();
@@ -1072,8 +1125,11 @@ private:
   void prepare_to_close_or_detach();
 };
 
-/** Value of fil_node_t::magic_n */
-#define	FIL_NODE_MAGIC_N	89389
+inline bool fil_space_t::use_doublewrite() const
+{
+  return !UT_LIST_GET_FIRST(chain)->atomic_write && srv_use_doublewrite_buf &&
+    buf_dblwr.is_initialised();
+}
 
 inline void fil_space_t::set_imported()
 {
@@ -1091,6 +1147,11 @@ inline bool fil_space_t::is_rotational() const
   return false;
 }
 
+inline bool fil_space_t::is_deferred() const
+{
+  return UT_LIST_GET_FIRST(chain)->deferred;
+}
+
 /** Common InnoDB file extensions */
 enum ib_extention {
 	NO_EXT = 0,
@@ -1103,8 +1164,8 @@ extern const char* dot_ext[];
 #define DOT_ISL dot_ext[ISL]
 #define DOT_CFG dot_ext[CFG]
 
-/** When mysqld is run, the default directory "." is the mysqld datadir,
-but in the MySQL Embedded Server Library and mysqlbackup it is not the default
+/** When mariadbd is run, the default directory "." is the mysqld datadir,
+but in the MariaDB Embedded Server Library and mysqlbackup it is not the default
 directory, and we must set the base file path explicitly */
 extern const char*	fil_path_to_mysql_datadir;
 #else
@@ -1334,11 +1395,7 @@ struct fil_system_t {
     Some members may require late initialisation, thus we just mark object as
     uninitialised. Real initialisation happens in create().
   */
-  fil_system_t(): m_initialised(false)
-  {
-    UT_LIST_INIT(space_list, &fil_space_t::space_list);
-    UT_LIST_INIT(named_spaces, &fil_space_t::named_spaces);
-  }
+  fil_system_t() : m_initialised(false) {}
 
   bool is_initialised() const { return m_initialised; }
 
@@ -1373,12 +1430,13 @@ public:
 public:
   /** Detach a tablespace from the cache and close the files.
   @param space tablespace
-  @param detach_handle whether to detach or close handles
-  @return detached handles or empty vector */
-  std::vector<pfs_os_file_t> detach(fil_space_t *space,
-                                    bool detach_handle= false);
+  @param detach_handle whether to detach the handle, instead of closing
+  @return detached handle
+  @retval OS_FILE_CLOSED if no handle was detached */
+  pfs_os_file_t detach(fil_space_t *space, bool detach_handle= false);
 
-	ib_mutex_t	mutex;		/*!< The mutex protecting the cache */
+  /** the mutex protecting most data fields, and some fields of fil_space_t */
+  mysql_mutex_t mutex;
 	fil_space_t*	sys_space;	/*!< The innodb_system tablespace */
 	fil_space_t*	temp_space;	/*!< The innodb_temporary tablespace */
   /** Map of fil_space_t::id to fil_space_t* */
@@ -1396,9 +1454,9 @@ public:
   /** nonzero if fil_node_open_file_low() should avoid moving the tablespace
   to the end of space_list, for FIFO policy of try_to_close() */
   ulint freeze_space_list;
-	UT_LIST_BASE_NODE_T(fil_space_t) space_list;
+  ilist<fil_space_t, space_list_tag_t> space_list;
 					/*!< list of all file spaces */
-	UT_LIST_BASE_NODE_T(fil_space_t) named_spaces;
+  ilist<fil_space_t, named_spaces_tag_t> named_spaces;
 					/*!< list of all file spaces
 					for which a FILE_MODIFY
 					record has been written since
@@ -1426,6 +1484,11 @@ public:
 
   /** Extend all open data files to the recovered size */
   ATTRIBUTE_COLD void extend_to_recv_size();
+
+  /** Determine if a tablespace associated with a file name exists.
+  @param path   tablespace file name to look for
+  @return a matching tablespace */
+  inline fil_space_t *find(const char *path) const;
 };
 
 /** The tablespace memory cache. */
@@ -1434,23 +1497,32 @@ extern fil_system_t	fil_system;
 inline void fil_space_t::reacquire()
 {
   ut_d(uint32_t n=) n_pending.fetch_add(1, std::memory_order_relaxed);
-  ut_d(if (mutex_own(&fil_system.mutex)) return);
+#ifdef SAFE_MUTEX
+  if (mysql_mutex_is_owner(&fil_system.mutex)) return;
   ut_ad(n & PENDING);
   ut_ad(UT_LIST_GET_FIRST(chain)->is_open());
+#endif /* SAFE_MUTEX */
 }
 
-/** Note that operations on the tablespace must stop or can resume */
-inline void fil_space_t::set_stopping(bool stopping)
+/** Note that operations on the tablespace must stop.
+@return whether the operations were already stopped */
+inline bool fil_space_t::set_stopping()
 {
-  ut_ad(mutex_own(&fil_system.mutex));
-  ut_d(auto n=) n_pending.fetch_xor(STOPPING, std::memory_order_relaxed);
-  ut_ad(!(n & STOPPING) == stopping);
+  mysql_mutex_assert_owner(&fil_system.mutex);
+  return n_pending.fetch_or(STOPPING, std::memory_order_relaxed) & STOPPING;
+}
+
+inline void fil_space_t::clear_stopping()
+{
+  mysql_mutex_assert_owner(&fil_system.mutex);
+  ut_d(auto n=) n_pending.fetch_and(~STOPPING, std::memory_order_relaxed);
+  ut_ad(n & STOPPING);
 }
 
 /** Flush pending writes from the file system cache to the file. */
 template<bool have_reference> inline void fil_space_t::flush()
 {
-  ut_ad(!mutex_own(&fil_system.mutex));
+  mysql_mutex_assert_not_owner(&fil_system.mutex);
   ut_ad(!have_reference || (pending() & PENDING));
   ut_ad(purpose == FIL_TYPE_TABLESPACE || purpose == FIL_TYPE_IMPORT);
   if (srv_file_flush_method == SRV_O_DIRECT_NO_FSYNC)
@@ -1472,9 +1544,9 @@ inline uint32_t fil_space_t::get_size()
 {
   if (!size)
   {
-    mutex_enter(&fil_system.mutex);
+    mysql_mutex_lock(&fil_system.mutex);
     read_page0();
-    mutex_exit(&fil_system.mutex);
+    mysql_mutex_unlock(&fil_system.mutex);
   }
   return size;
 }
@@ -1526,20 +1598,12 @@ fil_write_flushed_lsn(
 	lsn_t	lsn)
 MY_ATTRIBUTE((warn_unused_result));
 
+MY_ATTRIBUTE((warn_unused_result))
 /** Delete a tablespace and associated .ibd file.
-@param[in]	id		tablespace identifier
-@param[in]	if_exists	whether to ignore missing tablespace
-@param[out]	leaked_handles	return detached handles here
-@return	DB_SUCCESS or error */
-dberr_t
-fil_delete_tablespace(ulint id, bool if_exists= false,
-                      std::vector<pfs_os_file_t> *detached_handles= nullptr);
-
-/** Prepare to truncate an undo tablespace.
-@param[in]	space_id	undo tablespace id
-@return	the tablespace
-@retval	NULL if the tablespace does not exist */
-fil_space_t* fil_truncate_prepare(ulint space_id);
+@param id    tablespace identifier
+@return detached file handle (to be closed by the caller)
+@return	OS_FILE_CLOSED if no file existed */
+pfs_os_file_t fil_delete_tablespace(ulint id);
 
 /** Close a single-table tablespace on failed IMPORT TABLESPACE.
 The tablespace must be cached in the memory cache.
@@ -1550,15 +1614,15 @@ void fil_close_tablespace(ulint id);
 Allocates and builds a file name from a path, a table or tablespace name
 and a suffix. The string must be freed by caller with ut_free().
 @param[in] path NULL or the directory path or the full path and filename.
-@param[in] name NULL if path is full, or Table/Tablespace name
-@param[in] suffix NULL or the file extention to use.
+@param[in] name {} if path is full, or Table/Tablespace name
+@param[in] ext the file extension to use
+@param[in] trim_name true if the last name on the path should be trimmed.
 @return own: file name */
-char*
-fil_make_filepath(
-	const char*	path,
-	const char*	name,
-	ib_extention	suffix,
-	bool		strip_name);
+char* fil_make_filepath(const char *path, const fil_space_t::name_type &name,
+                        ib_extention ext, bool trim_name);
+
+char *fil_make_filepath(const char* path, const table_name_t name,
+                        ib_extention suffix, bool strip_name);
 
 /** Create a tablespace file.
 @param[in]	space_id	Tablespace ID
@@ -1575,14 +1639,14 @@ must be >= FIL_IBD_FILE_INITIAL_SIZE
 fil_space_t*
 fil_ibd_create(
 	ulint		space_id,
-	const char*	name,
+	const table_name_t name,
 	const char*	path,
 	ulint		flags,
 	uint32_t	size,
 	fil_encryption_t mode,
 	uint32_t	key_id,
 	dberr_t*	err)
-	MY_ATTRIBUTE((nonnull(2,8), warn_unused_result));
+	MY_ATTRIBUTE((nonnull, warn_unused_result));
 
 /** Try to adjust FSP_SPACE_FLAGS if they differ from the expectations.
 (Typically when upgrading from MariaDB 10.1.0..10.1.20.)
@@ -1611,11 +1675,10 @@ If the fix_dict boolean is set, then it is safe to use an internal SQL
 statement to update the dictionary tables if they are incorrect.
 
 @param[in]	validate	true if we should validate the tablespace
-@param[in]	fix_dict	true if the dictionary is available to be fixed
 @param[in]	purpose		FIL_TYPE_TABLESPACE or FIL_TYPE_TEMPORARY
 @param[in]	id		tablespace ID
 @param[in]	flags		expected FSP_SPACE_FLAGS
-@param[in]	tablename	table name
+@param[in]	name		table name
 If file-per-table, it is the table name in the databasename/tablename format
 @param[in]	path_in		expected filepath, usually read from dictionary
 @param[out]	err		DB_SUCCESS or error code
@@ -1624,11 +1687,10 @@ If file-per-table, it is the table name in the databasename/tablename format
 fil_space_t*
 fil_ibd_open(
 	bool			validate,
-	bool			fix_dict,
 	fil_type_t		purpose,
 	ulint			id,
 	ulint			flags,
-	const table_name_t&	tablename,
+	fil_space_t::name_type	name,
 	const char*		path_in,
 	dberr_t*		err = NULL)
 	MY_ATTRIBUTE((warn_unused_result));
@@ -1641,7 +1703,9 @@ enum fil_load_status {
 	/** The file(s) were not found */
 	FIL_LOAD_NOT_FOUND,
 	/** The file(s) were not valid */
-	FIL_LOAD_INVALID
+	FIL_LOAD_INVALID,
+	/** The tablespace file was deferred to open */
+	FIL_LOAD_DEFER
 };
 
 /** Open a single-file tablespace and add it to the InnoDB data structures.
@@ -1661,15 +1725,10 @@ fil_ibd_load(
 memory cache. Note that if we have not done a crash recovery at the database
 startup, there may be many tablespaces which are not yet in the memory cache.
 @param[in]	id		Tablespace ID
-@param[in]	name		Tablespace name used in fil_space_t::create().
 @param[in]	table_flags	table flags
 @return the tablespace
 @retval	NULL	if no matching tablespace exists in the memory cache */
-fil_space_t*
-fil_space_for_table_exists_in_mem(
-	ulint		id,
-	const char*	name,
-	ulint		table_flags);
+fil_space_t *fil_space_for_table_exists_in_mem(ulint id, ulint table_flags);
 
 /** Try to extend a tablespace if it is smaller than the specified size.
 @param[in,out]	space	tablespace
@@ -1699,31 +1758,6 @@ void
 fil_delete_file(
 /*============*/
 	const char*	path);	/*!< in: filepath of the ibd tablespace */
-
-/********************************************************************//**
-Looks for a pre-existing fil_space_t with the given tablespace ID
-and, if found, returns the name and filepath in newly allocated buffers that the caller must free.
-@param[in] space_id The tablespace ID to search for.
-@param[out] name Name of the tablespace found.
-@param[out] fileapth The filepath of the first datafile for thtablespace found.
-@return true if tablespace is found, false if not. */
-bool
-fil_space_read_name_and_filepath(
-	ulint	space_id,
-	char**	name,
-	char**	filepath);
-
-/** Convert a file name to a tablespace name.
-@param[in]	filename	directory/databasename/tablename.ibd
-@return database/tablename string, to be freed with ut_free() */
-char*
-fil_path_to_space_name(
-	const char*	filename);
-
-/** Acquire the fil_system mutex. */
-#define fil_system_enter()	mutex_enter(&fil_system.mutex)
-/** Release the fil_system mutex. */
-#define fil_system_exit()	mutex_exit(&fil_system.mutex)
 
 /*******************************************************************//**
 Returns the table space by a given id, NULL if not found. */
@@ -1789,9 +1823,7 @@ void test_make_filepath();
 @param[in]	space		tablespace
 @param[in]	offset		page number
 @return	block size */
-UNIV_INTERN
-ulint
-fil_space_get_block_size(const fil_space_t* space, unsigned offset);
+ulint fil_space_get_block_size(const fil_space_t* space, unsigned offset);
 
 #include "fil0fil.ic"
 #endif /* UNIV_INNOCHECKSUM */

@@ -98,6 +98,8 @@ static const char *output_prefix= "";
 static char **defaults_argv= 0;
 static MEM_ROOT glob_root;
 
+static uint protocol_to_force= MYSQL_PROTOCOL_DEFAULT;
+
 #ifndef DBUG_OFF
 static const char *default_dbug_option = "d:t:o,/tmp/mariadb-binlog.trace";
 const char *current_dbug_option= default_dbug_option;
@@ -214,7 +216,7 @@ Log_event* read_remote_annotate_event(uchar* net_buf, ulong event_len,
   memcpy(event_buf, net_buf, event_len);
   event_buf[event_len]= 0;
 
-  if (!(event= Log_event::read_log_event((const char*) event_buf, event_len,
+  if (!(event= Log_event::read_log_event(event_buf, event_len,
                                          error_msg, glob_description_event,
                                          opt_verify_binlog_checksum)))
   {
@@ -225,7 +227,7 @@ Log_event* read_remote_annotate_event(uchar* net_buf, ulong event_len,
     Ensure the event->temp_buf is pointing to the allocated buffer.
     (TRUE = free temp_buf on the event deletion)
   */
-  event->register_temp_buf((char*)event_buf, TRUE);
+  event->register_temp_buf(event_buf, TRUE);
 
   return event;
 }
@@ -510,8 +512,7 @@ Exit_status Load_log_processor::load_old_format_file(NET* net,
       error("Illegal length of packet read from net.");
       return ERROR_STOP;
     }
-    if (my_write(file, (uchar*) net->read_pos, 
-		 (uint) packet_len, MYF(MY_WME|MY_NABP)))
+    if (my_write(file, net->read_pos, (uint) packet_len, MYF(MY_WME|MY_NABP)))
       return ERROR_STOP;
   }
   
@@ -1201,7 +1202,7 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
           (glob_description_event->flags & LOG_EVENT_BINLOG_IN_USE_F))
       {
         error("Attempting to dump binlog '%s', which was not closed properly. "
-              "Most probably, mysqld is still writing it, or it crashed. "
+              "Most probably, mariadbd is still writing it, or it crashed. "
               "Rerun with --force-if-open to ignore this problem.", logname);
         DBUG_RETURN(ERROR_STOP);
       }
@@ -1514,14 +1515,16 @@ static struct my_option my_options[] =
   {"base64-output", OPT_BASE64_OUTPUT_MODE,
     /* 'unspec' is not mentioned because it is just a placeholder. */
    "Determine when the output statements should be base64-encoded BINLOG "
-   "statements: 'never' doesn't print binlog row events and should not be "
-   "used when directing output to a MariaDB master; "
+   "statements: "
+   "‘never’ neither prints base64 encodings nor verbose event data, and "
+   "will exit on error if a row-based event is found. "
    "'decode-rows' decodes row events into commented SQL statements if the "
-   "--verbose option is also given; "
-   "'auto' prints base64 only when necessary (i.e., for row-based events and "
-   "format description events); "
-   "If no --base64-output=name option is given at all, the default is "
-   "'auto'.",
+   "--verbose option is also given. "
+   "‘auto’ outputs base64 encoded entries for row-based and format "
+   "description events. "
+   "If no option is given at all, the default is ‘auto', and is "
+   "consequently the only option that should be used when row-format events "
+   "are processed for re-execution.",
    &opt_base64_output_mode_str, &opt_base64_output_mode_str,
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   /*
@@ -1890,9 +1893,13 @@ static my_time_t convert_str_to_timestamp(const char* str)
 
 
 extern "C" my_bool
-get_one_option(const struct my_option *opt, const char *argument, const char *)
+get_one_option(const struct my_option *opt, const char *argument, const char *filename)
 {
   bool tty_password=0;
+
+  /* Track when protocol is set via CLI to not force overrides */
+  static my_bool ignore_protocol_override = FALSE;
+
   switch (opt->id) {
 #ifndef DBUG_OFF
   case '#':
@@ -1942,6 +1949,14 @@ get_one_option(const struct my_option *opt, const char *argument, const char *)
       sf_leaking_memory= 1; /* no memory leak reports here */
       die();
     }
+
+    /* Specification of protocol via CLI trumps implicit overrides */
+    if (filename[0] == '\0')
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
     break;
 #ifdef WHEN_FLASHBACK_REVIEW_READY
   case opt_flashback_review:
@@ -2017,6 +2032,38 @@ get_one_option(const struct my_option *opt, const char *argument, const char *)
     break;
   case OPT_PRINT_ROW_EVENT_POSITIONS:
     print_row_event_positions_used= 1;
+    break;
+  case 'P':
+    /* If port and socket are set, fall back to default behavior */
+    if (protocol_to_force == SOCKET_PROTOCOL_TO_FORCE)
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    /* If port is set via CLI, try to force protocol to TCP */
+    if (filename[0] == '\0' &&
+        !ignore_protocol_override &&
+        protocol_to_force == MYSQL_PROTOCOL_DEFAULT)
+    {
+      protocol_to_force = MYSQL_PROTOCOL_TCP;
+    }
+    break;
+  case 'S':
+    /* If port and socket are set, fall back to default behavior */
+    if (protocol_to_force == MYSQL_PROTOCOL_TCP)
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    /* Prioritize socket if set via command line */
+    if (filename[0] == '\0' &&
+        !ignore_protocol_override &&
+        protocol_to_force == MYSQL_PROTOCOL_DEFAULT)
+    {
+      protocol_to_force = SOCKET_PROTOCOL_TO_FORCE;
+    }
     break;
   case 'v':
     if (argument == disabled_my_option)
@@ -2302,7 +2349,7 @@ static Exit_status handle_event_text_mode(PRINT_EVENT_INFO *print_event_info,
   }
   else
   {
-    if (!(ev= Log_event::read_log_event((const char*) net->read_pos + 1 ,
+    if (!(ev= Log_event::read_log_event(net->read_pos + 1 ,
                                         *len - 1, &error_msg,
                                         glob_description_event,
                                         opt_verify_binlog_checksum)))
@@ -2314,7 +2361,7 @@ static Exit_status handle_event_text_mode(PRINT_EVENT_INFO *print_event_info,
       If reading from a remote host, ensure the temp_buf for the
       Log_event class is pointing to the incoming stream.
     */
-    ev->register_temp_buf((char *) net->read_pos + 1, FALSE);
+    ev->register_temp_buf(net->read_pos + 1, FALSE);
   }
 
   Log_event_type type= ev->get_type_code();
@@ -2415,7 +2462,7 @@ static Exit_status handle_event_raw_mode(PRINT_EVENT_INFO *print_event_info,
                                          const char* logname, uint logname_len)
 {
   const char *error_msg;
-  const unsigned char *read_pos= mysql->net.read_pos + 1;
+  const uchar *read_pos= mysql->net.read_pos + 1;
   Log_event_type type;
   DBUG_ENTER("handle_event_raw_mode");
   DBUG_ASSERT(opt_raw_mode && remote_opt);
@@ -2428,7 +2475,7 @@ static Exit_status handle_event_raw_mode(PRINT_EVENT_INFO *print_event_info,
   if (type == ROTATE_EVENT || type == FORMAT_DESCRIPTION_EVENT)
   {
     Log_event *ev;
-    if (!(ev= Log_event::read_log_event((const char*) read_pos ,
+    if (!(ev= Log_event::read_log_event(read_pos ,
                                         *len - 1, &error_msg,
                                         glob_description_event,
                                         opt_verify_binlog_checksum)))
@@ -2441,7 +2488,7 @@ static Exit_status handle_event_raw_mode(PRINT_EVENT_INFO *print_event_info,
       If reading from a remote host, ensure the temp_buf for the
       Log_event class is pointing to the incoming stream.
     */
-    ev->register_temp_buf((char *) read_pos, FALSE);
+    ev->register_temp_buf(const_cast<uchar*>(read_pos), FALSE);
 
     if (type == ROTATE_EVENT)
     {
@@ -2871,7 +2918,7 @@ static Exit_status dump_local_log_entries(PRINT_EVENT_INFO *print_event_info,
       stdin in binary mode. Errors on setting this mode result in 
       halting the function and printing an error message to stderr.
     */
-#if defined (__WIN__) || defined(_WIN64)
+#if defined (_WIN32)
     if (_setmode(fileno(stdin), O_BINARY) == -1)
     {
       error("Could not set binary mode on stdin.");
@@ -2974,6 +3021,9 @@ int main(int argc, char** argv)
   my_init_time(); // for time functions
   tzset(); // set tzname
 
+  /* We need to know if protocol-related options originate from CLI args */
+  my_defaults_mark_files = TRUE;
+
   load_defaults_or_exit("my", load_groups, &argc, &argv);
   defaults_argv= argv;
 
@@ -2986,6 +3036,13 @@ int main(int argc, char** argv)
   }
 
   parse_args(&argc, (char***)&argv);
+
+  /* Command line options override configured protocol */
+  if (protocol_to_force > MYSQL_PROTOCOL_DEFAULT
+      && protocol_to_force != opt_protocol)
+  {
+    warn_protocol_override(host, &opt_protocol, protocol_to_force);
+  }
 
   if (!argc || opt_version)
   {

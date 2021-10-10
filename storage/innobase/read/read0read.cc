@@ -226,10 +226,10 @@ void ReadView::open(trx_t *trx)
       m_open.store(true, std::memory_order_relaxed);
     else
     {
-      mutex_enter(&m_mutex);
+      mysql_mutex_lock(&m_mutex);
       snapshot(trx);
       m_open.store(true, std::memory_order_relaxed);
-      mutex_exit(&m_mutex);
+      mysql_mutex_unlock(&m_mutex);
     }
   }
 }

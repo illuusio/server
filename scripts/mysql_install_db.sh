@@ -315,7 +315,7 @@ parse_arguments `"$print_defaults" $defaults $defaults_group_suffix --mysqld mys
 
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 
-rel_mysqld="$dirname0/@INSTALL_SBINDIR@/mysqld"
+rel_mysqld="$dirname0/@INSTALL_SBINDIR@/mariadbd"
 
 # Configure paths to support files
 if test -n "$srcdir"
@@ -338,11 +338,11 @@ then
     cannot_find_file resolveip @resolveip_locations@
     exit 1
   fi
-  mysqld=`find_in_dirs mysqld @mysqld_locations@`
+  mysqld=`find_in_dirs mariadbd @mysqld_locations@`
   if test -z "$mysqld"
   then
-    cannot_find_file mysqld @mysqld_locations@
-    exit 1
+      cannot_find_file mariadbd @mysqld_locations@
+      exit 1
   fi
   langdir=`find_in_dirs --dir errmsg.sys @errmsg_locations@`
   if test -z "$langdir"
@@ -360,7 +360,7 @@ then
   plugindir=`find_in_dirs --dir auth_pam.so $basedir/lib*/plugin $basedir/lib*/mysql/plugin $basedir/lib/*/mariadb19/plugin`
   pamtooldir=$plugindir
 # relative from where the script was run for a relocatable install
-elif test -n "$dirname0" -a -x "$rel_mysqld" -a ! "$rel_mysqld" -ef "@sbindir@/mysqld"
+elif test -n "$dirname0" -a -x "$rel_mysqld" -a ! "$rel_mysqld" -ef "@sbindir@/mariadbd"
 then
   basedir="$dirname0"
   bindir="$basedir/@INSTALL_BINDIR@"
@@ -374,7 +374,7 @@ else
   basedir="@prefix@"
   bindir="@bindir@"
   resolveip="$bindir/resolveip"
-  mysqld="@sbindir@/mysqld"
+  mysqld="@sbindir@/mariadbd"
   srcpkgdatadir="@pkgdatadir@"
   buildpkgdatadir="@pkgdatadir@"
   plugindir="@pkgplugindir@"
@@ -388,8 +388,9 @@ create_system_tables2="$srcpkgdatadir/mysql_performance_tables.sql"
 fill_system_tables="$srcpkgdatadir/mysql_system_tables_data.sql"
 maria_add_gis_sp="$buildpkgdatadir/maria_add_gis_sp_bootstrap.sql"
 mysql_test_db="$srcpkgdatadir/mysql_test_db.sql"
+mysql_sys_schema="$buildpkgdatadir/mysql_sys_schema.sql"
 
-for f in "$fill_help_tables" "$create_system_tables" "$create_system_tables2" "$fill_system_tables" "$maria_add_gis_sp" "$mysql_test_db"
+for f in "$fill_help_tables" "$create_system_tables" "$create_system_tables2" "$fill_system_tables" "$maria_add_gis_sp" "$mysql_test_db" "$mysql_sys_schema"
 do
   if test ! -f "$f"
   then
@@ -548,7 +549,7 @@ cat_sql()
       ;;
   esac
 
-  cat "$create_system_tables" "$create_system_tables2" "$fill_system_tables" "$fill_help_tables" "$maria_add_gis_sp"
+  cat "$create_system_tables" "$create_system_tables2" "$fill_system_tables" "$fill_help_tables" "$maria_add_gis_sp" "$mysql_sys_schema"
   if test "$skip_test_db" -eq 0
   then
     cat "$mysql_test_db"
@@ -579,7 +580,7 @@ else
   echo
   echo "    shell> $mysqld --skip-grant-tables --general-log &"
   echo
-  echo "and use the command line tool $bindir/mysql"
+  echo "and use the command line tool $bindir/mariadb"
   echo "to connect to the mysql database and look at the grant tables:"
   echo
   echo "    shell> $bindir/mysql -u root mysql"

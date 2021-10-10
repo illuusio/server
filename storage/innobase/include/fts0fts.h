@@ -377,12 +377,8 @@ extern ulong		fts_min_token_size;
 need a sync to free some memory */
 extern bool		fts_need_sync;
 
-#define	fts_que_graph_free(graph)			\
-do {							\
-	mutex_enter(&dict_sys.mutex);			\
-	que_graph_free(graph);				\
-	mutex_exit(&dict_sys.mutex);			\
-} while (0)
+/** Free a query graph */
+void fts_que_graph_free(que_t *graph);
 
 /******************************************************************//**
 Create a FTS cache. */
@@ -504,17 +500,29 @@ fts_add_doc_id_column(
 	dict_table_t*	table,	/*!< in/out: Table with FTS index */
 	mem_heap_t*	heap);	/*!< in: temporary memory heap, or NULL */
 
-/*********************************************************************//**
-Drops the ancillary tables needed for supporting an FTS index on the
-given table. row_mysql_lock_data_dictionary must have been called before
-this.
+/** Lock the internal FTS_ tables for an index, before fts_drop_index_tables().
+@param trx   transaction
+@param index fulltext index */
+dberr_t fts_lock_index_tables(trx_t *trx, const dict_index_t &index);
+
+/** Lock the internal common FTS_ tables, before fts_drop_common_tables().
+@param trx    transaction
+@param table  table containing FULLTEXT INDEX
 @return DB_SUCCESS or error code */
-dberr_t
-fts_drop_tables(
-/*============*/
-	trx_t*		trx,			/*!< in: transaction */
-	dict_table_t*	table);			/*!< in: table has the FTS
-						index */
+dberr_t fts_lock_common_tables(trx_t *trx, const dict_table_t &table);
+
+/** Lock the internal FTS_ tables for table, before fts_drop_tables().
+@param trx    transaction
+@param table  table containing FULLTEXT INDEX
+@return DB_SUCCESS or error code */
+dberr_t fts_lock_tables(trx_t *trx, const dict_table_t &table);
+
+/** Drop the internal FTS_ tables for table.
+@param trx    transaction
+@param table  table containing FULLTEXT INDEX
+@return DB_SUCCESS or error code */
+dberr_t fts_drop_tables(trx_t *trx, const dict_table_t &table);
+
 /******************************************************************//**
 The given transaction is about to be committed; do whatever is necessary
 from the FTS system's POV.
@@ -647,11 +655,7 @@ fts_optimize_init(void);
 /****************************************************************//**
 Drops index ancillary tables for a FTS index
 @return DB_SUCCESS or error code */
-dberr_t
-fts_drop_index_tables(
-/*==================*/
-	trx_t*		trx,			/*!< in: transaction */
-	dict_index_t*	index)			/*!< in: Index to drop */
+dberr_t fts_drop_index_tables(trx_t *trx, const dict_index_t &index)
 	MY_ATTRIBUTE((warn_unused_result));
 
 /** Add the table to add to the OPTIMIZER's list.
@@ -728,10 +732,6 @@ void
 fts_savepoint_rollback_last_stmt(
 /*=============================*/
 	trx_t*		trx);			/*!< in: transaction */
-
-/** Drop all orphaned FTS auxiliary tables, those that don't have a parent
-table or FTS index defined on them. */
-void fts_drop_orphaned_tables();
 
 /** Run SYNC on the table, i.e., write out data from the cache to the
 FTS auxiliary INDEX table and clear the cache at the end.
@@ -887,13 +887,12 @@ fts_table_fetch_doc_ids(
 This function brings FTS index in sync when FTS index is first
 used. There are documents that have not yet sync-ed to auxiliary
 tables from last server abnormally shutdown, we will need to bring
-such document into FTS cache before any further operations
-@return TRUE if all OK */
-ibool
+such document into FTS cache before any further operations */
+void
 fts_init_index(
 /*===========*/
 	dict_table_t*	table,			/*!< in: Table with FTS */
-	ibool		has_cache_lock);	/*!< in: Whether we already
+	bool		has_cache_lock);	/*!< in: Whether we already
 						have cache lock */
 /*******************************************************************//**
 Add a newly create index in FTS cache */
@@ -957,9 +956,8 @@ fts_trx_create(
 
 /** Clear all fts resources when there is no internal DOC_ID
 and there are no new fts index to add.
-@param[in,out]  table   table  where fts is to be freed
-@param[in]      trx     transaction to drop all fts tables */
-void fts_clear_all(dict_table_t *table, trx_t *trx);
+@param[in,out]  table   table  where fts is to be freed */
+void fts_clear_all(dict_table_t *table);
 
 /** Check whether the given name is fts auxiliary table
 and fetch the parent table id and index id

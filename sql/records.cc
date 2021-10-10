@@ -255,7 +255,7 @@ bool init_read_record(READ_RECORD *info,THD *thd, TABLE *table,
 	thd->variables.read_rnd_buff_size &&
 	!(table->file->ha_table_flags() & HA_FAST_KEY_READ) &&
 	(table->db_stat & HA_READ_ONLY ||
-	 table->reginfo.lock_type <= TL_READ_NO_INSERT) &&
+	 table->reginfo.lock_type < TL_FIRST_WRITE) &&
 	(ulonglong) table->s->reclength* (table->file->stats.records+
                                           table->file->stats.deleted) >
 	(ulonglong) MIN_FILE_LENGTH_TO_USE_ROW_CACHE &&
@@ -829,4 +829,33 @@ inline void SORT_INFO::unpack_addon_fields(uchar *buff)
     else
       field->unpack(field->ptr, buff + addonf->offset, buff_end, 0);
   }
+}
+
+
+/*
+  @brief
+    Read and unpack next record from a table
+
+  @details
+    The function first reads the next record from the table.
+    If a success then it unpacks the values to the base table fields.
+    This is used by SJM scan table to unpack the values of the materialized
+    table to the base table fields
+
+  @retval
+    0   Record successfully read.
+  @retval
+    -1   There is no record to be read anymore.
+    >0   Error
+*/
+int read_record_func_for_rr_and_unpack(READ_RECORD *info)
+{
+  int error;
+  if ((error= info->read_record_func_and_unpack_calls(info)))
+    return error;
+
+  for (Copy_field *cp= info->copy_field; cp != info->copy_field_end; cp++)
+    (*cp->do_copy)(cp);
+
+  return error;
 }

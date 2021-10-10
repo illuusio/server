@@ -23,22 +23,30 @@
 class Select_limit_counters
 {
   ha_rows select_limit_cnt, offset_limit_cnt;
+  bool with_ties;
 
   public:
     Select_limit_counters():
-       select_limit_cnt(0), offset_limit_cnt(0)
+       select_limit_cnt(0), offset_limit_cnt(0), with_ties(false)
        {};
-    Select_limit_counters(Select_limit_counters &orig):
+    Select_limit_counters(const Select_limit_counters &orig):
        select_limit_cnt(orig.select_limit_cnt),
-       offset_limit_cnt(orig.offset_limit_cnt)
+       offset_limit_cnt(orig.offset_limit_cnt),
+       with_ties(orig.with_ties)
        {};
 
-   void set_limit(ha_rows limit, ha_rows offset)
+   void set_limit(ha_rows limit, ha_rows offset, bool with_ties_arg)
    {
       offset_limit_cnt= offset;
       select_limit_cnt= limit;
-      if (select_limit_cnt + offset_limit_cnt >=
-          select_limit_cnt)
+      with_ties= with_ties_arg;
+      /*
+        Guard against an overflow condition, where limit + offset exceede
+        ha_rows value range. This case covers unreasonably large parameter
+        values that do not have any practical use so assuming in this case
+        that the query does not have a limit is fine.
+      */
+      if (select_limit_cnt + offset_limit_cnt >= select_limit_cnt)
         select_limit_cnt+= offset_limit_cnt;
       else
         select_limit_cnt= HA_POS_ERROR;
@@ -48,25 +56,35 @@ class Select_limit_counters
    {
      offset_limit_cnt= 0;
      select_limit_cnt= 1;
+     with_ties= false;
    }
 
-   bool is_unlimited()
+   bool is_unlimited() const
    { return select_limit_cnt == HA_POS_ERROR; }
-   bool is_unrestricted()
-   { return select_limit_cnt == HA_POS_ERROR && offset_limit_cnt == 0; }
+   /*
+      Set the limit to allow returning an unlimited number of rows. Useful
+      for cases when we want to continue execution indefinitely after the limit
+      is reached (for example for SQL_CALC_ROWS extension).
+   */
    void set_unlimited()
-   { select_limit_cnt= HA_POS_ERROR; offset_limit_cnt= 0; }
+   { select_limit_cnt= HA_POS_ERROR; }
 
-   bool check_offset(ha_rows sent)
+   /* Reset the limit entirely. */
+   void clear()
+   { select_limit_cnt= HA_POS_ERROR; offset_limit_cnt= 0; with_ties= false;}
+
+   bool check_offset(ha_rows sent) const
    {
      return sent < offset_limit_cnt;
    }
    void remove_offset() { offset_limit_cnt= 0; }
 
-   ha_rows get_select_limit()
+   ha_rows get_select_limit() const
    { return select_limit_cnt; }
-   ha_rows get_offset_limit()
+   ha_rows get_offset_limit() const
    { return offset_limit_cnt; }
+   bool is_with_ties() const
+   { return with_ties; }
 };
 
 #endif // INCLUDES_MARIADB_SQL_LIMIT_H

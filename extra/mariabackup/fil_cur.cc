@@ -65,17 +65,21 @@ xb_get_relative_path(
 	prev = NULL;
 	cur = path;
 
-	while ((next = strchr(cur, OS_PATH_SEPARATOR)) != NULL) {
+#ifdef _WIN32
+	while ((next = strchr(cur, '\\')) != NULL) {
+		prev = cur;
+		cur = next + 1;
+	}
+#endif
 
+	while ((next = strchr(cur, '/')) != NULL) {
 		prev = cur;
 		cur = next + 1;
 	}
 
 	if (is_system) {
-
 		return(cur);
 	} else {
-
 		return((prev == NULL) ? cur : prev);
 	}
 
@@ -91,23 +95,18 @@ xb_fil_node_close_file(
 {
 	ibool	ret;
 
-	mutex_enter(&fil_system.mutex);
+	mysql_mutex_lock(&fil_system.mutex);
 
 	ut_ad(node);
 	ut_a(!node->being_extended);
 
-	if (!node->is_open()) {
-
-		mutex_exit(&fil_system.mutex);
-
-		return;
+	if (node->is_open()) {
+		ret = os_file_close(node->handle);
+		ut_a(ret);
+		node->handle = OS_FILE_CLOSED;
 	}
 
-	ret = os_file_close(node->handle);
-	ut_a(ret);
-
-	node->handle = OS_FILE_CLOSED;
-	mutex_exit(&fil_system.mutex);
+	mysql_mutex_unlock(&fil_system.mutex);
 }
 
 /************************************************************************
@@ -225,12 +224,12 @@ xb_fil_cur_open(
 	    && os_file_read(IORequestRead,
 			    node->handle, cursor->buf, 0,
 			    cursor->page_size) == DB_SUCCESS) {
-		mutex_enter(&fil_system.mutex);
+		mysql_mutex_lock(&fil_system.mutex);
 		if (!node->space->crypt_data) {
 			node->space->crypt_data = fil_space_read_crypt_data(
 				node->space->zip_size(), cursor->buf);
 		}
-		mutex_exit(&fil_system.mutex);
+		mysql_mutex_unlock(&fil_system.mutex);
 	}
 
 	cursor->space_size = (ulint)(cursor->statinfo.st_size
@@ -365,6 +364,7 @@ xb_fil_cur_result_t xb_fil_cur_read(xb_fil_cur_t*	cursor,
 	ib_int64_t		offset;
 	ib_int64_t		to_read;
 	const ulint		page_size = cursor->page_size;
+	bool			defer = false;
 	xb_ad(!cursor->is_system() || page_size == srv_page_size);
 
 	cursor->read_filter->get_next_batch(&cursor->read_filter_ctxt,
@@ -419,13 +419,15 @@ read_retry:
 		ret = XB_FIL_CUR_ERROR;
 		goto func_exit;
 	}
+
+	defer = space->is_deferred();
 	/* check pages for corruption and re-read if necessary. i.e. in case of
 	partially written pages */
 	for (page = cursor->buf, i = 0; i < npages;
 	     page += page_size, i++) {
 		unsigned page_no = cursor->buf_page_no + i;
 
-		if (page_is_corrupted(page, page_no, cursor, space)){
+		if (!defer && page_is_corrupted(page, page_no, cursor, space)) {
 			retry_count--;
 
 			if (retry_count == 0) {
@@ -452,11 +454,13 @@ read_retry:
 				msg(cursor->thread_n, "Database page corruption detected at page "
 				    UINT32PF ", retrying...",
 				    page_no);
-				os_thread_sleep(100000);
+				std::this_thread::sleep_for(
+					std::chrono::milliseconds(100));
 				goto read_retry;
 			}
 		}
-		DBUG_EXECUTE_FOR_KEY("add_corrupted_page_for", cursor->node->space->name,
+		DBUG_EXECUTE_FOR_KEY("add_corrupted_page_for",
+				     cursor->node->space->name(),
 			{
 				unsigned corrupted_page_no =
 					static_cast<unsigned>(strtoul(dbug_val, NULL, 10));

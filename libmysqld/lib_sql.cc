@@ -115,7 +115,7 @@ emb_advanced_command(MYSQL *mysql, enum enum_server_command command,
   NET *net= &mysql->net;
   my_bool stmt_skip= stmt ? stmt->state != MYSQL_STMT_INIT_DONE : FALSE;
 
-  if (thd->killed != NOT_KILLED)
+  if (thd && thd->killed != NOT_KILLED)
   {
     if (thd->killed < KILL_CONNECTION)
       thd->killed= NOT_KILLED;
@@ -168,8 +168,7 @@ emb_advanced_command(MYSQL *mysql, enum enum_server_command command,
     arg_length= header_length;
   }
 
-  result= dispatch_command(command, thd, (char *) arg, arg_length, FALSE,
-                           FALSE);
+  result= dispatch_command(command, thd, (char *) arg, arg_length);
   thd->cur_data= 0;
   thd->mysys_var= NULL;
 
@@ -579,7 +578,7 @@ int init_embedded_server(int argc, char **argv, char **groups)
 
   /* Get default temporary directory */
   opt_mysql_tmpdir=getenv("TMPDIR");	/* Use this if possible */
-#if defined(__WIN__)
+#if defined(_WIN32)
   if (!opt_mysql_tmpdir)
     opt_mysql_tmpdir=getenv("TEMP");
   if (!opt_mysql_tmpdir)
@@ -642,7 +641,11 @@ int init_embedded_server(int argc, char **argv, char **groups)
     }
   }
 
-  execute_ddl_log_recovery();
+  if (ddl_log_execute_recovery() > 0)
+  {
+    mysql_server_end();
+    return 1;
+  }
   mysql_embedded_init= 1;
   return 0;
 }
@@ -1259,7 +1262,7 @@ bool Protocol_binary::write()
 bool Protocol::net_send_ok(THD *thd,
             uint server_status, uint statement_warn_count,
             ulonglong affected_rows, ulonglong id, const char *message,
-            bool, bool)
+            bool)
 {
   DBUG_ENTER("emb_net_send_ok");
   MYSQL_DATA *data;

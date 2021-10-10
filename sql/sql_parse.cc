@@ -98,8 +98,6 @@
 
 #include "my_json_writer.h" 
 
-#define PRIV_LOCK_TABLES (SELECT_ACL | LOCK_TABLES_ACL)
-
 #define FLAGSTR(V,F) ((V)&(F)?#F" ":"")
 
 #ifdef WITH_ARIA_STORAGE_ENGINE
@@ -113,9 +111,7 @@
 #include "wsrep_trans_observer.h" /* wsrep transaction hooks */
 
 static bool wsrep_mysql_parse(THD *thd, char *rawbuf, uint length,
-                              Parser_state *parser_state,
-                              bool is_com_multi,
-                              bool is_next_command);
+                              Parser_state *parser_state);
 
 #endif /* WITH_WSREP */
 /**
@@ -134,7 +130,7 @@ static int  show_create_db(THD *thd, LEX *lex);
 static bool alter_routine(THD *thd, LEX *lex);
 static bool drop_routine(THD *thd, LEX *lex);
 
-const char *any_db="*any*";	// Special symbol for check_access
+const LEX_CSTRING any_db= {STRING_WITH_LEN("*any*")};
 
 const LEX_CSTRING command_name[257]={
   { STRING_WITH_LEN("Sleep") },           //0
@@ -391,7 +387,7 @@ const LEX_CSTRING command_name[257]={
   { STRING_WITH_LEN("Slave_worker") }, //251
   { STRING_WITH_LEN("Slave_IO") }, //252
   { STRING_WITH_LEN("Slave_SQL") }, //253
-  { STRING_WITH_LEN("Com_multi") }, //254
+  { 0, 0},
   { STRING_WITH_LEN("Error") }  // Last command number 255
 };
 
@@ -490,7 +486,7 @@ void init_update_queries(void)
   memset(server_command_flags, 0, sizeof(server_command_flags));
 
   server_command_flags[COM_STATISTICS]= CF_SKIP_QUERY_ID | CF_SKIP_QUESTIONS | CF_SKIP_WSREP_CHECK;
-  server_command_flags[COM_PING]=       CF_SKIP_QUERY_ID | CF_SKIP_QUESTIONS | CF_SKIP_WSREP_CHECK | CF_NO_COM_MULTI;
+  server_command_flags[COM_PING]=       CF_SKIP_QUERY_ID | CF_SKIP_QUESTIONS | CF_SKIP_WSREP_CHECK;
 
   server_command_flags[COM_QUIT]= CF_SKIP_WSREP_CHECK;
   server_command_flags[COM_PROCESS_INFO]= CF_SKIP_WSREP_CHECK;
@@ -519,7 +515,6 @@ void init_update_queries(void)
   server_command_flags[COM_STMT_EXECUTE]= CF_SKIP_WSREP_CHECK;
   server_command_flags[COM_STMT_SEND_LONG_DATA]= CF_SKIP_WSREP_CHECK;
   server_command_flags[COM_REGISTER_SLAVE]= CF_SKIP_WSREP_CHECK;
-  server_command_flags[COM_MULTI]= CF_SKIP_WSREP_CHECK | CF_NO_COM_MULTI;
 
   /* Initialize the sql command flags array. */
   memset(sql_command_flags, 0, sizeof(sql_command_flags));
@@ -958,7 +953,7 @@ void execute_init_command(THD *thd, LEX_STRING *init_command,
   save_vio= thd->net.vio;
   thd->net.vio= 0;
   thd->clear_error(1);
-  dispatch_command(COM_QUERY, thd, buf, (uint)len, FALSE, FALSE);
+  dispatch_command(COM_QUERY, thd, buf, (uint)len);
   thd->client_capabilities= save_client_capabilities;
   thd->net.vio= save_vio;
 
@@ -981,6 +976,7 @@ int bootstrap(MYSQL_FILE *file)
   DBUG_ENTER("handle_bootstrap");
 
   THD *thd= new THD(next_thread_id());
+  char *buffer= new char[MAX_BOOTSTRAP_QUERY_SIZE];
 #ifdef WITH_WSREP
   thd->variables.wsrep_on= 0;
 #endif
@@ -1014,12 +1010,12 @@ int bootstrap(MYSQL_FILE *file)
 
   for ( ; ; )
   {
-    char buffer[MAX_BOOTSTRAP_QUERY_SIZE] = "";
+    buffer[0]= 0;
     int rc, length;
     char *query;
     int error= 0;
 
-    rc= read_bootstrap_query(buffer, &length, file, fgets_fn, &error);
+    rc= read_bootstrap_query(buffer, &length, file, fgets_fn, 0, &error);
 
     if (rc == READ_BOOTSTRAP_EOF)
       break;
@@ -1084,7 +1080,7 @@ int bootstrap(MYSQL_FILE *file)
       break;
     }
 
-    mysql_parse(thd, thd->query(), length, &parser_state, FALSE, FALSE);
+    mysql_parse(thd, thd->query(), length, &parser_state);
 
     bootstrap_error= thd->is_error();
     thd->protocol->end_statement();
@@ -1102,6 +1098,7 @@ int bootstrap(MYSQL_FILE *file)
     thd->lex->restore_set_statement_var();
   }
   delete thd;
+  delete[] buffer;
   DBUG_RETURN(bootstrap_error);
 }
 
@@ -1132,23 +1129,6 @@ void cleanup_items(Item *item)
   DBUG_VOID_RETURN;
 }
 
-static enum enum_server_command fetch_command(THD *thd, char *packet)
-{
-  enum enum_server_command
-    command= (enum enum_server_command) (uchar) packet[0];
-  DBUG_ENTER("fetch_command");
-
-  if (command >= COM_END ||
-      (command >= COM_MDB_GAP_BEG && command <= COM_MDB_GAP_END))
-    command= COM_END;				// Wrong command
-
-  DBUG_PRINT("info",("Command on %s = %d (%s)",
-                     vio_description(thd->net.vio), command,
-                     command_name[command].str));
-  DBUG_RETURN(command);
-}
-
-
 #ifdef WITH_WSREP
 static bool wsrep_tables_accessible_when_detached(const TABLE_LIST *tables)
 {
@@ -1170,27 +1150,79 @@ static bool wsrep_command_no_result(char command)
 }
 #endif /* WITH_WSREP */
 #ifndef EMBEDDED_LIBRARY
+static enum enum_server_command fetch_command(THD *thd, char *packet)
+{
+  enum enum_server_command
+    command= (enum enum_server_command) (uchar) packet[0];
+  DBUG_ENTER("fetch_command");
+
+  if (command >= COM_END ||
+      (command >= COM_MDB_GAP_BEG && command <= COM_MDB_GAP_END))
+    command= COM_END;				// Wrong command
+
+  DBUG_PRINT("info",("Command on %s = %d (%s)",
+                     vio_description(thd->net.vio), command,
+                     command_name[command].str));
+  DBUG_RETURN(command);
+}
 
 /**
   Read one command from connection and execute it (query or simple command).
-  This function is called in loop from thread function.
+  This function is to be used by different schedulers (one-thread-per-connection,
+  pool-of-threads)
 
   For profiling to work, it must never be called recursively.
 
+  @param thd - client connection context
+
+  @param blocking - wait for command to finish.
+                    if false (nonblocking), then the function might
+                    return when command is "half-finished", with
+                    DISPATCH_COMMAND_WOULDBLOCK.
+                    Currenly, this can *only* happen when using
+                    threadpool. The command will resume, after all outstanding
+                    async operations (i.e group commit) finish.
+                    Threadpool scheduler takes care of "resume".
+
   @retval
-    0  success
+    DISPATCH_COMMAND_SUCCESS - success
   @retval
-    1  request of thread shutdown (see dispatch_command() description)
+    DISPATCH_COMMAND_CLOSE_CONNECTION  request of THD shutdown
+          (s. dispatch_command() description)
+  @retval
+    DISPATCH_COMMAND_WOULDBLOCK - need to wait for asyncronous operations
+                                  to finish. Only returned if parameter
+                                  'blocking' is false.
 */
 
-bool do_command(THD *thd)
+dispatch_command_return do_command(THD *thd, bool blocking)
 {
-  bool return_value;
+  dispatch_command_return return_value;
   char *packet= 0;
   ulong packet_length;
   NET *net= &thd->net;
   enum enum_server_command command;
   DBUG_ENTER("do_command");
+
+#ifdef WITH_WSREP
+  DBUG_ASSERT(!thd->async_state.pending_ops() ||
+              (WSREP(thd) &&
+               thd->wsrep_trx().state() == wsrep::transaction::s_aborted));
+#else
+  DBUG_ASSERT(!thd->async_state.pending_ops());
+#endif
+
+  if (thd->async_state.m_state == thd_async_state::enum_async_state::RESUMED)
+  {
+    /*
+     Resuming previously suspended command.
+     Restore the state
+    */
+    command = thd->async_state.m_command;
+    packet = thd->async_state.m_packet.str;
+    packet_length = (ulong)thd->async_state.m_packet.length;
+    goto resume;
+  }
 
   /*
     indicator of uninitialized lex => normal flow of errors handling
@@ -1258,12 +1290,12 @@ bool do_command(THD *thd)
 
     if (net->error != 3)
     {
-      return_value= TRUE;                       // We have to close it.
+      return_value= DISPATCH_COMMAND_CLOSE_CONNECTION;     // We have to close it.
       goto out;
     }
 
     net->error= 0;
-    return_value= FALSE;
+    return_value= DISPATCH_COMMAND_SUCCESS;
     goto out;
   }
 
@@ -1330,7 +1362,7 @@ bool do_command(THD *thd)
       MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
       thd->m_statement_psi= NULL;
       thd->m_digest= NULL;
-      return_value= FALSE;
+      return_value= DISPATCH_COMMAND_SUCCESS;
 
       wsrep_after_command_before_result(thd);
       goto out;
@@ -1356,7 +1388,7 @@ bool do_command(THD *thd)
       thd->m_statement_psi= NULL;
       thd->m_digest= NULL;
 
-      return_value= FALSE;
+      return_value= DISPATCH_COMMAND_SUCCESS;
       wsrep_after_command_before_result(thd);
       goto out;
     }
@@ -1367,8 +1399,18 @@ bool do_command(THD *thd)
 
   DBUG_ASSERT(packet_length);
   DBUG_ASSERT(!thd->apc_target.is_enabled());
+
+resume:
   return_value= dispatch_command(command, thd, packet+1,
-                                 (uint) (packet_length-1), FALSE, FALSE);
+                                 (uint) (packet_length-1), blocking);
+  if (return_value == DISPATCH_COMMAND_WOULDBLOCK)
+  {
+    /* Save current state, and resume later.*/
+    thd->async_state.m_command= command;
+    thd->async_state.m_packet={packet,packet_length};
+    DBUG_RETURN(return_value);
+  }
+
   DBUG_ASSERT(!thd->apc_target.is_enabled());
 
 out:
@@ -1479,45 +1521,6 @@ static void wsrep_copy_query(THD *thd)
 }
 #endif /* WITH_WSREP */
 
-/**
-  check COM_MULTI packet
-
-  @param thd             thread handle
-  @param packet          pointer on the packet of commands
-  @param packet_length   length of this packet
-
-  @retval 0 - Error
-  @retval # - Number of commands in the batch
-*/
-
-uint maria_multi_check(THD *thd, char *packet, size_t packet_length)
-{
-  uint counter= 0;
-  DBUG_ENTER("maria_multi_check");
-  while (packet_length)
-  {
-    char *packet_start= packet;
-    size_t subpacket_length= net_field_length((uchar **)&packet_start);
-    size_t length_length= packet_start - packet;
-    // length of command + 3 bytes where that length was stored
-    DBUG_PRINT("info", ("sub-packet length: %zu + %zu  command: %x",
-                        subpacket_length, length_length,
-                        packet_start[3]));
-
-    if (subpacket_length == 0 ||
-        (subpacket_length + length_length) > packet_length)
-    {
-      my_message(ER_UNKNOWN_COM_ERROR, ER_THD(thd, ER_UNKNOWN_COM_ERROR),
-                 MYF(0));
-      DBUG_RETURN(0);
-    }
-
-    counter++;
-    packet= packet_start + subpacket_length;
-    packet_length-= (subpacket_length + length_length);
-  }
-  DBUG_RETURN(counter);
-}
 
 
 #if defined(WITH_ARIA_STORAGE_ENGINE)
@@ -1554,8 +1557,13 @@ public:
   @param packet_length   length of packet + 1 (to show that data is
                          null-terminated) except for COM_SLEEP, where it
                          can be zero.
-  @param is_com_multi    recursive call from COM_MULTI
-  @param is_next_command there will be more command in the COM_MULTI batch
+  @param blocking        if false (nonblocking), then the function might
+                         return when command is "half-finished", with
+                         DISPATCH_COMMAND_WOULDBLOCK.
+                         Currenly, this can *only* happen when using threadpool.
+                         The current command will resume, after all outstanding
+                         async operations (i.e group commit) finish.
+                         Threadpool scheduler takes care of "resume".
 
   @todo
     set thd->lex->sql_command to SQLCOM_END here.
@@ -1568,9 +1576,8 @@ public:
     1   request of thread shutdown, i. e. if command is
         COM_QUIT/COM_SHUTDOWN
 */
-bool dispatch_command(enum enum_server_command command, THD *thd,
-		      char* packet, uint packet_length, bool is_com_multi,
-                      bool is_next_command)
+dispatch_command_return dispatch_command(enum enum_server_command command, THD *thd,
+		      char* packet, uint packet_length, bool blocking)
 {
   NET *net= &thd->net;
   bool error= 0;
@@ -1581,6 +1588,12 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
                        command_name[command].str :
                        "<?>")));
   bool drop_more_results= 0;
+
+  if (thd->async_state.m_state == thd_async_state::enum_async_state::RESUMED)
+  {
+    thd->async_state.m_state = thd_async_state::enum_async_state::NONE;
+    goto resume;
+  }
 
   /* keep it withing 1 byte */
   compile_time_assert(COM_END == 255);
@@ -1651,21 +1664,14 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     beginning of each command.
   */
   thd->server_status&= ~SERVER_STATUS_CLEAR_SET;
-  if (is_next_command)
-  {
-    drop_more_results= !MY_TEST(thd->server_status &
-                                SERVER_MORE_RESULTS_EXISTS);
-    thd->server_status|= SERVER_MORE_RESULTS_EXISTS;
-    if (is_com_multi)
-      thd->get_stmt_da()->set_skip_flush();
-  }
 
   if (unlikely(thd->security_ctx->password_expired &&
                command != COM_QUERY &&
                command != COM_PING &&
                command != COM_QUIT &&
                command != COM_STMT_PREPARE &&
-               command != COM_STMT_EXECUTE))
+               command != COM_STMT_EXECUTE &&
+               command != COM_STMT_CLOSE))
   {
     my_error(ER_MUST_CHANGE_PASSWORD, MYF(0));
     goto dispatch_end;
@@ -1875,8 +1881,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     if (WSREP(thd))
     {
       if (wsrep_mysql_parse(thd, thd->query(), thd->query_length(),
-                            &parser_state,
-                            is_com_multi, is_next_command))
+                            &parser_state))
       {
         WSREP_DEBUG("Deadlock error for: %s", thd->query());
         mysql_mutex_lock(&thd->LOCK_thd_data);
@@ -1888,8 +1893,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     }
     else
 #endif /* WITH_WSREP */
-      mysql_parse(thd, thd->query(), thd->query_length(), &parser_state,
-                  is_com_multi, is_next_command);
+      mysql_parse(thd, thd->query(), thd->query_length(), &parser_state);
 
     while (!thd->killed && (parser_state.m_lip.found_semicolon != NULL) &&
            ! thd->is_error())
@@ -1973,8 +1977,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       if (WSREP(thd))
       {
         if (wsrep_mysql_parse(thd, beginning_of_next_stmt,
-                              length, &parser_state,
-                              is_com_multi, is_next_command))
+                              length, &parser_state))
         {
           WSREP_DEBUG("Deadlock error for: %s", thd->query());
           mysql_mutex_lock(&thd->LOCK_thd_data);
@@ -1987,8 +1990,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       }
       else
 #endif /* WITH_WSREP */
-      mysql_parse(thd, beginning_of_next_stmt, length, &parser_state,
-                  is_com_multi, is_next_command);
+      mysql_parse(thd, beginning_of_next_stmt, length, &parser_state);
 
     }
 
@@ -2039,13 +2041,6 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       break;
     }
     packet= arg_end + 1;
-    // thd->reset_for_next_command reset state => restore it
-    if (is_next_command)
-    {
-      thd->server_status|= SERVER_MORE_RESULTS_EXISTS;
-      if (is_com_multi)
-        thd->get_stmt_da()->set_skip_flush();
-    }
 
     lex_start(thd);
     /* Must be before we init the table list. */
@@ -2333,84 +2328,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     general_log_print(thd, command, NullS);
     my_eof(thd);
     break;
-  case COM_MULTI:
-  {
-    uint counter;
-    uint current_com= 0;
-    DBUG_ASSERT(!is_com_multi);
-    if (!(thd->client_capabilities & CLIENT_MULTI_RESULTS))
-    {
-      /* The client does not support multiple result sets being sent back */
-      my_error(ER_COMMULTI_BADCONTEXT, MYF(0));
-      break;
-    }
 
-    if (!(counter= maria_multi_check(thd, packet, packet_length)))
-      break;
-
-    {
-      char *packet_start= packet;
-      /* We have to store next length because it will be destroyed by '\0' */
-      size_t next_subpacket_length= net_field_length((uchar **)&packet_start);
-      size_t next_length_length= packet_start - packet;
-      unsigned char *readbuff= net->buff;
-
-      if (net_allocate_new_packet(net, thd, MYF(MY_THREAD_SPECIFIC)))
-        break;
-
-      PSI_statement_locker *save_locker= thd->m_statement_psi;
-      sql_digest_state *save_digest= thd->m_digest;
-      thd->m_statement_psi= NULL;
-      thd->m_digest= NULL;
-
-      while (packet_length)
-      {
-        current_com++;
-        size_t subpacket_length= next_subpacket_length + next_length_length;
-        size_t length_length= next_length_length;
-        if (subpacket_length < packet_length)
-        {
-          packet_start= packet + subpacket_length;
-          next_subpacket_length= net_field_length((uchar**)&packet_start);
-          next_length_length= packet_start - (packet + subpacket_length);
-        }
-        /* safety like in do_command() */
-        packet[subpacket_length]= '\0';
-
-        enum enum_server_command subcommand=
-          fetch_command(thd, (packet + length_length));
-
-        if (server_command_flags[subcommand] & CF_NO_COM_MULTI)
-        {
-          my_error(ER_BAD_COMMAND_IN_MULTI, MYF(0),
-                   command_name[subcommand].str);
-          goto com_multi_end;
-        }
-
-        if (dispatch_command(subcommand, thd, packet + (1 + length_length),
-                             (uint)(subpacket_length - (1 + length_length)), TRUE,
-                             (current_com != counter)))
-        {
-          DBUG_ASSERT(thd->is_error());
-          goto com_multi_end;
-        }
-
-        DBUG_ASSERT(subpacket_length <= packet_length);
-        packet+= subpacket_length;
-        packet_length-= (uint)subpacket_length;
-      }
-
-com_multi_end:
-      thd->m_statement_psi= save_locker;
-      thd->m_digest= save_digest;
-
-      /* release old buffer */
-      net_flush(net);
-      DBUG_ASSERT(net->buff == net->write_pos); // nothing to send
-      my_free(readbuff);
-    }
-    break;
-  }
   case COM_SLEEP:
   case COM_CONNECT:				// Impossible here
   case COM_TIME:				// Impossible from client
@@ -2424,7 +2342,18 @@ com_multi_end:
   }
 
 dispatch_end:
-  do_end_of_statement= true;
+  /*
+   For the threadpool i.e if non-blocking call, if not all async operations
+   are finished, return without cleanup. The cleanup will be done on
+   later, when command execution is resumed.
+  */
+  if (!blocking && !error && thd->async_state.pending_ops())
+  {
+    DBUG_RETURN(DISPATCH_COMMAND_WOULDBLOCK);
+  }
+
+resume:
+
 #ifdef WITH_WSREP
   /*
     Next test should really be WSREP(thd), but that causes a failure when doing
@@ -2471,11 +2400,8 @@ dispatch_end:
     thd_proc_info(thd, "Updating status");
     /* Finalize server status flags after executing a command. */
     thd->update_server_status();
-    if (command != COM_MULTI)
-    {
-      thd->protocol->end_statement();
-      query_cache_end_of_result(thd);
-    }
+    thd->protocol->end_statement();
+    query_cache_end_of_result(thd);
   }
   if (drop_more_results)
     thd->server_status&= ~SERVER_MORE_RESULTS_EXISTS;
@@ -2490,7 +2416,18 @@ dispatch_end:
 
   thd->update_all_stats();
 
-  log_slow_statement(thd);
+  /*
+    Write to slow query log only those statements that received via the text
+    protocol except the EXECUTE statement. The reason we do that way is
+    that for statements received via binary protocol and for the EXECUTE
+    statement, the slow statements have been already written to slow query log
+    inside the method Prepared_statement::execute().
+  */
+  if(command == COM_QUERY &&
+     thd->lex->sql_command != SQLCOM_EXECUTE)
+    log_slow_statement(thd);
+  else
+    delete_explain_query(thd->lex);
 
   THD_STAGE_INFO(thd, stage_cleaning_up);
   thd->reset_query();
@@ -2503,8 +2440,7 @@ dispatch_end:
   thd->m_statement_psi= NULL;
   thd->m_digest= NULL;
 
-  if (!is_com_multi)
-    thd->packet.shrink(thd->variables.net_buffer_length); // Reclaim some memory
+  thd->packet.shrink(thd->variables.net_buffer_length); // Reclaim some memory
 
   thd->reset_kill_query();  /* Ensure that killed_errmsg is released */
   /*
@@ -2532,7 +2468,7 @@ dispatch_end:
   /* Check that some variables are reset properly */
   DBUG_ASSERT(thd->abort_on_warning == 0);
   thd->lex->restore_set_statement_var();
-  DBUG_RETURN(error);
+  DBUG_RETURN(error?DISPATCH_COMMAND_CLOSE_CONNECTION: DISPATCH_COMMAND_SUCCESS);
 }
 
 static bool slow_filter_masked(THD *thd, ulonglong mask)
@@ -3505,7 +3441,7 @@ bool run_set_statement_if_requested(THD *thd, LEX *lex)
 */
 
 int
-mysql_execute_command(THD *thd)
+mysql_execute_command(THD *thd, bool is_called_from_prepared_stmt)
 {
   int res= 0;
   int  up_result= 0;
@@ -3730,7 +3666,7 @@ mysql_execute_command(THD *thd)
     {
       for (TABLE_LIST *table= all_tables; table; table= table->next_global)
       {
-	if (table->lock_type >= TL_WRITE_ALLOW_WRITE)
+	if (table->lock_type >= TL_FIRST_WRITE)
         {
 	  lex->sql_command= SQLCOM_BEGIN;
 	  thd->wsrep_converted_lock_session= true;
@@ -3883,6 +3819,11 @@ mysql_execute_command(THD *thd)
   thd->set_query_timer();
 
 #ifdef WITH_WSREP
+  /* Check wsrep_mode rules before command execution. */
+  if (WSREP_NNULL(thd) &&
+      wsrep_thd_is_local(thd) && !wsrep_check_mode_before_cmd_execute(thd))
+    goto error;
+
   /*
     Always start a new transaction for a wsrep THD unless the
     current command is DDL or explicit BEGIN. This will guarantee that
@@ -3999,7 +3940,7 @@ mysql_execute_command(THD *thd)
                               privileges_requested,
                               all_tables, FALSE, UINT_MAX, FALSE);
     else
-      res= check_access(thd, privileges_requested, any_db, NULL, NULL, 0, 0);
+      res= check_access(thd, privileges_requested, any_db.str, NULL,NULL,0,0);
 
     if (!res)
       res= execute_sqlcom_select(thd, all_tables);
@@ -4461,7 +4402,7 @@ mysql_execute_command(THD *thd)
     if (lex->ignore)
       lex->set_stmt_unsafe(LEX::BINLOG_STMT_UNSAFE_UPDATE_IGNORE);
 
-    DBUG_ASSERT(select_lex->offset_limit == 0);
+    DBUG_ASSERT(select_lex->limit_params.offset_limit == 0);
     unit->set_limit(select_lex);
     MYSQL_UPDATE_START(thd->query());
     res= up_result= mysql_update(thd, all_tables,
@@ -4837,7 +4778,7 @@ mysql_execute_command(THD *thd)
 
     if ((res= delete_precheck(thd, all_tables)))
       break;
-    DBUG_ASSERT(select_lex->offset_limit == 0);
+    DBUG_ASSERT(select_lex->limit_params.offset_limit == 0);
     unit->set_limit(select_lex);
 
     MYSQL_DELETE_START(thd->query());
@@ -4995,7 +4936,7 @@ mysql_execute_command(THD *thd)
       {
         if (!lex->tmp_table() &&
            (!thd->is_current_stmt_binlog_format_row() ||
-	    !thd->find_temporary_table(table)))
+	    !is_temporary_table(table)))
         {
           WSREP_TO_ISOLATION_BEGIN(NULL, NULL, all_tables);
           break;
@@ -5044,7 +4985,7 @@ mysql_execute_command(THD *thd)
     goto error;
 #else
     {
-      if (check_access(thd, FILE_ACL, any_db, NULL, NULL, 0, 0))
+      if (check_access(thd, FILE_ACL, any_db.str, NULL, NULL, 0, 0))
 	goto error;
       res= ha_show_status(thd, lex->create_info.db_type, HA_ENGINE_LOGS);
       break;
@@ -5327,7 +5268,7 @@ mysql_execute_command(THD *thd)
 
   } while (0);
   /* Don't do it, if we are inside a SP */
-  if (!thd->spcont)
+  if (!thd->spcont && !is_called_from_prepared_stmt)
   {
     sp_head::destroy(lex->sphead);
     lex->sphead= NULL;
@@ -6184,7 +6125,8 @@ finish:
 #ifdef WITH_WSREP
   thd->wsrep_consistency_check= NO_CONSISTENCY_CHECK;
 
-  WSREP_TO_ISOLATION_END;
+  if (wsrep_thd_is_toi(thd) || wsrep_thd_is_in_rsu(thd))
+    wsrep_to_isolation_end(thd);
   /*
     Force release of transactional locks if not in active MST and wsrep is on.
   */
@@ -6226,8 +6168,8 @@ static bool execute_sqlcom_select(THD *thd, TABLE_LIST *all_tables)
   /* assign global limit variable if limit is not given */
   {
     SELECT_LEX *param= lex->unit.global_parameters();
-    if (!param->explicit_limit)
-      param->select_limit=
+    if (!param->limit_params.explicit_limit)
+      param->limit_params.select_limit=
         new (thd->mem_root) Item_int(thd,
                                      (ulonglong) thd->variables.select_limit);
   }
@@ -6764,7 +6706,7 @@ check_access(THD *thd, privilege_t want_access,
     DBUG_RETURN(FALSE); // CTE reference or an error later
   }
 
-  if (likely((db != NULL) && (db != any_db)))
+  if (likely((db != NULL) && (db != any_db.str)))
   {
     /*
       Check if this is reserved database, like information schema or
@@ -6851,7 +6793,7 @@ check_access(THD *thd, privilege_t want_access,
     DBUG_RETURN(TRUE);				/* purecov: tested */
   }
 
-  if (unlikely(db == any_db))
+  if (unlikely(db == any_db.str))
   {
     /*
       Access granted; Allow select on *any* db.
@@ -7179,11 +7121,12 @@ check_table_access(THD *thd, privilege_t requirements, TABLE_LIST *tables,
       /* We want to have either SELECT or INSERT rights to sequences depending
          on how they are accessed
       */
-      want_access= ((table_ref->lock_type == TL_WRITE_ALLOW_WRITE) ?
+      want_access= ((table_ref->lock_type >= TL_FIRST_WRITE) ?
                     INSERT_ACL : SELECT_ACL);
     }
 
-    if (check_access(thd, want_access, table_ref->get_db_name(),
+    if (check_access(thd, want_access,
+                     table_ref->get_db_name(),
                      &table_ref->grant.privilege,
                      &table_ref->grant.m_internal,
                      0, no_errors))
@@ -7828,8 +7771,8 @@ void mysql_init_multi_delete(LEX *lex)
 {
   lex->sql_command=  SQLCOM_DELETE_MULTI;
   mysql_init_select(lex);
-  lex->first_select_lex()->select_limit= 0;
-  lex->unit.lim.set_unlimited();
+  lex->first_select_lex()->limit_params.clear();
+  lex->unit.lim.clear();
   lex->first_select_lex()->table_list.
     save_and_clear(&lex->auxiliary_table_list);
   lex->query_tables= 0;
@@ -7889,9 +7832,7 @@ static void wsrep_prepare_for_autocommit_retry(THD* thd,
 }
 
 static bool wsrep_mysql_parse(THD *thd, char *rawbuf, uint length,
-                              Parser_state *parser_state,
-                              bool is_com_multi,
-                              bool is_next_command)
+                              Parser_state *parser_state)
 {
   bool is_autocommit=
     !thd->in_multi_stmt_transaction_mode()                  &&
@@ -7900,7 +7841,7 @@ static bool wsrep_mysql_parse(THD *thd, char *rawbuf, uint length,
   do
   {
     retry_autocommit= false;
-    mysql_parse(thd, rawbuf, length, parser_state, is_com_multi, is_next_command);
+    mysql_parse(thd, rawbuf, length, parser_state);
 
     /*
       Convert all ER_QUERY_INTERRUPTED errors to ER_LOCK_DEADLOCK
@@ -8006,15 +7947,10 @@ static bool wsrep_mysql_parse(THD *thd, char *rawbuf, uint length,
   @param       thd     Current thread
   @param       rawbuf  Begining of the query text
   @param       length  Length of the query text
-  @param[out]  found_semicolon For multi queries, position of the character of
-                               the next query in the query text.
-  @param is_next_command there will be more command in the COM_MULTI batch
 */
 
 void mysql_parse(THD *thd, char *rawbuf, uint length,
-                 Parser_state *parser_state,
-                 bool is_com_multi,
-                 bool is_next_command)
+                 Parser_state *parser_state)
 {
   DBUG_ENTER("mysql_parse");
   DBUG_EXECUTE_IF("parser_debug", turn_parser_debug_on_MYSQLparse(););
@@ -8038,12 +7974,6 @@ void mysql_parse(THD *thd, char *rawbuf, uint length,
   */
   lex_start(thd);
   thd->reset_for_next_command();
-  if (is_next_command)
-  {
-    thd->server_status|= SERVER_MORE_RESULTS_EXISTS;
-    if (is_com_multi)
-      thd->get_stmt_da()->set_skip_flush();
-  }
 
   if (query_cache_send_result_to_client(thd, rawbuf, length) <= 0)
   {
@@ -8267,6 +8197,7 @@ TABLE_LIST *st_select_lex::add_table_to_list(THD *thd,
   }
 
   if (unlikely(table->is_derived_table() == FALSE && table->db.str &&
+               !(table_options & TL_OPTION_TABLE_FUNCTION) &&
                check_db_name((LEX_STRING*) &table->db)))
   {
     my_error(ER_WRONG_DB_NAME, MYF(0), table->db.str);
@@ -8304,7 +8235,7 @@ TABLE_LIST *st_select_lex::add_table_to_list(THD *thd,
     if (table->table.length)
       table->table.length= my_casedn_str(files_charset_info,
                                          (char*) table->table.str);
-    if (ptr->db.length && ptr->db.str != any_db)
+    if (ptr->db.length && ptr->db.str != any_db.str)
       ptr->db.length= my_casedn_str(files_charset_info, (char*) ptr->db.str);
   }
 
@@ -8356,7 +8287,9 @@ TABLE_LIST *st_select_lex::add_table_to_list(THD *thd,
     {
       if (unlikely(!my_strcasecmp(table_alias_charset, alias_str.str,
                                   tables->alias.str) &&
-                   !cmp(&ptr->db, &tables->db) && ! tables->sequence))
+                   (tables->db.str == any_db.str || ptr->db.str == any_db.str ||
+                    !cmp(&ptr->db, &tables->db)) &&
+                   !tables->sequence))
       {
 	my_error(ER_NONUNIQ_TABLE, MYF(0), alias_str.str); /* purecov: tested */
 	DBUG_RETURN(0);				/* purecov: tested */
@@ -8973,7 +8906,8 @@ bool st_select_lex::add_window_spec(THD *thd,
 /**
   Set lock for all tables in current select level.
 
-  @param lock_type			Lock to set for tables
+  @param lock_type		Lock to set for tables
+  @param skip_locked		(SELECT {FOR UPDATE/LOCK IN SHARED MODE} SKIP LOCKED)
 
   @note
     If lock is a write lock, then tables->updating is set 1
@@ -8981,20 +8915,23 @@ bool st_select_lex::add_window_spec(THD *thd,
     query
 */
 
-void st_select_lex::set_lock_for_tables(thr_lock_type lock_type, bool for_update)
+void st_select_lex::set_lock_for_tables(thr_lock_type lock_type, bool for_update,
+					bool skip_locked_arg)
 {
   DBUG_ENTER("set_lock_for_tables");
-  DBUG_PRINT("enter", ("lock_type: %d  for_update: %d", lock_type,
-		       for_update));
+  DBUG_PRINT("enter", ("lock_type: %d  for_update: %d  skip_locked %d",
+                       lock_type, for_update, skip_locked));
+  skip_locked= skip_locked_arg;
   for (TABLE_LIST *tables= table_list.first;
        tables;
        tables= tables->next_local)
   {
     tables->lock_type= lock_type;
+    tables->skip_locked= skip_locked;
     tables->updating=  for_update;
 
     if (tables->db.length)
-      tables->mdl_request.set_type((lock_type >= TL_WRITE_ALLOW_WRITE) ?
+      tables->mdl_request.set_type((lock_type >= TL_FIRST_WRITE) ?
                                    MDL_SHARED_WRITE : MDL_SHARED_READ);
   }
   DBUG_VOID_RETURN;
@@ -9037,11 +8974,10 @@ bool st_select_lex_unit::add_fake_select_lex(THD *thd_arg)
       DBUG_RETURN(1);
   fake_select_lex->include_standalone(this, 
                                       (SELECT_LEX_NODE**)&fake_select_lex);
-  fake_select_lex->select_number= INT_MAX;
+  fake_select_lex->select_number= FAKE_SELECT_LEX_ID;
   fake_select_lex->parent_lex= thd_arg->lex; /* Used in init_query. */
   fake_select_lex->make_empty_select();
   fake_select_lex->set_linkage(GLOBAL_OPTIONS_TYPE);
-  fake_select_lex->select_limit= 0;
 
   fake_select_lex->no_table_names_allowed= 1;
 
@@ -9082,6 +9018,10 @@ bool st_select_lex_unit::add_fake_select_lex(THD *thd_arg)
   @param thd       pointer to current thread
   @param left_op   left  operand of the JOIN
   @param right_op  rigth operand of the JOIN
+
+  @seealso
+    push_table_function_arg_context() serves similar purpose for table
+    functions
 
   @retval
     FALSE  if all is OK
@@ -9787,7 +9727,7 @@ bool multi_delete_set_locks_and_link_aux_tables(LEX *lex)
     walk->updating= target_tbl->updating;
     walk->lock_type= target_tbl->lock_type;
     /* We can assume that tables to be deleted from are locked for write. */
-    DBUG_ASSERT(walk->lock_type >= TL_WRITE_ALLOW_WRITE);
+    DBUG_ASSERT(walk->lock_type >= TL_FIRST_WRITE);
     walk->mdl_request.set_type(MDL_SHARED_WRITE);
     target_tbl->correspondent_table= walk;	// Remember corresponding table
   }
@@ -10438,10 +10378,8 @@ bool parse_sql(THD *thd, Parser_state *parser_state,
 
   /* Parse the query. */
 
-  bool mysql_parse_status=
-         ((thd->variables.sql_mode & MODE_ORACLE) ?
-          ORAparse(thd) :
-          MYSQLparse(thd)) != 0;
+  bool mysql_parse_status= thd->variables.sql_mode & MODE_ORACLE
+                           ? ORAparse(thd) : MYSQLparse(thd);
   DBUG_ASSERT(opt_bootstrap || mysql_parse_status ||
               thd->lex->select_stack_top == 0);
   thd->lex->current_select= thd->lex->first_select_lex();
@@ -10519,7 +10457,8 @@ merge_charset_and_collation(CHARSET_INFO *cs, CHARSET_INFO *cl)
   {
     if (!my_charset_same(cs, cl))
     {
-      my_error(ER_COLLATION_CHARSET_MISMATCH, MYF(0), cl->name, cs->csname);
+      my_error(ER_COLLATION_CHARSET_MISMATCH, MYF(0), cl->coll_name.str,
+               cs->cs_name.str);
       return NULL;
     }
     return cl;
@@ -10531,8 +10470,11 @@ merge_charset_and_collation(CHARSET_INFO *cs, CHARSET_INFO *cl)
 */
 CHARSET_INFO *find_bin_collation(CHARSET_INFO *cs)
 {
-  const char *csname= cs->csname;
-  cs= get_charset_by_csname(csname, MY_CS_BINSORT, MYF(0));
+  const char *csname= cs->cs_name.str;
+  THD *thd= current_thd;
+  myf utf8_flag= thd->get_utf8_flag();
+
+  cs= get_charset_by_csname(csname, MY_CS_BINSORT, MYF(utf8_flag));
   if (!cs)
   {
     char tmp[65];

@@ -57,6 +57,8 @@ DYNAMIC_ARRAY tables4repair, tables4rebuild, alter_table_cmds;
 DYNAMIC_ARRAY views4repair;
 static uint opt_protocol=0;
 
+static uint protocol_to_force= MYSQL_PROTOCOL_DEFAULT;
+
 enum operations { DO_CHECK=1, DO_REPAIR, DO_ANALYZE, DO_OPTIMIZE, DO_FIX_NAMES };
 const char *operation_name[]=
 {
@@ -163,7 +165,7 @@ static struct my_option my_long_options[] =
    "When using ANALYZE TABLE use the PERSISTENT FOR ALL option.",
    &opt_persistent_all, &opt_persistent_all, 0, GET_BOOL, NO_ARG,
    0, 0, 0, 0, 0, 0},
-#ifdef __WIN__
+#ifdef _WIN32
   {"pipe", 'W', "Use named pipes to connect to server.", 0, 0, 0, GET_NO_ARG,
    NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
@@ -286,9 +288,13 @@ static void usage(void)
 static my_bool
 get_one_option(const struct my_option *opt,
 	       const char *argument,
-               const char *filename __attribute__((unused)))
+               const char *filename)
 {
   int orig_what_to_do= what_to_do;
+
+  /* Track when protocol is set via CLI to not force overrides */
+  static my_bool ignore_protocol_override = FALSE;
+
   DBUG_ENTER("get_one_option");
 
   switch(opt->id) {
@@ -349,8 +355,15 @@ get_one_option(const struct my_option *opt,
     opt_upgrade= 1;
     break;
   case 'W':
-#ifdef __WIN__
+#ifdef _WIN32
     opt_protocol = MYSQL_PROTOCOL_PIPE;
+
+    /* Prioritize pipe if explicit via command line */
+    if (filename[0] == '\0')
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
 #endif
     break;
   case '#':
@@ -373,6 +386,46 @@ get_one_option(const struct my_option *opt,
     {
       sf_leaking_memory= 1; /* no memory leak reports here */
       exit(1);
+    }
+
+    /* Specification of protocol via CLI trumps implicit overrides */
+    if (filename[0] == '\0')
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    break;
+  case 'P':
+    /* If port and socket are set, fall back to default behavior */
+    if (protocol_to_force == SOCKET_PROTOCOL_TO_FORCE)
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    /* If port is set via CLI, try to force protocol to TCP */
+    if (filename[0] == '\0' &&
+        !ignore_protocol_override &&
+        protocol_to_force == MYSQL_PROTOCOL_DEFAULT)
+    {
+      protocol_to_force = MYSQL_PROTOCOL_TCP;
+    }
+    break;
+  case 'S':
+    /* If port and socket are set, fall back to default behavior */
+    if (protocol_to_force == MYSQL_PROTOCOL_TCP)
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    /* Prioritize socket if set via command line */
+    if (filename[0] == '\0' &&
+        !ignore_protocol_override &&
+        protocol_to_force == MYSQL_PROTOCOL_DEFAULT)
+    {
+      protocol_to_force = SOCKET_PROTOCOL_TO_FORCE;
     }
     break;
   }
@@ -444,7 +497,8 @@ static int get_options(int *argc, char ***argv)
   if (!strcmp(default_charset, MYSQL_AUTODETECT_CHARSET_NAME))
     default_charset= (char *)my_default_csname();
 
-  if (!get_charset_by_csname(default_charset, MY_CS_PRIMARY, MYF(MY_WME)))
+  if (!get_charset_by_csname(default_charset, MY_CS_PRIMARY,
+                             MYF(MY_UTF8_IS_UTF8MB3 | MY_WME)))
   {
     printf("Unsupported character set: %s\n", default_charset);
     DBUG_RETURN(1);
@@ -1179,6 +1233,10 @@ int main(int argc, char **argv)
 
   MY_INIT(argv[0]);
   sf_leaking_memory=1; /* don't report memory leaks on early exits */
+
+  /* We need to know if protocol-related options originate from CLI args */
+  my_defaults_mark_files = TRUE;
+
   /*
   ** Check out the args
   */
@@ -1186,6 +1244,15 @@ int main(int argc, char **argv)
   defaults_argv= argv;
   if (get_options(&argc, &argv))
     goto end1;
+
+
+  /* Command line options override configured protocol */
+  if (protocol_to_force > MYSQL_PROTOCOL_DEFAULT
+      && protocol_to_force != opt_protocol)
+  {
+    warn_protocol_override(current_host, &opt_protocol, protocol_to_force);
+  }
+
   sf_leaking_memory=0; /* from now on we cleanup properly */
 
   ret= EX_MYSQLERR;

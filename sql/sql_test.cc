@@ -51,11 +51,13 @@ static const char *lock_descriptions[] =
   /* TL_READ_WITH_SHARED_LOCKS  */  "Shared read lock",
   /* TL_READ_HIGH_PRIORITY      */  "High priority read lock",
   /* TL_READ_NO_INSERT          */  "Read lock without concurrent inserts",
+  /* TL_READ_SKIP_LOCKED        */  "Read lock without blocking if row is locked",
   /* TL_WRITE_ALLOW_WRITE       */  "Write lock that allows other writers",
   /* TL_WRITE_CONCURRENT_INSERT */  "Concurrent insert lock",
   /* TL_WRITE_DELAYED           */  "Lock used by delayed insert",
   /* TL_WRITE_DEFAULT           */  NULL,
   /* TL_WRITE_LOW_PRIORITY      */  "Low priority write lock",
+  /* TL_WRITE_SKIP_LOCKED       */  "Write lock but skip existing locked rows",
   /* TL_WRITE                   */  "High priority write lock",
   /* TL_WRITE_ONLY              */  "Highest priority write lock"
 };
@@ -125,25 +127,26 @@ void TEST_filesort(SORT_FIELD *sortorder,uint s_length)
   char buff[256],buff2[256];
   String str(buff,sizeof(buff),system_charset_info);
   String out(buff2,sizeof(buff2),system_charset_info);
-  const char *sep;
+  DBUG_ASSERT(s_length > 0);
   DBUG_ENTER("TEST_filesort");
 
   out.length(0);
-  for (sep=""; s_length-- ; sortorder++, sep=" ")
+  for (; s_length-- ; sortorder++)
   {
-    out.append(sep);
     if (sortorder->reverse)
       out.append('-');
     if (sortorder->field)
     {
       if (sortorder->field->table_name)
       {
-	out.append(*sortorder->field->table_name);
+        const char *table_name= *sortorder->field->table_name;
+	out.append(table_name, strlen(table_name));
 	out.append('.');
       }
-      out.append(sortorder->field->field_name.str ?
-                 sortorder->field->field_name.str :
-		 "tmp_table_column");
+      const char *name= sortorder->field->field_name.str;
+      if (!name)
+        name= "tmp_table_column";
+      out.append(name, strlen(name));
     }
     else
     {
@@ -151,7 +154,9 @@ void TEST_filesort(SORT_FIELD *sortorder,uint s_length)
       sortorder->item->print(&str, QT_ORDINARY);
       out.append(str);
     }
+    out.append(' ');
   }
+  out.chop();                                  // Remove last space
   DBUG_LOCK_FILE;
   (void) fputs("\nInfo about FILESORT\n",DBUG_FILE);
   fprintf(DBUG_FILE,"Sortorder: %s\n",out.c_ptr_safe());
@@ -184,8 +189,8 @@ TEST_join(JOIN *join)
       JOIN_TAB *tab= jt_range->start + i;
       for (ref= 0; ref < tab->ref.key_parts; ref++)
       {
-        ref_key_parts[i].append(tab->ref.items[ref]->full_name());
-        ref_key_parts[i].append("  ");
+        ref_key_parts[i].append(tab->ref.items[ref]->full_name_cstring());
+        ref_key_parts[i].append(STRING_WITH_LEN("  "));
       }
     }
 

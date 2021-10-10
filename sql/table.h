@@ -63,6 +63,7 @@ class Range_rowid_filter_cost_info;
 class derived_handler;
 class Pushdown_derived;
 struct Name_resolution_context;
+class Table_function_json_table;
 
 /*
   Used to identify NESTED_JOIN structures within a join (applicable only to
@@ -365,7 +366,7 @@ enum enum_vcol_update_mode
 
 /* Field visibility enums */
 
-enum field_visibility_t {
+enum __attribute__((packed)) field_visibility_t {
   VISIBLE= 0,
   INVISIBLE_USER,
   /* automatically added by the server. Can be queried explicitly
@@ -764,6 +765,10 @@ struct TABLE_SHARE
      Excludes keys disabled by ALTER TABLE ... DISABLE KEYS.
   */
   key_map keys_in_use;
+
+  /* The set of ignored indexes for a table. */
+  key_map ignored_indexes;
+
   key_map keys_for_keyread;
   ha_rows min_rows, max_rows;		/* create information */
   ulong   avg_row_length;		/* create information */
@@ -887,8 +892,8 @@ struct TABLE_SHARE
   */
   struct period_info_t
   {
-    uint16 start_fieldno;
-    uint16 end_fieldno;
+    field_index_t start_fieldno;
+    field_index_t end_fieldno;
     Lex_ident name;
     Lex_ident constr_name;
     uint unique_keys;
@@ -1137,7 +1142,7 @@ struct TABLE_SHARE
   bool write_frm_image(const uchar *frm_image, size_t frm_length);
   bool write_par_image(const uchar *par_image, size_t par_length);
 
-  /* Only used by tokudb */
+  /* Only used by S3 */
   bool write_frm_image(void)
   { return frm_image ? write_frm_image(frm_image->str, frm_image->length) : 0; }
 
@@ -1151,6 +1156,8 @@ struct TABLE_SHARE
   void free_frm_image(const uchar *frm);
 
   void set_overlapped_keys();
+  void set_ignored_indexes();
+  key_map usable_indexes(THD *thd);
 };
 
 /* not NULL, but cannot be dereferenced */
@@ -1606,6 +1613,8 @@ public:
     m_needs_reopen= value;
   }
 
+  bool init_expr_arena(MEM_ROOT *mem_root);
+
   bool alloc_keys(uint key_count);
   bool check_tmp_key(uint key, uint key_parts,
                      uint (*next_field_no) (uchar *), uchar *arg);
@@ -1903,14 +1912,14 @@ class IS_table_read_plan;
 constexpr uint frm_fieldno_size= 2;
 /** number of bytes used by key position number in frm */
 constexpr uint frm_keyno_size= 2;
-static inline uint16 read_frm_fieldno(const uchar *data)
+static inline field_index_t read_frm_fieldno(const uchar *data)
 { return uint2korr(data); }
-static inline void store_frm_fieldno(uchar *data, uint16 fieldno)
+static inline void store_frm_fieldno(uchar *data, field_index_t fieldno)
 { int2store(data, fieldno); }
 static inline uint16 read_frm_keyno(const uchar *data)
 { return uint2korr(data); }
-static inline void store_frm_keyno(uchar *data, uint16 fieldno)
-{ int2store(data, fieldno); }
+static inline void store_frm_keyno(uchar *data, uint16 keyno)
+{ int2store(data, keyno); }
 static inline size_t extra2_str_size(size_t len)
 { return (len > 255 ? 3 : 1) + len; }
 
@@ -2153,7 +2162,7 @@ struct TABLE_LIST
                              enum thr_lock_type lock_type_arg)
   {
     enum enum_mdl_type mdl_type;
-    if (lock_type_arg >= TL_WRITE_ALLOW_WRITE)
+    if (lock_type_arg >= TL_FIRST_WRITE)
       mdl_type= MDL_SHARED_WRITE;
     else if (lock_type_arg == TL_READ_NO_INSERT)
       mdl_type= MDL_SHARED_NO_WRITE;
@@ -2168,7 +2177,7 @@ struct TABLE_LIST
     table_name= *table_name_arg;
     alias= (alias_arg ? *alias_arg : *table_name_arg);
     lock_type= lock_type_arg;
-    updating= lock_type >= TL_WRITE_ALLOW_WRITE;
+    updating= lock_type >= TL_FIRST_WRITE;
     MDL_REQUEST_INIT(&mdl_request, MDL_key::TABLE, db.str, table_name.str,
                      mdl_type, MDL_TRANSACTION);
   }
@@ -2202,7 +2211,7 @@ struct TABLE_LIST
     belong_to_view= belong_to_view_arg;
     trg_event_map= trg_event_map_arg;
     /* MDL is enough for read-only FK checks, we don't need the table */
-    if (prelocking_type == PRELOCK_FK && lock_type < TL_WRITE_ALLOW_WRITE)
+    if (prelocking_type == PRELOCK_FK && lock_type < TL_FIRST_WRITE)
       open_strategy= OPEN_STUB;
 
     **last_ptr= this;
@@ -2227,6 +2236,7 @@ struct TABLE_LIST
   const char    *option;                /* Used by cache index  */
   Item		*on_expr;		/* Used with outer join */
   Name_resolution_context *on_context;  /* For ON expressions */
+  Table_function_json_table *table_function; /* If it's the table function. */
 
   Item          *sj_on_expr;
   /*
@@ -2488,7 +2498,8 @@ struct TABLE_LIST
   bool          updating;               /* for replicate-do/ignore table */
   bool		force_index;		/* prefer index over table scan */
   bool          ignore_leaves;          /* preload only non-leaf nodes */
-  bool          crashed;                 /* Table was found crashed */
+  bool          crashed;                /* Table was found crashed */
+  bool          skip_locked;            /* Skip locked in view defination */
   table_map     dep_tables;             /* tables the table depends on      */
   table_map     on_expr_dep_tables;     /* tables on expression depends on  */
   struct st_nested_join *nested_join;   /* if the element is a nested join  */
@@ -2632,7 +2643,7 @@ struct TABLE_LIST
   void cleanup_items();
   bool placeholder()
   {
-    return derived || view || schema_table || !table;
+    return derived || view || schema_table || !table || table_function;
   }
   void print(THD *thd, table_map eliminated_tables, String *str, 
              enum_query_type query_type);
@@ -2819,6 +2830,7 @@ struct TABLE_LIST
    */
   const char *get_table_name() const { return view != NULL ? view_name.str : table_name.str; }
   bool is_active_sjm();
+  bool is_sjm_scan_table();
   bool is_jtbm() { return MY_TEST(jtbm_subselect != NULL); }
   st_select_lex_unit *get_unit();
   st_select_lex *get_single_select();

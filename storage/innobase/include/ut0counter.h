@@ -38,9 +38,6 @@ Created 2012/04/12 by Sunny Bains
 # error CPU_LEVEL1_DCACHE_LINESIZE is undefined
 #endif /* CPU_LEVEL1_DCACHE_LINESIZE */
 
-/** Default number of slots to use in ib_counter_t */
-#define IB_N_SLOTS		64
-
 /** Use the result of my_timer_cycles(), which mainly uses RDTSC for cycles
 as a random value. See the comments for my_timer_cycles() */
 /** @return result from RDTSC or similar functions. */
@@ -65,14 +62,35 @@ get_rnd_value()
 #endif /* !_WIN32 */
 }
 
+/** Atomic which occupies whole CPU cache line.
+Note: We rely on the default constructor of std::atomic and
+do not explicitly initialize the contents. This works for us,
+because ib_counter_t is only intended for usage with global
+memory that is allocated from the .bss and thus guaranteed to
+be zero-initialized by the run-time environment.
+@see srv_stats */
+template <typename Type>
+struct ib_atomic_counter_element_t {
+	MY_ALIGNED(CACHE_LINE_SIZE) Atomic_relaxed<Type> value;
+};
+
+template <typename Type>
+struct ib_counter_element_t {
+	MY_ALIGNED(CACHE_LINE_SIZE) Type value;
+};
+
+
 /** Class for using fuzzy counters. The counter is multi-instance relaxed atomic
 so the results are not guaranteed to be 100% accurate but close
 enough. Creates an array of counters and separates each element by the
 CACHE_LINE_SIZE bytes */
-template <typename Type, int N = IB_N_SLOTS>
+template <typename Type,
+          template <typename T> class Element = ib_atomic_counter_element_t,
+          int N = 128 >
 struct ib_counter_t {
 	/** Increment the counter by 1. */
 	void inc() { add(1); }
+	ib_counter_t& operator++() { inc(); return *this; }
 
 	/** Increment the counter by 1.
 	@param[in]	index	a reasonably thread-unique identifier */
@@ -85,12 +103,12 @@ struct ib_counter_t {
 	/** Add to the counter.
 	@param[in]	index	a reasonably thread-unique identifier
 	@param[in]	n	amount to be added */
-	void add(size_t index, Type n) {
+	TPOOL_SUPPRESS_TSAN void add(size_t index, Type n) {
 		index = index % N;
 
 		ut_ad(index < UT_ARR_SIZE(m_counter));
 
-		m_counter[index].value.fetch_add(n, std::memory_order_relaxed);
+		m_counter[index].value += n;
 	}
 
 	/* @return total value - not 100% accurate, since it is relaxed atomic*/
@@ -98,28 +116,16 @@ struct ib_counter_t {
 		Type	total = 0;
 
 		for (const auto &counter : m_counter) {
-			total += counter.value.load(std::memory_order_relaxed);
+			total += counter.value;
 		}
 
 		return(total);
 	}
 
 private:
-	/** Atomic which occupies whole CPU cache line.
-	Note: We rely on the default constructor of std::atomic and
-	do not explicitly initialize the contents. This works for us,
-	because ib_counter_t is only intended for usage with global
-	memory that is allocated from the .bss and thus guaranteed to
-	be zero-initialized by the run-time environment.
-	@see srv_stats
-	@see rw_lock_stats */
-	struct ib_counter_element_t {
-		MY_ALIGNED(CACHE_LINE_SIZE) std::atomic<Type> value;
-	};
-	static_assert(sizeof(ib_counter_element_t) == CACHE_LINE_SIZE, "");
-
+	static_assert(sizeof(Element<Type>) == CACHE_LINE_SIZE, "");
 	/** Array of counter elements */
-	MY_ALIGNED(CACHE_LINE_SIZE) ib_counter_element_t m_counter[N];
+	MY_ALIGNED(CACHE_LINE_SIZE) Element<Type> m_counter[N];
 };
 
 #endif /* ut0counter_h */

@@ -302,7 +302,6 @@ void
 Diagnostics_area::reset_diagnostics_area()
 {
   DBUG_ENTER("reset_diagnostics_area");
-  m_skip_flush= FALSE;
 #ifdef DBUG_OFF
   m_can_overwrite_status= FALSE;
   /** Don't take chances in production */
@@ -877,11 +876,11 @@ extern "C" int my_wc_mb_utf8_null_terminated(CHARSET_INFO *cs,
    @param from_cs     charset from convert
  
    @retval
-   result string
+   result string length
 */
 
-char *err_conv(char *buff, uint to_length, const char *from,
-               uint from_length, CHARSET_INFO *from_cs)
+size_t err_conv(char *buff, uint to_length, const char *from,
+                uint from_length, CHARSET_INFO *from_cs)
 {
   char *to= buff;
   const char *from_start= from;
@@ -932,7 +931,7 @@ char *err_conv(char *buff, uint to_length, const char *from,
                                &errors);
     to[res]= 0;
   }
-  return buff;
+  return res;
 }
 
 

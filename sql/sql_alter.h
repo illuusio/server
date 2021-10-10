@@ -20,6 +20,7 @@
 class Alter_drop;
 class Alter_column;
 class Alter_rename_key;
+class Alter_index_ignorability;
 class Key;
 
 /**
@@ -95,6 +96,8 @@ public:
   List<Alter_rename_key>        alter_rename_key_list;
   // List of columns, used by both CREATE and ALTER TABLE.
   List<Create_field>            create_list;
+  // Indexes whose ignorability needs to be changed.
+  List<Alter_index_ignorability>  alter_index_ignorability_list;
   List<Virtual_column_info>     check_constraint_list;
   // Type of ALTER TABLE operation.
   alter_table_operations        flags;
@@ -129,6 +132,7 @@ public:
     key_list.empty();
     alter_rename_key_list.empty();
     create_list.empty();
+    alter_index_ignorability_list.empty();
     check_constraint_list.empty();
     flags= 0;
     partition_flags= 0;
@@ -290,6 +294,12 @@ public:
   const char *get_tmp_path() const
   { return tmp_path; }
 
+  const LEX_CSTRING get_tmp_cstring_path() const
+  {
+    LEX_CSTRING tmp= { tmp_path, strlen(tmp_path) };
+    return tmp;
+  };
+
   /**
     Mark ALTER TABLE as needing to produce foreign key error if
     it deletes a row from the table being changed.
@@ -308,12 +318,20 @@ public:
   uint         tables_opened;
   LEX_CSTRING  db;
   LEX_CSTRING  table_name;
+  LEX_CSTRING  storage_engine_name;
   LEX_CSTRING  alias;
   LEX_CSTRING  new_db;
   LEX_CSTRING  new_name;
   LEX_CSTRING  new_alias;
   LEX_CSTRING  tmp_name;
+  LEX_CSTRING  tmp_storage_engine_name;
+  LEX_CUSTRING tmp_id, id;
   char         tmp_buff[80];
+  uchar        id_buff[MY_UUID_SIZE];
+  char         storage_engine_buff[NAME_LEN], tmp_storage_engine_buff[NAME_LEN];
+  bool         storage_engine_partitioned;
+  bool         tmp_storage_engine_name_partitioned;
+
   /**
     Indicates that if a row is deleted during copying of data from old version
     of table to the new version ER_FK_CANNOT_DELETE_PARENT error should be
@@ -324,6 +342,8 @@ public:
   const char   *fk_error_id;
   /** Name of table for the above error. */
   const char   *fk_error_table;
+  /** Indicates that we are altering temporary table */
+  bool tmp_table;
 
 private:
   char new_filename[FN_REFLEN + 1];
@@ -332,11 +352,6 @@ private:
   char path[FN_REFLEN + 1];
   char new_path[FN_REFLEN + 1];
   char tmp_path[FN_REFLEN + 1];
-
-#ifdef DBUG_ASSERT_EXISTS
-  /** Indicates that we are altering temporary table. Used only in asserts. */
-  bool tmp_table;
-#endif
 
   Alter_table_ctx &operator=(const Alter_table_ctx &rhs); // not implemented
   Alter_table_ctx(const Alter_table_ctx &rhs);            // not implemented

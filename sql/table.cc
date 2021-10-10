@@ -61,6 +61,17 @@ public:
   }
 };
 
+bool TABLE::init_expr_arena(MEM_ROOT *mem_root)
+{
+  /*
+    We need to use CONVENTIONAL_EXECUTION here to ensure that
+    any new items created by fix_fields() are not reverted.
+  */
+  expr_arena= new (alloc_root(mem_root, sizeof(Table_arena)))
+                Table_arena(mem_root, Query_arena::STMT_CONVENTIONAL_EXECUTION);
+  return expr_arena == NULL;
+}
+
 struct extra2_fields
 {
   LEX_CUSTRING version;
@@ -72,6 +83,7 @@ struct extra2_fields
   LEX_CUSTRING application_period;
   LEX_CUSTRING field_data_type_info;
   LEX_CUSTRING without_overlaps;
+  LEX_CUSTRING index_flags;
   void reset()
   { bzero((void*)this, sizeof(*this)); }
 };
@@ -114,7 +126,8 @@ static bool fix_type_pointers(const char ***typelib_value_names,
                               TYPELIB *point_to_type, uint types,
                               char *names, size_t names_length);
 
-static uint find_field(Field **fields, uchar *record, uint start, uint length);
+static field_index_t find_field(Field **fields, uchar *record, uint start,
+                                uint length);
 
 inline bool is_system_table_name(const char *name, size_t length);
 
@@ -207,14 +220,14 @@ View_creation_ctx * View_creation_ctx::create(THD *thd,
   /* Resolve cs names. Throw a warning if there is unknown cs name. */
 
   bool invalid_creation_ctx;
-
+  myf utf8_flag= thd->get_utf8_flag();
   invalid_creation_ctx= resolve_charset(view->view_client_cs_name.str,
                                         system_charset_info,
-                                        &ctx->m_client_cs);
+                                        &ctx->m_client_cs, MYF(utf8_flag));
 
   invalid_creation_ctx= resolve_collation(view->view_connection_cl_name.str,
                                           system_charset_info,
-                                          &ctx->m_connection_cl) ||
+                                          &ctx->m_connection_cl, MYF(utf8_flag)) ||
                         invalid_creation_ctx;
 
   if (invalid_creation_ctx)
@@ -1153,14 +1166,8 @@ bool parse_vcol_defs(THD *thd, MEM_ROOT *mem_root, TABLE *table,
            table->s->table_check_constraints * sizeof(Virtual_column_info*));
 
   DBUG_ASSERT(table->expr_arena == NULL);
-  /*
-    We need to use CONVENTIONAL_EXECUTION here to ensure that
-    any new items created by fix_fields() are not reverted.
-  */
-  table->expr_arena= new (alloc_root(mem_root, sizeof(Table_arena)))
-                        Table_arena(mem_root, 
-                                    Query_arena::STMT_CONVENTIONAL_EXECUTION);
-  if (!table->expr_arena)
+
+  if (table->init_expr_arena(mem_root))
     DBUG_RETURN(1);
 
   thd->set_n_backup_active_arena(table->expr_arena, &backup_arena);
@@ -1424,6 +1431,35 @@ void TABLE_SHARE::set_overlapped_keys()
 }
 
 
+/*
+  @brief
+    Set of indexes that are marked as IGNORE.
+*/
+
+void TABLE_SHARE::set_ignored_indexes()
+{
+  KEY *keyinfo= key_info;
+  for (uint i= 0; i < keys; i++, keyinfo++)
+  {
+    if (keyinfo->is_ignored)
+      ignored_indexes.set_bit(i);
+  }
+}
+
+
+/*
+  @brief
+    Set of indexes that the optimizer may use when creating an execution plan.
+*/
+
+key_map TABLE_SHARE::usable_indexes(THD *thd)
+{
+  key_map usable_indexes(keys_in_use);
+  usable_indexes.subtract(ignored_indexes);
+  return usable_indexes;
+}
+
+
 bool Item_field::check_index_dependence(void *arg)
 {
   TABLE *table= (TABLE *)arg;
@@ -1591,6 +1627,9 @@ bool read_extra2(const uchar *frm_image, size_t len, extra2_fields *fields)
         case EXTRA2_FIELD_DATA_TYPE_INFO:
           fail= read_extra2_section_once(extra2, length, &fields->field_data_type_info);
           break;
+        case EXTRA2_INDEX_FLAGS:
+          fail= read_extra2_section_once(extra2, length, &fields->index_flags);
+          break;
         default:
           /* abort frm parsing if it's an unknown but important extra2 value */
           if (type >= EXTRA2_ENGINE_IMPORTANT)
@@ -1749,6 +1788,7 @@ int TABLE_SHARE::init_from_binary_frm_image(THD *thd, bool write,
   MEM_ROOT *old_root= thd->mem_root;
   Virtual_column_info **table_check_constraints;
   extra2_fields extra2;
+  bool extra_index_flags_present= FALSE;
   DBUG_ENTER("TABLE_SHARE::init_from_binary_frm_image");
 
   keyinfo= &first_keyinfo;
@@ -1903,8 +1943,12 @@ int TABLE_SHARE::init_from_binary_frm_image(THD *thd, bool write,
     share->key_parts= key_parts= disk_buff[1];
   }
   share->keys_for_keyread.init(0);
+  share->ignored_indexes.init(0);
   share->keys_in_use.init(keys);
   ext_key_parts= key_parts;
+
+  if (extra2.index_flags.str && extra2.index_flags.length != keys)
+    goto err;
 
   len= (uint) uint2korr(disk_buff+4);
 
@@ -2101,9 +2145,26 @@ int TABLE_SHARE::init_from_binary_frm_image(THD *thd, bool write,
   }
   share->key_block_size= uint2korr(frm_image+62);
   keyinfo= share->key_info;
+
+
+  if (extra2.index_flags.str)
+    extra_index_flags_present= TRUE;
+
   for (uint i= 0; i < share->keys; i++, keyinfo++)
+  {
+    if (extra_index_flags_present)
+    {
+      uchar flags= *extra2.index_flags.str++;
+      keyinfo->is_ignored= (flags & EXTRA2_IGNORED_KEY);
+    }
+    else
+      keyinfo->is_ignored= FALSE;
+
     if (keyinfo->algorithm == HA_KEY_ALG_LONG_HASH)
       hash_fields++;
+  }
+
+  share->set_ignored_indexes();
 
 #ifdef WITH_PARTITION_STORAGE_ENGINE
   if (par_image && plugin_data(se_plugin, handlerton*) == partition_hton)
@@ -2523,8 +2584,11 @@ int TABLE_SHARE::init_from_binary_frm_image(THD *thd, bool write,
         if (!f_is_blob(attr.pack_flag))
         {
           // 3.23 or 4.0 string
-          if (!(attr.charset= get_charset_by_csname(share->table_charset->csname,
-                                                    MY_CS_BINSORT, MYF(0))))
+          myf utf8_flag= thd->get_utf8_flag();
+          if (!(attr.charset= get_charset_by_csname(share->table_charset->
+                                                    cs_name.str,
+                                                    MY_CS_BINSORT,
+                                                    MYF(utf8_flag))))
             attr.charset= &my_charset_bin;
         }
       }
@@ -2742,8 +2806,9 @@ int TABLE_SHARE::init_from_binary_frm_image(THD *thd, bool write,
     uint add_first_key_parts= 0;
     longlong ha_option= handler_file->ha_table_flags();
     keyinfo= share->key_info;
-    uint primary_key= my_strcasecmp(system_charset_info, share->keynames.type_names[0],
-                                    primary_key_name) ? MAX_KEY : 0;
+    uint primary_key= my_strcasecmp(system_charset_info,
+                                    share->keynames.type_names[0],
+                                    primary_key_name.str) ? MAX_KEY : 0;
     KEY* key_first_info= NULL;
 
     if (primary_key >= MAX_KEY && keyinfo->flags & HA_NOSAME &&
@@ -2779,6 +2844,33 @@ int TABLE_SHARE::init_from_binary_frm_image(THD *thd, bool write,
           break;
         }
       }
+    }
+
+    /*
+      Make sure that the primary key is not marked as IGNORE
+      This can happen in the case
+        1) when IGNORE is mentioned in the Key specification
+        2) When a unique NON-NULLABLE key is promted to a primary key.
+           The unqiue key could have been marked as IGNORE when there
+           was a primary key in the table.
+
+           Eg:
+            CREATE TABLE t1(a INT NOT NULL, primary key(a), UNIQUE key1(a))
+             so for this table when we try to IGNORE key1
+             then we run:
+                ALTER TABLE t1 ALTER INDEX key1 IGNORE
+              this runs successsfully and key1 is marked as IGNORE.
+
+              But lets say then we drop the primary key
+               ALTER TABLE t1 DROP PRIMARY
+              then the UNIQUE key will be promoted to become the primary key
+              but then the UNIQUE key cannot be marked as IGNORE, so an
+              error is thrown
+    */
+    if (primary_key != MAX_KEY && keyinfo && keyinfo->is_ignored)
+    {
+        my_error(ER_PK_INDEX_CANT_BE_IGNORED, MYF(0));
+        goto err;
     }
 
     if (share->use_ext_keys)
@@ -2918,10 +3010,10 @@ int TABLE_SHARE::init_from_binary_frm_image(THD *thd, bool write,
       {
         Field *field;
 	if (new_field_pack_flag <= 1)
-	  key_part->fieldnr= (uint16) find_field(share->field,
-                                                 share->default_values,
-                                                 (uint) key_part->offset,
-                                                 (uint) key_part->length);
+	  key_part->fieldnr= find_field(share->field,
+                                        share->default_values,
+                                        (uint) key_part->offset,
+                                        (uint) key_part->length);
 	if (!key_part->fieldnr)
           goto err;
 
@@ -3520,7 +3612,7 @@ bool fix_session_vcol_expr(THD *thd, Virtual_column_info *vcol)
     DBUG_RETURN(0);
 
   vcol->expr->walk(&Item::cleanup_excluding_fields_processor, 0, 0);
-  DBUG_ASSERT(!vcol->expr->is_fixed());
+  DBUG_ASSERT(!vcol->expr->fixed());
   DBUG_RETURN(fix_vcol_expr(thd, vcol));
 }
 
@@ -3535,7 +3627,7 @@ bool fix_session_vcol_expr_for_read(THD *thd, Field *field,
 {
   DBUG_ENTER("fix_session_vcol_expr_for_read");
   TABLE_LIST *tl= field->table->pos_in_table_list;
-  if (!tl || tl->lock_type >= TL_WRITE_ALLOW_WRITE)
+  if (!tl || tl->lock_type >= TL_FIRST_WRITE)
     DBUG_RETURN(0);
   Security_context *save_security_ctx= thd->security_ctx;
   if (tl->security_ctx)
@@ -3575,7 +3667,7 @@ static bool fix_and_check_vcol_expr(THD *thd, TABLE *table,
   DBUG_PRINT("info", ("vcol: %p", vcol));
   DBUG_ASSERT(func_expr);
 
-  if (func_expr->is_fixed())
+  if (func_expr->fixed())
     DBUG_RETURN(0); // nothing to do
 
   if (fix_vcol_expr(thd, vcol))
@@ -3963,6 +4055,7 @@ enum open_frm_error open_table_from_share(THD *thd, TABLE_SHARE *share,
   }
 
   outparam->reginfo.lock_type= TL_UNLOCK;
+  outparam->reginfo.skip_locked= false;
   outparam->current_lock= F_UNLCK;
   records=0;
   if ((db_stat & HA_OPEN_KEYFILE) || (prgflag & DELAYED_OPEN))
@@ -4561,10 +4654,11 @@ fix_type_pointers(const char ***typelib_value_names,
    #  field number +1
 */
 
-static uint find_field(Field **fields, uchar *record, uint start, uint length)
+static field_index_t find_field(Field **fields, uchar *record, uint start,
+                                uint length)
 {
   Field **field;
-  uint i, pos;
+  field_index_t i, pos;
 
   pos= 0;
   for (field= fields, i=1 ; *field ; i++,field++)
@@ -4771,7 +4865,7 @@ rename_file_ext(const char * from,const char * to,const char * ext)
 
 bool get_field(MEM_ROOT *mem, Field *field, String *res)
 {
-  char *to;
+  const char *to;
   StringBuffer<MAX_FIELD_WIDTH> str;
   bool rc;
   THD *thd= field->get_thd();
@@ -4884,7 +4978,7 @@ bool check_db_name(LEX_STRING *org_name)
   if (!name_length || name_length > NAME_LEN)
     return 1;
 
-  if (lower_case_table_names == 1 && name != any_db)
+  if (lower_case_table_names == 1 && name != any_db.str)
   {
     org_name->length= name_length= my_casedn_str(files_charset_info, name);
     if (check_for_path_chars)
@@ -5114,7 +5208,7 @@ Table_check_intact::check(TABLE *table, const TABLE_FIELD_DEF *table_def)
         error= TRUE;
       }
       else if (field_def->cset.str &&
-               strcmp(field->charset()->csname, field_def->cset.str))
+               strcmp(field->charset()->cs_name.str, field_def->cset.str))
       {
         report_error(0, "Incorrect definition of table %s.%s: "
                      "expected the type of column '%s' at position %d "
@@ -5122,7 +5216,7 @@ Table_check_intact::check(TABLE *table, const TABLE_FIELD_DEF *table_def)
                      "character set '%s'.", table->s->db.str,
                      table->alias.c_ptr(),
                      field_def->name.str, i, field_def->cset.str,
-                     field->charset()->csname);
+                     field->charset()->cs_name.str);
         error= TRUE;
       }
     }
@@ -5426,6 +5520,7 @@ void TABLE::init(THD *thd, TABLE_LIST *tl)
   reginfo.impossible_range= 0;
   reginfo.join_tab= NULL;
   reginfo.not_exists_optimize= FALSE;
+  reginfo.skip_locked= false;
   created= TRUE;
   cond_selectivity= 1.0;
   cond_selectivity_sampling_explain= NULL;
@@ -5719,7 +5814,7 @@ bool TABLE_LIST::prep_where(THD *thd, Item **conds,
 
   if (where)
   {
-    if (where->is_fixed())
+    if (where->fixed())
       where->update_used_tables();
     else if (where->fix_fields(thd, &where))
       DBUG_RETURN(TRUE);
@@ -6069,6 +6164,8 @@ int TABLE::verify_constraints(bool ignore_failure)
   {
     if (versioned() && !vers_end_field()->is_max())
       return VIEW_CHECK_OK;
+
+    StringBuffer<MAX_FIELD_WIDTH> field_error(system_charset_info);
     for (Virtual_column_info **chk= check_constraints ; *chk ; chk++)
     {
       /*
@@ -6078,16 +6175,19 @@ int TABLE::verify_constraints(bool ignore_failure)
       if (((*chk)->expr->val_int() == 0 && !(*chk)->expr->null_value) ||
           in_use->is_error())
       {
-        StringBuffer<MAX_FIELD_WIDTH> field_error(system_charset_info);
         enum_vcol_info_type vcol_type= (*chk)->get_vcol_type();
         DBUG_ASSERT(vcol_type == VCOL_CHECK_TABLE ||
                     vcol_type == VCOL_CHECK_FIELD);
+
+        field_error.set_buffer_if_not_allocated(system_charset_info);
+        field_error.length(0);
+
         if (vcol_type == VCOL_CHECK_FIELD)
         {
-          field_error.append(s->table_name.str);
-          field_error.append(".");
+          field_error.append(s->table_name);
+          field_error.append('.');
         }
-        field_error.append((*chk)->name.str);
+        field_error.append((*chk)->name);
         my_error(ER_CONSTRAINT_FAILED,
                  MYF(ignore_failure ? ME_WARNING : 0), field_error.c_ptr(),
                  s->db.str, s->table_name.str);
@@ -6665,8 +6765,8 @@ const char *Natural_join_column::safe_db_name()
     ensure consistency. An exception are I_S schema tables, which
     are inconsistent in this respect.
   */
-  DBUG_ASSERT(!cmp(&table_ref->db,
-                   &table_ref->table->s->db) ||
+  DBUG_ASSERT(!cmp(&table_ref->db, &table_ref->table->s->db) ||
+              table_ref->table_function ||
               (table_ref->schema_table &&
                is_infoschema_db(&table_ref->table->s->db)) ||
               table_ref->is_materialized_derived());
@@ -6748,13 +6848,13 @@ Item *create_view_field(THD *thd, TABLE_LIST *view, Item **field_ref,
       ('mysql_schema_table' function). So we can return directly the
       field. This case happens only for 'show & where' commands.
     */
-    DBUG_ASSERT(field && field->is_fixed());
+    DBUG_ASSERT(field && field->fixed());
     DBUG_RETURN(field);
   }
 
   DBUG_ASSERT(field);
   thd->lex->current_select->no_wrap_view_item= TRUE;
-  if (!field->is_fixed())
+  if (!field->fixed())
   {
     if (field->fix_fields(thd, field_ref))
     {
@@ -6781,7 +6881,7 @@ Item *create_view_field(THD *thd, TABLE_LIST *view, Item **field_ref,
     views/derived tables.
   */
   if (view->table && view->table->maybe_null)
-    item->maybe_null= TRUE;
+    item->set_maybe_null();
   /* Save item in case we will need to fall back to materialization. */
   view->used_items.push_front(item, thd->mem_root);
   /*
@@ -6900,7 +7000,7 @@ const char *Field_iterator_table_ref::get_table_name()
 
   DBUG_ASSERT(!strcmp(table_ref->table_name.str,
                       table_ref->table->s->table_name.str) ||
-              table_ref->schema_table);
+              table_ref->schema_table || table_ref->table_function);
   return table_ref->table_name.str;
 }
 
@@ -6919,7 +7019,8 @@ const char *Field_iterator_table_ref::get_db_name()
   */
   DBUG_ASSERT(!cmp(&table_ref->db, &table_ref->table->s->db) ||
               (table_ref->schema_table &&
-               is_infoschema_db(&table_ref->table->s->db)));
+               is_infoschema_db(&table_ref->table->s->db)) ||
+               table_ref->table_function);
 
   return table_ref->db.str;
 }
@@ -8125,7 +8226,8 @@ bool TABLE::is_filled_at_execution()
   */
   return MY_TEST(!pos_in_table_list ||
                  pos_in_table_list->jtbm_subselect ||
-                 pos_in_table_list->is_active_sjm());
+                 pos_in_table_list->is_active_sjm() ||
+                 pos_in_table_list->table_function);
 }
 
 
@@ -8277,7 +8379,7 @@ bool TABLE_LIST::process_index_hints(TABLE *tbl)
 {
   /* initialize the result variables */
   tbl->keys_in_use_for_query= tbl->keys_in_use_for_group_by= 
-    tbl->keys_in_use_for_order_by= tbl->s->keys_in_use;
+    tbl->keys_in_use_for_order_by= tbl->s->usable_indexes(tbl->in_use);
 
   /* index hint list processing */
   if (index_hints)
@@ -8331,7 +8433,8 @@ bool TABLE_LIST::process_index_hints(TABLE *tbl)
       */
       if (tbl->s->keynames.type_names == 0 ||
           (pos= find_type(&tbl->s->keynames, hint->key_name.str,
-                          hint->key_name.length, 1)) <= 0)
+                          hint->key_name.length, 1)) <= 0 ||
+          (tbl->s->key_info[pos - 1].is_ignored))
       {
         my_error(ER_KEY_DOES_NOT_EXISTS, MYF(0), hint->key_name.str, alias.str);
         return 1;
@@ -8440,7 +8543,7 @@ void init_mdl_requests(TABLE_LIST *table_list)
   for ( ; table_list ; table_list= table_list->next_global)
     MDL_REQUEST_INIT(&table_list->mdl_request, MDL_key::TABLE,
                      table_list->db.str, table_list->table_name.str,
-                     table_list->lock_type >= TL_WRITE_ALLOW_WRITE
+                     table_list->lock_type >= TL_FIRST_WRITE
                      ? MDL_SHARED_WRITE : MDL_SHARED_READ, MDL_TRANSACTION);
 }
 
@@ -8498,25 +8601,6 @@ bool is_simple_order(ORDER *order)
   }
   return TRUE;
 }
-
-class Turn_errors_to_warnings_handler : public Internal_error_handler
-{
-public:
-  Turn_errors_to_warnings_handler() {}
-  bool handle_condition(THD *thd,
-                        uint sql_errno,
-                        const char* sqlstate,
-                        Sql_condition::enum_warning_level *level,
-                        const char* msg,
-                        Sql_condition ** cond_hdl)
-  {
-    *cond_hdl= NULL;
-    if (*level == Sql_condition::WARN_LEVEL_ERROR)
-      *level= Sql_condition::WARN_LEVEL_WARN;
-    return(0);
-  }
-};
-
 
 /*
   to satisfy marked_for_write_or_computed() Field's assert we temporarily
@@ -9270,10 +9354,12 @@ bool TABLE_LIST::init_derived(THD *thd, bool init_view)
   {
     /* A subquery might be forced to be materialized due to a side-effect. */
     if (!is_materialized_derived() && first_select->is_mergeable() &&
+        (unit->outer_select() && !unit->outer_select()->with_rownum) &&
+        (!thd->lex->with_rownum ||
+         (!first_select->group_list.elements &&
+          !first_select->order_list.elements)) &&
         optimizer_flag(thd, OPTIMIZER_SWITCH_DERIVED_MERGE) &&
-        !thd->lex->can_not_use_merged() &&
-        !(thd->lex->sql_command == SQLCOM_UPDATE_MULTI ||
-          thd->lex->sql_command == SQLCOM_DELETE_MULTI) &&
+        !thd->lex->can_not_use_merged(1) &&
         !is_recursive_with_table())
       set_merged_derived();
     else
@@ -9422,6 +9508,8 @@ bool TABLE_LIST::change_refs_to_fields()
     */
     thd->change_item_tree((Item **)&ref->ref,
                           (Item*)(materialized_items + idx));
+    /* Inform Item_direct_ref that what it points to has changed */
+    ref->ref_changed();
   }
 
   return FALSE;

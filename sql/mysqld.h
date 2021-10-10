@@ -116,7 +116,6 @@ extern bool opt_ignore_builtin_innodb;
 extern my_bool opt_character_set_client_handshake;
 extern my_bool debug_assert_on_not_freed_memory;
 extern MYSQL_PLUGIN_IMPORT bool volatile abort_loop;
-extern Atomic_counter<uint> connection_count;
 extern my_bool opt_safe_user_create;
 extern my_bool opt_safe_show_db, opt_local_infile, opt_myisam_use_mmap;
 extern my_bool opt_slave_compressed_protocol, use_temp_pool;
@@ -147,7 +146,6 @@ extern ulong opt_replicate_events_marked_for_skip;
 extern char *default_tz_name;
 extern Time_zone *default_tz;
 extern char *my_bind_addr_str;
-extern int server_socket_ai_family;
 extern char *default_storage_engine, *default_tmp_storage_engine;
 extern char *enforced_storage_engine;
 extern char *gtid_pos_auto_engines;
@@ -156,7 +154,8 @@ extern bool opt_endinfo, using_udf_functions;
 extern my_bool locked_in_memory;
 extern bool opt_using_transactions;
 extern ulong current_pid;
-extern ulong expire_logs_days;
+extern double expire_logs_days;
+extern ulong binlog_expire_logs_seconds;
 extern my_bool relay_log_recovery;
 extern uint sync_binlog_period, sync_relaylog_period, 
             sync_relayloginfo_period, sync_masterinfo_period;
@@ -208,7 +207,7 @@ extern MYSQL_PLUGIN_IMPORT char glob_hostname[FN_REFLEN];
 extern char mysql_home[FN_REFLEN];
 extern char pidfile_name[FN_REFLEN], system_time_zone[30], *opt_init_file;
 extern char default_logfile_name[FN_REFLEN];
-extern char log_error_file[FN_REFLEN], *opt_tc_log_file;
+extern char log_error_file[FN_REFLEN], *opt_tc_log_file, *opt_ddl_recovery_file;
 extern const double log_10[309];
 extern ulonglong keybuff_size;
 extern ulonglong thd_startup_options;
@@ -269,6 +268,8 @@ extern MYSQL_PLUGIN_IMPORT const char  *my_localhost;
 extern MYSQL_PLUGIN_IMPORT const char **errmesg;			/* Error messages */
 extern const char *myisam_recover_options_str;
 extern const LEX_CSTRING in_left_expr_name, in_additional_cond, in_having_cond;
+extern const LEX_CSTRING NULL_clex_str;
+extern const LEX_CSTRING error_clex_str;
 extern SHOW_VAR status_vars[];
 extern struct system_variables max_system_variables;
 extern struct system_status_var global_status_var;
@@ -395,7 +396,7 @@ extern PSI_file_key key_file_binlog, key_file_binlog_cache,
   key_file_loadfile, key_file_log_event_data, key_file_log_event_info,
   key_file_master_info, key_file_misc, key_file_partition_ddl_log,
   key_file_pid, key_file_relay_log_info, key_file_send_file, key_file_tclog,
-  key_file_trg, key_file_trn, key_file_init;
+  key_file_trg, key_file_trn, key_file_init, key_file_log_ddl;
 extern PSI_file_key key_file_query_log, key_file_slow_log;
 extern PSI_file_key key_file_relaylog, key_file_relaylog_index,
                     key_file_relaylog_cache, key_file_relaylog_index_cache;
@@ -503,6 +504,7 @@ extern PSI_memory_key key_memory_TABLE;
 extern PSI_memory_key key_memory_binlog_statement_buffer;
 extern PSI_memory_key key_memory_user_conn;
 extern PSI_memory_key key_memory_dboptions_hash;
+extern PSI_memory_key key_memory_dbnames_cache;
 extern PSI_memory_key key_memory_hash_index_key_buffer;
 extern PSI_memory_key key_memory_THD_handler_tables_hash;
 extern PSI_memory_key key_memory_JOIN_CACHE;
@@ -638,7 +640,9 @@ extern PSI_stage_info stage_upgrading_lock;
 extern PSI_stage_info stage_user_lock;
 extern PSI_stage_info stage_user_sleep;
 extern PSI_stage_info stage_verifying_table;
+extern PSI_stage_info stage_waiting_for_ddl;
 extern PSI_stage_info stage_waiting_for_delay_list;
+extern PSI_stage_info stage_waiting_for_flush;
 extern PSI_stage_info stage_waiting_for_gtid_to_be_written_to_binary_log;
 extern PSI_stage_info stage_waiting_for_handler_insert;
 extern PSI_stage_info stage_waiting_for_handler_lock;
@@ -696,7 +700,7 @@ void init_sql_statement_info();
 void init_com_statement_info();
 #endif /* HAVE_PSI_STATEMENT_INTERFACE */
 
-#ifndef __WIN__
+#ifndef _WIN32
 extern pthread_t signal_thread;
 #endif
 
@@ -742,7 +746,7 @@ extern mysql_mutex_t
        LOCK_error_log, LOCK_delayed_insert, LOCK_short_uuid_generator,
        LOCK_delayed_status, LOCK_delayed_create, LOCK_crypt, LOCK_timezone,
        LOCK_active_mi, LOCK_manager, LOCK_user_conn,
-       LOCK_prepared_stmt_count, LOCK_error_messages;
+       LOCK_prepared_stmt_count, LOCK_error_messages,  LOCK_backup_log;
 extern MYSQL_PLUGIN_IMPORT mysql_mutex_t LOCK_global_system_variables;
 extern mysql_rwlock_t LOCK_all_status_vars;
 extern mysql_mutex_t LOCK_start_thread;
@@ -777,6 +781,8 @@ enum options_mysqld
   OPT_BINLOG_IGNORE_DB,
   OPT_BIN_LOG,
   OPT_BOOTSTRAP,
+  OPT_EXPIRE_LOGS_DAYS,
+  OPT_BINLOG_EXPIRE_LOGS_SECONDS,
   OPT_CONSOLE,
   OPT_DEBUG_SYNC_TIMEOUT,
   OPT_REMOVED_OPTION,
@@ -955,5 +961,15 @@ extern ulong opt_binlog_dbug_fsync_sleep;
 
 extern uint volatile global_disable_checkpoint;
 extern my_bool opt_help;
+
+extern int mysqld_main(int argc, char **argv);
+
+#ifdef _WIN32
+extern HANDLE hEventShutdown;
+extern void mysqld_win_initiate_shutdown();
+extern void mysqld_win_set_startup_complete();
+extern void mysqld_set_service_status_callback(void (*)(DWORD, DWORD, DWORD));
+extern void mysqld_win_set_service_name(const char *name);
+#endif
 
 #endif /* MYSQLD_INCLUDED */

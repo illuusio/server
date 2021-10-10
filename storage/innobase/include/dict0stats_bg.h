@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 2012, 2017, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2017, 2019, MariaDB Corporation.
+Copyright (c) 2017, 2021, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -31,7 +31,7 @@ Created Apr 26, 2012 Vasil Dimov
 #include "os0thread.h"
 
 #ifdef HAVE_PSI_INTERFACE
-extern mysql_pfs_key_t	dict_stats_recalc_pool_mutex_key;
+extern mysql_pfs_key_t	recalc_pool_mutex_key;
 #endif /* HAVE_PSI_INTERFACE */
 
 #ifdef UNIV_DEBUG
@@ -52,7 +52,7 @@ for the background thread to stop accessing a table.
 @param trx	transaction holding the data dictionary locks */
 #define DICT_BG_YIELD(trx)	do {	\
 	row_mysql_unlock_data_dictionary(trx);	\
-	os_thread_sleep(250000);		\
+	std::this_thread::sleep_for(std::chrono::milliseconds(250));	\
 	row_mysql_lock_data_dictionary(trx);	\
 } while (0)
 
@@ -67,7 +67,7 @@ dict_stats_stop_bg(
 	dict_table_t*	table)	/*!< in/out: table */
 {
 	ut_ad(!srv_read_only_mode);
-	ut_ad(mutex_own(&dict_sys.mutex));
+	dict_sys.assert_locked();
 
 	if (!(table->stats_bg_flag & BG_STAT_IN_PROGRESS)) {
 		return(true);

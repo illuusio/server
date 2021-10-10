@@ -27,6 +27,7 @@ Alter_info::Alter_info(const Alter_info &rhs, MEM_ROOT *mem_root)
   key_list(rhs.key_list, mem_root),
   alter_rename_key_list(rhs.alter_rename_key_list, mem_root),
   create_list(rhs.create_list, mem_root),
+  alter_index_ignorability_list(rhs.alter_index_ignorability_list, mem_root),
   check_constraint_list(rhs.check_constraint_list, mem_root),
   flags(rhs.flags), partition_flags(rhs.partition_flags),
   keys_onoff(rhs.keys_onoff),
@@ -279,10 +280,8 @@ Alter_table_ctx::Alter_table_ctx(THD *thd, TABLE_LIST *table_list,
     tables_opened(tables_opened_arg),
     new_db(*new_db_arg), new_name(*new_name_arg),
     fk_error_if_delete_row(false), fk_error_id(NULL),
-    fk_error_table(NULL)
-#ifdef DBUG_ASSERT_EXISTS
-    , tmp_table(false)
-#endif
+    fk_error_table(NULL),
+    tmp_table(false)
 {
   /*
     Assign members db, table_name, new_db and new_name
@@ -361,10 +360,22 @@ Alter_table_ctx::Alter_table_ctx(THD *thd, TABLE_LIST *table_list,
       this case. This fact is enforced with assert.
     */
     build_tmptable_filename(thd, tmp_path, sizeof(tmp_path));
-#ifdef DBUG_ASSERT_EXISTS
     tmp_table= true;
-#endif
   }
+  if ((id.length= table_list->table->s->tabledef_version.length))
+    memcpy(id_buff, table_list->table->s->tabledef_version.str, MY_UUID_SIZE);
+  id.str= id_buff;
+  storage_engine_partitioned= table_list->table->file->partition_engine();
+  storage_engine_name.str= storage_engine_buff;
+  storage_engine_name.length= ((strmake(storage_engine_buff,
+                                        table_list->table->file->
+                                        real_table_type(),
+                                        sizeof(storage_engine_buff)-1)) -
+                               storage_engine_buff);
+  tmp_storage_engine_name.str= tmp_storage_engine_buff;
+  tmp_storage_engine_name.length= 0;
+  tmp_id.str= 0;
+  tmp_id.length= 0;
 }
 
 

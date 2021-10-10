@@ -1348,9 +1348,9 @@ page_zip_compress(
 #endif /* PAGE_ZIP_COMPRESS_DBG */
 	page_zip_stat[page_zip->ssize - 1].compressed++;
 	if (cmp_per_index_enabled) {
-		mutex_enter(&page_zip_stat_per_index_mutex);
+		mysql_mutex_lock(&page_zip_stat_per_index_mutex);
 		page_zip_stat_per_index[ind_id].compressed++;
-		mutex_exit(&page_zip_stat_per_index_mutex);
+		mysql_mutex_unlock(&page_zip_stat_per_index_mutex);
 	}
 
 	if (UNIV_UNLIKELY(n_dense * PAGE_ZIP_DIR_SLOT_SIZE
@@ -1501,10 +1501,10 @@ err_exit:
 		page_zip_stat[page_zip->ssize - 1].compressed_usec
 			+= time_diff;
 		if (cmp_per_index_enabled) {
-			mutex_enter(&page_zip_stat_per_index_mutex);
+			mysql_mutex_lock(&page_zip_stat_per_index_mutex);
 			page_zip_stat_per_index[ind_id].compressed_usec
 				+= time_diff;
-			mutex_exit(&page_zip_stat_per_index_mutex);
+			mysql_mutex_unlock(&page_zip_stat_per_index_mutex);
 		}
 		return false;
 	}
@@ -1568,10 +1568,10 @@ err_exit:
 	page_zip_stat[page_zip->ssize - 1].compressed_ok++;
 	page_zip_stat[page_zip->ssize - 1].compressed_usec += time_diff;
 	if (cmp_per_index_enabled) {
-		mutex_enter(&page_zip_stat_per_index_mutex);
+		mysql_mutex_lock(&page_zip_stat_per_index_mutex);
 		page_zip_stat_per_index[ind_id].compressed_ok++;
 		page_zip_stat_per_index[ind_id].compressed_usec += time_diff;
-		mutex_exit(&page_zip_stat_per_index_mutex);
+		mysql_mutex_unlock(&page_zip_stat_per_index_mutex);
 	}
 
 	if (page_is_leaf(page)) {
@@ -1642,8 +1642,8 @@ page_zip_fields_decode(
 		return(NULL);
 	}
 
-	table = dict_mem_table_create("ZIP_DUMMY", NULL, n, 0,
-				      DICT_TF_COMPACT, 0);
+	table = dict_table_t::create({C_STRING_WITH_LEN("ZIP_DUMMY")},
+				     nullptr, n, 0, DICT_TF_COMPACT, 0);
 	index = dict_mem_index_create(table, "ZIP_DUMMY", 0, n);
 	index->n_uniq = static_cast<unsigned>(n) & dict_index_t::MAX_N_FIELDS;
 	/* avoid ut_ad(index->cached) in dict_index_get_n_unique_in_tree */
@@ -3209,10 +3209,10 @@ page_zip_decompress(
 	index_id_t	index_id = btr_page_get_index_id(page);
 
 	if (srv_cmp_per_index_enabled) {
-		mutex_enter(&page_zip_stat_per_index_mutex);
+		mysql_mutex_lock(&page_zip_stat_per_index_mutex);
 		page_zip_stat_per_index[index_id].decompressed++;
 		page_zip_stat_per_index[index_id].decompressed_usec += time_diff;
-		mutex_exit(&page_zip_stat_per_index_mutex);
+		mysql_mutex_unlock(&page_zip_stat_per_index_mutex);
 	}
 
 	/* Update the stat counter for LRU policy. */
@@ -4581,37 +4581,26 @@ page_zip_copy_recs(
 #endif /* !UNIV_INNOCHECKSUM */
 
 /** Calculate the compressed page checksum.
-@param[in]	data			compressed page
-@param[in]	size			size of compressed page
-@param[in]	algo			algorithm to use
+@param data		compressed page
+@param size		size of compressed page
+@param use_adler	whether to use Adler32 instead of a XOR of 3 CRC-32C
 @return page checksum */
-uint32_t
-page_zip_calc_checksum(
-	const void*			data,
-	ulint				size,
-	srv_checksum_algorithm_t	algo)
+uint32_t page_zip_calc_checksum(const void *data, size_t size, bool use_adler)
 {
 	uLong		adler;
 	const Bytef*	s = static_cast<const byte*>(data);
 
 	/* Exclude FIL_PAGE_SPACE_OR_CHKSUM, FIL_PAGE_LSN,
 	and FIL_PAGE_FILE_FLUSH_LSN from the checksum. */
+	ut_ad(size > FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
 
-	switch (algo) {
-	case SRV_CHECKSUM_ALGORITHM_FULL_CRC32:
-	case SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32:
-	case SRV_CHECKSUM_ALGORITHM_CRC32:
-	case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
-		ut_ad(size > FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
+	if (!use_adler) {
 		return ut_crc32(s + FIL_PAGE_OFFSET,
 				FIL_PAGE_LSN - FIL_PAGE_OFFSET)
 			^ ut_crc32(s + FIL_PAGE_TYPE, 2)
 			^ ut_crc32(s + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID,
 				   size - FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
-	case SRV_CHECKSUM_ALGORITHM_INNODB:
-	case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
-		ut_ad(size > FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
-
+	} else {
 		adler = adler32(0L, s + FIL_PAGE_OFFSET,
 				FIL_PAGE_LSN - FIL_PAGE_OFFSET);
 		adler = adler32(adler, s + FIL_PAGE_TYPE, 2);
@@ -4621,15 +4610,7 @@ page_zip_calc_checksum(
 			- FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);
 
 		return(uint32_t(adler));
-	case SRV_CHECKSUM_ALGORITHM_NONE:
-	case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
-		return(BUF_NO_CHECKSUM_MAGIC);
-	/* no default so the compiler will emit a warning if new enum
-	is added and not handled here */
 	}
-
-	ut_error;
-	return(0);
 }
 
 /** Validate the checksum on a ROW_FORMAT=COMPRESSED page.
@@ -4638,13 +4619,6 @@ page_zip_calc_checksum(
 @return whether the stored checksum matches innodb_checksum_algorithm */
 bool page_zip_verify_checksum(const byte *data, size_t size)
 {
-	const srv_checksum_algorithm_t	curr_algo =
-		static_cast<srv_checksum_algorithm_t>(srv_checksum_algorithm);
-
-	if (curr_algo == SRV_CHECKSUM_ALGORITHM_NONE) {
-		return true;
-	}
-
 	if (buf_is_zeroes(span<const byte>(data, size))) {
 		return true;
 	}
@@ -4652,31 +4626,17 @@ bool page_zip_verify_checksum(const byte *data, size_t size)
 	const uint32_t stored = mach_read_from_4(
 		data + FIL_PAGE_SPACE_OR_CHKSUM);
 
-	uint32_t calc = page_zip_calc_checksum(data, size, curr_algo);
+	uint32_t calc = page_zip_calc_checksum(data, size, false);
 
 #ifdef UNIV_INNOCHECKSUM
+	extern FILE* log_file;
+	extern uint32_t cur_page_num;
+
 	if (log_file) {
 		fprintf(log_file, "page::" UINT32PF ";"
-			" %s checksum: calculated = " UINT32PF ";"
+			" checksum: calculated = " UINT32PF ";"
 			" recorded = " UINT32PF "\n", cur_page_num,
-			buf_checksum_algorithm_name(
-				static_cast<srv_checksum_algorithm_t>(
-				srv_checksum_algorithm)),
 			calc, stored);
-	}
-
-	if (!strict_verify) {
-		const uint32_t	crc32 = page_zip_calc_checksum(
-			data, size, SRV_CHECKSUM_ALGORITHM_CRC32);
-
-		if (log_file) {
-			fprintf(log_file, "page::" UINT32PF ": crc32 checksum:"
-				" calculated = " UINT32PF "; recorded = " UINT32PF "\n",
-				cur_page_num, crc32, stored);
-			fprintf(log_file, "page::" UINT32PF ": none checksum:"
-				" calculated = %lu; recorded = " UINT32PF "\n",
-				cur_page_num, BUF_NO_CHECKSUM_MAGIC, stored);
-		}
 	}
 #endif /* UNIV_INNOCHECKSUM */
 
@@ -4684,30 +4644,19 @@ bool page_zip_verify_checksum(const byte *data, size_t size)
 		return(TRUE);
 	}
 
-	switch (curr_algo) {
+#ifndef UNIV_INNOCHECKSUM
+	switch (srv_checksum_algorithm) {
 	case SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32:
 	case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
-	case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
-	case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
-		return FALSE;
-	case SRV_CHECKSUM_ALGORITHM_FULL_CRC32:
-	case SRV_CHECKSUM_ALGORITHM_CRC32:
+		break;
+	default:
 		if (stored == BUF_NO_CHECKSUM_MAGIC) {
 			return(TRUE);
 		}
 
-		return stored == page_zip_calc_checksum(
-			data, size, SRV_CHECKSUM_ALGORITHM_INNODB);
-	case SRV_CHECKSUM_ALGORITHM_INNODB:
-		if (stored == BUF_NO_CHECKSUM_MAGIC) {
-			return TRUE;
-		}
-
-		return stored == page_zip_calc_checksum(
-			data, size, SRV_CHECKSUM_ALGORITHM_CRC32);
-	case SRV_CHECKSUM_ALGORITHM_NONE:
-		return TRUE;
+		return stored == page_zip_calc_checksum(data, size, true);
 	}
+#endif /* !UNIV_INNOCHECKSUM */
 
 	return FALSE;
 }

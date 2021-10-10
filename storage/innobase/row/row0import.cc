@@ -1419,7 +1419,7 @@ row_import::set_root_by_heuristic() UNIV_NOTHROW
 			" the tablespace has " << m_n_indexes << " indexes";
 	}
 
-	dict_mutex_enter_for_mysql();
+	dict_sys.mutex_lock();
 
 	ulint	i = 0;
 	dberr_t	err = DB_SUCCESS;
@@ -1460,7 +1460,7 @@ row_import::set_root_by_heuristic() UNIV_NOTHROW
 		}
 	}
 
-	dict_mutex_exit_for_mysql();
+	dict_sys.mutex_unlock();
 
 	return(err);
 }
@@ -2130,8 +2130,7 @@ dberr_t PageConverter::operator()(buf_block_t* block) UNIV_NOTHROW
 	in the buffer pool, evict it now, because
 	we no longer evict the pages on DISCARD TABLESPACE. */
 	buf_page_get_gen(block->page.id(), get_zip_size(),
-			 RW_NO_LATCH, NULL, BUF_EVICT_IF_IN_POOL,
-			 __FILE__, __LINE__, NULL, NULL);
+			 RW_NO_LATCH, NULL, BUF_EVICT_IF_IN_POOL, NULL);
 
 	uint16_t page_type;
 
@@ -2400,15 +2399,7 @@ row_import_set_sys_max_row_id(
 	if (row_id) {
 		/* Update the system row id if the imported index row id is
 		greater than the max system row id. */
-
-		mutex_enter(&dict_sys.mutex);
-
-		if (row_id >= dict_sys.row_id) {
-			dict_sys.row_id = row_id + 1;
-			dict_hdr_flush_row_id();
-		}
-
-		mutex_exit(&dict_sys.mutex);
+		dict_sys.update_row_id(row_id);
 	}
 }
 
@@ -3211,8 +3202,6 @@ row_import_update_index_root(trx_t* trx, dict_table_t* table, bool reset)
 
 		que_thr_t*	thr;
 
-		graph->fork_type = QUE_FORK_MYSQL_INTERFACE;
-
 		ut_a(thr = que_fork_start_command(graph));
 
 		que_run_threads(thr);
@@ -3455,7 +3444,7 @@ fil_iterate(
 	required by buf_zip_decompress() */
 	dberr_t		err = DB_SUCCESS;
 	bool		page_compressed = false;
-	bool		punch_hole = true;
+	bool		punch_hole = !my_test_if_thinly_provisioned(iter.file);
 
 	for (offset = iter.start; offset < iter.end; offset += n_bytes) {
 		if (callback.is_interrupted()) {
@@ -3781,16 +3770,15 @@ fil_tablespace_iterate(
 	/* Make sure the data_dir_path is set. */
 	dict_get_and_save_data_dir_path(table, false);
 
-	if (DICT_TF_HAS_DATA_DIR(table->flags)) {
-		ut_a(table->data_dir_path);
+	ut_ad(!DICT_TF_HAS_DATA_DIR(table->flags) || table->data_dir_path);
 
-		filepath = fil_make_filepath(
-			table->data_dir_path, table->name.m_name, IBD, true);
-	} else {
-		filepath = fil_make_filepath(
-			NULL, table->name.m_name, IBD, false);
-	}
+	const char *data_dir_path = DICT_TF_HAS_DATA_DIR(table->flags)
+		? table->data_dir_path : nullptr;
 
+	filepath = fil_make_filepath(data_dir_path,
+				     {table->name.m_name,
+				      strlen(table->name.m_name)},
+				     IBD, data_dir_path != nullptr);
 	if (!filepath) {
 		return(DB_OUT_OF_MEMORY);
 	} else {
@@ -3947,18 +3935,12 @@ row_import_for_mysql(
 
 	trx = trx_create();
 
-	/* So that the table is not DROPped during recovery. */
-	trx_set_dict_operation(trx, TRX_DICT_OP_INDEX);
+	trx->dict_operation = true;
 
 	trx_start_if_not_started(trx, true);
 
 	/* So that we can send error messages to the user. */
 	trx->mysql_thd = prebuilt->trx->mysql_thd;
-
-	/* Ensure that the table will be dropped by trx_rollback_active()
-	in case of a crash. */
-
-	trx->table_id = table->id;
 
 	/* Assign an undo segment for the transaction, so that the
 	transaction will be recovered after a crash. */
@@ -3986,10 +3968,6 @@ row_import_for_mysql(
 
 	prebuilt->trx->op_info = "read meta-data file";
 
-	/* Prevent DDL operations while we are checking. */
-
-	rw_lock_s_lock(&dict_sys.latch);
-
 	row_import	cfg;
 
 	err = row_import_read_cfg(table, trx->mysql_thd, cfg);
@@ -4013,15 +3991,10 @@ row_import_for_mysql(
 			autoinc = cfg.m_autoinc;
 		}
 
-		rw_lock_s_unlock(&dict_sys.latch);
-
 		DBUG_EXECUTE_IF("ib_import_set_index_root_failure",
 				err = DB_TOO_MANY_CONCURRENT_TRXS;);
 
 	} else if (cfg.m_missing) {
-
-		rw_lock_s_unlock(&dict_sys.latch);
-
 		/* We don't have a schema file, we will have to discover
 		the index root pages from the .ibd file and skip the schema
 		matching step. */
@@ -4048,8 +4021,6 @@ row_import_for_mysql(
 				err = cfg.set_root_by_heuristic();
 			}
 		}
-	} else {
-		rw_lock_s_unlock(&dict_sys.latch);
 	}
 
 	if (err != DB_SUCCESS) {
@@ -4114,15 +4085,14 @@ row_import_for_mysql(
 	Find the space ID in SYS_TABLES since this is an ALTER TABLE. */
 	dict_get_and_save_data_dir_path(table, true);
 
-	if (DICT_TF_HAS_DATA_DIR(table->flags)) {
-		ut_a(table->data_dir_path);
+	ut_ad(!DICT_TF_HAS_DATA_DIR(table->flags) || table->data_dir_path);
+	const char *data_dir_path = DICT_TF_HAS_DATA_DIR(table->flags)
+		? table->data_dir_path : nullptr;
+	fil_space_t::name_type name{
+		table->name.m_name, strlen(table->name.m_name)};
 
-		filepath = fil_make_filepath(
-			table->data_dir_path, table->name.m_name, IBD, true);
-	} else {
-		filepath = fil_make_filepath(
-			NULL, table->name.m_name, IBD, false);
-	}
+	filepath = fil_make_filepath(data_dir_path, name, IBD,
+				     data_dir_path != nullptr);
 
 	DBUG_EXECUTE_IF(
 		"ib_import_OOM_15",
@@ -4137,7 +4107,7 @@ row_import_for_mysql(
 
 	/* Open the tablespace so that we can access via the buffer pool.
 	We set the 2nd param (fix_dict = true) here because we already
-	have an x-lock on dict_sys.latch and dict_sys.mutex.
+	have locked dict_sys.latch and dict_sys.mutex.
 	The tablespace is initially opened as a temporary one, because
 	we will not be writing any redo log for it before we have invoked
 	fil_space_t::set_imported() to declare it a persistent tablespace. */
@@ -4145,8 +4115,8 @@ row_import_for_mysql(
 	ulint	fsp_flags = dict_tf_to_fsp_flags(table->flags);
 
 	table->space = fil_ibd_open(
-		true, true, FIL_TYPE_IMPORT, table->space_id,
-		fsp_flags, table->name, filepath, &err);
+		true, FIL_TYPE_IMPORT, table->space_id,
+		fsp_flags, name, filepath, &err);
 
 	ut_ad((table->space == NULL) == (err != DB_SUCCESS));
 	DBUG_EXECUTE_IF("ib_import_open_tablespace_failure",
@@ -4249,7 +4219,7 @@ row_import_for_mysql(
 			ib::warn() << "Waiting for flush to complete on "
 				   << prebuilt->table->name;
 		}
-		os_thread_sleep(20000);
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
 	}
 
 	ib::info() << "Phase IV - Flush complete";

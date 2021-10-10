@@ -154,8 +154,13 @@ select * from v1	{
             "best_join_order": ["t1"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "t1.a = 1"
+            }
+          },
+          {
             "attaching_conditions_to_tables": {
-              "original_condition": "t1.a = 1",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -300,8 +305,13 @@ select * from (select * from t1 where t1.a=1)q	{
             "best_join_order": ["t1"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "t1.a = 1"
+            }
+          },
+          {
             "attaching_conditions_to_tables": {
-              "original_condition": "t1.a = 1",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -453,8 +463,13 @@ select * from v2	{
                   "best_join_order": ["t1"]
                 },
                 {
+                  "substitute_best_equal": {
+                    "condition": "WHERE",
+                    "resulting_condition": "t1.a = 1"
+                  }
+                },
+                {
                   "attaching_conditions_to_tables": {
-                    "original_condition": "t1.a = 1",
                     "attached_conditions_computation": [],
                     "attached_conditions_summary": [
                       {
@@ -520,7 +535,6 @@ select * from v2	{
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": null,
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -659,7 +673,6 @@ explain select * from v2	{
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": null,
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -779,7 +792,6 @@ explain select * from v1	{
                 },
                 {
                   "attaching_conditions_to_tables": {
-                    "original_condition": null,
                     "attached_conditions_computation": [],
                     "attached_conditions_summary": [
                       {
@@ -845,7 +857,6 @@ explain select * from v1	{
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": null,
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -1104,8 +1115,13 @@ explain select * from t1,t2 where t1.a=t2.b+2 and t2.a= t1.b	{
             "best_join_order": ["t1", "t2"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "t2.a = t1.b and t1.a = t2.b + 2"
+            }
+          },
+          {
             "attaching_conditions_to_tables": {
-              "original_condition": "t2.a = t1.b and t1.a = t2.b + 2",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -1274,7 +1290,6 @@ EXPLAIN SELECT DISTINCT a FROM t1	{
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": null,
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -1466,8 +1481,13 @@ EXPLAIN SELECT MIN(d) FROM t1 where b=2 and c=3  group by a	{
             "best_join_order": ["t1"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "t1.b = 2 and t1.c = 3"
+            }
+          },
+          {
             "attaching_conditions_to_tables": {
-              "original_condition": "t1.b = 2 and t1.c = 3",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -1660,8 +1680,13 @@ EXPLAIN SELECT id,MIN(a),MAX(a) FROM t1 WHERE a>=20010104e0 GROUP BY id	{
             "best_join_order": ["t1"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "t1.a >= 20010104e0"
+            }
+          },
+          {
             "attaching_conditions_to_tables": {
-              "original_condition": "t1.a >= 20010104e0",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -1843,8 +1868,13 @@ EXPLAIN SELECT * FROM t1 WHERE a = 20010104e0 GROUP BY id	{
             "best_join_order": ["t1"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "t1.a = 20010104e0"
+            }
+          },
+          {
             "attaching_conditions_to_tables": {
-              "original_condition": "t1.a = 20010104e0",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -2121,8 +2151,13 @@ explain  select * from t1 where a=1 and b=2 order by c limit 1	{
             "best_join_order": ["t1"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "t1.a = 1 and t1.b = 2"
+            }
+          },
+          {
             "attaching_conditions_to_tables": {
-              "original_condition": "t1.a = 1 and t1.b = 2",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -2285,6 +2320,13 @@ select t1.a from t1 left join t2 on t1.a=t2.a	{
         "select_id": 1,
         "steps": [
           {
+            "build_equal_items": {
+              "condition": "ON expr",
+              "attached_to": "t2",
+              "resulting_condition": "multiple equal(t1.a, t2.a)"
+            }
+          },
+          {
             "table_dependencies": [
               {
                 "table": "t1",
@@ -2361,11 +2403,16 @@ select t1.a from t1 left join t2 on t1.a=t2.a	{
             "best_join_order": ["t2", "t1"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "1"
+            }
+          },
+          {
             "condition_on_constant_tables": "1"
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": "1",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -2409,6 +2456,13 @@ explain select * from t1 left join t2 on t2.a=t1.a	{
       "join_optimization": {
         "select_id": 1,
         "steps": [
+          {
+            "build_equal_items": {
+              "condition": "ON expr",
+              "attached_to": "t2",
+              "resulting_condition": "multiple equal(t2.a, t1.a)"
+            }
+          },
           {
             "table_dependencies": [
               {
@@ -2518,11 +2572,23 @@ explain select * from t1 left join t2 on t2.a=t1.a	{
             "best_join_order": ["t1", "t2"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "1"
+            }
+          },
+          {
+            "substitute_best_equal": {
+              "condition": "ON expr",
+              "attached_to": "t2",
+              "resulting_condition": "t2.a = t1.a"
+            }
+          },
+          {
             "condition_on_constant_tables": "1"
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": "1",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -2569,6 +2635,13 @@ explain select t1.a from t1 left join (t2 join t3 on t2.b=t3.b) on t2.a=t1.a and
       "join_optimization": {
         "select_id": 1,
         "steps": [
+          {
+            "build_equal_items": {
+              "condition": "ON expr",
+              "attached_to": "t3",
+              "resulting_condition": "multiple equal(t2.a, t1.a, t3.a) and multiple equal(t2.b, t3.b)"
+            }
+          },
           {
             "table_dependencies": [
               {
@@ -2676,11 +2749,16 @@ explain select t1.a from t1 left join (t2 join t3 on t2.b=t3.b) on t2.a=t1.a and
             "best_join_order": ["t3", "t2", "t1"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "1"
+            }
+          },
+          {
             "condition_on_constant_tables": "1"
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": "1",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -2989,11 +3067,16 @@ explain extended select * from t1 where a in (select pk from t10)	{
             "best_join_order": ["t1", "<subquery2>"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "1"
+            }
+          },
+          {
             "condition_on_constant_tables": "1"
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": "1",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -3350,8 +3433,13 @@ explain select * from t1 where pk = 2 and a=5 and b=1	{
             "best_join_order": ["t1"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "t1.pk = 2 and t1.a = 5 and t1.b = 1"
+            }
+          },
+          {
             "attaching_conditions_to_tables": {
-              "original_condition": "t1.pk = 2 and t1.a = 5 and t1.b = 1",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -3475,7 +3563,6 @@ select f1(a) from t1	{
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": null,
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -3573,7 +3660,6 @@ select f2(a) from t1	{
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": null,
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -3611,7 +3697,7 @@ a
 2
 select length(trace) from INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 length(trace)
-2183
+2141
 set optimizer_trace_max_mem_size=100;
 select * from t1;
 a
@@ -3625,7 +3711,7 @@ select * from t1	{
       "join_preparation": {
         "select_id": 1,
         "steps": [
-        	2083	0
+        	2041	0
 set optimizer_trace_max_mem_size=0;
 select * from t1;
 a
@@ -3633,7 +3719,7 @@ a
 2
 select * from INFORMATION_SCHEMA.OPTIMIZER_TRACE;
 QUERY	TRACE	MISSING_BYTES_BEYOND_MAX_MEM_SIZE	INSUFFICIENT_PRIVILEGES
-select * from t1		2183	0
+select * from t1		2141	0
 drop table t1;
 set optimizer_trace='enabled=off';
 set @@optimizer_trace_max_mem_size= @save_optimizer_trace_max_mem_size;
@@ -4010,6 +4096,7 @@ explain delete t0,t1 from t0, t1 where t0.a=t1.a and t1.a<3	{
                         {
                           "access_type": "ref",
                           "index": "a",
+                          "rec_per_key_stats_missing": true,
                           "used_range_estimates": false,
                           "cause": "not better than ref estimates",
                           "rows": 2,
@@ -4041,8 +4128,13 @@ explain delete t0,t1 from t0, t1 where t0.a=t1.a and t1.a<3	{
             "best_join_order": ["t0", "t1"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "t1.a = t0.a and t0.a < 3"
+            }
+          },
+          {
             "attaching_conditions_to_tables": {
-              "original_condition": "t1.a = t0.a and t0.a < 3",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -4179,7 +4271,6 @@ explain select * from (select rand() from t1)q	{
                 },
                 {
                   "attaching_conditions_to_tables": {
-                    "original_condition": null,
                     "attached_conditions_computation": [],
                     "attached_conditions_summary": [
                       {
@@ -4245,7 +4336,6 @@ explain select * from (select rand() from t1)q	{
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": null,
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -4686,11 +4776,16 @@ explain select * from t1 where a in (select t_inner_1.a from t1 t_inner_1, t1 t_
             "best_join_order": ["t1", "<subquery2>"]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "1"
+            }
+          },
+          {
             "condition_on_constant_tables": "1"
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": "1",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -6255,8 +6350,13 @@ t_outer_2.a in (select t_inner_3.a from t2 t_inner_3, t1 t_inner_4)	{
             ]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "t_inner_1.a = t_outer_1.a and t_inner_3.a = t_outer_2.a"
+            }
+          },
+          {
             "attaching_conditions_to_tables": {
-              "original_condition": "t_inner_1.a = t_outer_1.a and t_inner_3.a = t_outer_2.a",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -7332,11 +7432,16 @@ t_outer_2.a in (select t_inner_3.a from t2 t_inner_3, t1 t_inner_4)	{
             ]
           },
           {
+            "substitute_best_equal": {
+              "condition": "WHERE",
+              "resulting_condition": "1"
+            }
+          },
+          {
             "condition_on_constant_tables": "1"
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": "1",
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -8643,7 +8748,6 @@ select count(*) from seq_1_to_10000000	{
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": null,
               "attached_conditions_computation": [],
               "attached_conditions_summary": [
                 {
@@ -8793,5 +8897,321 @@ json_detailed(json_extract(trace, '$**.in_to_subquery_conversion'))
 ]
 set in_predicate_conversion_threshold=@tmp;
 drop table t0;
+#
 # End of 10.5 tests
+#
+#
+# MDEV-23677: Optimizer trace ... (test coverage)
+#
+create table t1(a int, b int, c int, primary key (a,b,c));
+insert into t1 values (0,0,0),(1,1,1),(2,2,2),(3,3,3),(4,4,4);
+create table t2 (a int, b int);
+insert into t2 values (1,1),(2,2);
+create table t3 (a int, b int, c int);
+insert into t3 values (0,0,0),(1,1,1),(2,2,2),(3,3,3),(4,4,4);
+explain select * from t2,t1,t3 where t2.b= t1.b and t1.a=t3.a;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t2	ALL	NULL	NULL	NULL	NULL	2	Using where
+1	SIMPLE	t3	ALL	NULL	NULL	NULL	NULL	5	Using where; Using join buffer (flat, BNL join)
+1	SIMPLE	t1	ref	PRIMARY	PRIMARY	8	test.t3.a,test.t2.b	1	Using index
+set @trace=(select trace from information_schema.optimizer_trace);
+set @path= (select json_search(@trace, 'one', 'no predicate for first keypart'));
+set @sub_path= substr(@path, 2, locate('.best_access_path', @path)-2);
+select @sub_path;
+@sub_path
+$.steps[1].join_optimization.steps[4].considered_execution_plans[0].rest_of_plan[0]
+select 
+json_detailed(json_extract(
+@trace,
+concat(@sub_path,'.best_access_path.considered_access_paths[0]')
+)) as S;
+S
+{
+    "access_type": "ref",
+    "index": "PRIMARY",
+    "rows": 1.79769e308,
+    "cost": 1.79769e308,
+    "chosen": false,
+    "cause": "no predicate for first keypart"
+}
+drop table t1,t2,t3;
+#
+# MDEV-23645: Optimizer trace: print conditions after substitute_for_best_equal_field
+#
+create table t1 (a int, b int, c int);
+insert into t1 values (1,1,1),(2,2,2);
+create table t2 as select * from t1;
+insert into t2 select * from t2;
+create table t3 as select * from t2;
+insert into t3 select * from t3;
+# Check how HAVING is printed
+explain 
+select 
+a,b, count(*)
+from t1
+where a=3
+group by b,b
+having a+b < 10;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where; Using temporary; Using filesort
+select
+json_detailed(json_extract(trace, '$**.substitute_best_equal'))
+from
+information_schema.optimizer_trace;
+json_detailed(json_extract(trace, '$**.substitute_best_equal'))
+[
+    
+    {
+        "condition": "WHERE",
+        "resulting_condition": "t1.a = 3"
+    },
+    
+    {
+        "condition": "HAVING",
+        "resulting_condition": "t1.a + t1.b < 10"
+    }
+]
+# Check ON expression
+explain 
+select 
+*
+from t1 left join t2 on t2.a=t1.a and t2.a<3 
+where 
+t1.b > 5555;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
+1	SIMPLE	t2	ALL	NULL	NULL	NULL	NULL	4	Using where; Using join buffer (flat, BNL join)
+select
+json_detailed(json_extract(trace, '$**.substitute_best_equal'))
+from
+information_schema.optimizer_trace;
+json_detailed(json_extract(trace, '$**.substitute_best_equal'))
+[
+    
+    {
+        "condition": "WHERE",
+        "resulting_condition": "t1.b > 5555"
+    },
+    
+    {
+        "condition": "ON expr",
+        "attached_to": "t2",
+        "resulting_condition": "t2.a = t1.a and t1.a < 3"
+    }
+]
+# Check nested ON expression
+explain 
+select 
+*
+from t1 left join (t2,t3) on t2.a=t1.a and t3.a=t2.a and t3.a + t2.a <1000
+where 
+t1.b > 5555;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	SIMPLE	t1	ALL	NULL	NULL	NULL	NULL	2	Using where
+1	SIMPLE	t2	ALL	NULL	NULL	NULL	NULL	4	Using where; Using join buffer (flat, BNL join)
+1	SIMPLE	t3	ALL	NULL	NULL	NULL	NULL	8	Using where; Using join buffer (incremental, BNL join)
+select
+json_detailed(json_extract(trace, '$**.substitute_best_equal'))
+from
+information_schema.optimizer_trace;
+json_detailed(json_extract(trace, '$**.substitute_best_equal'))
+[
+    
+    {
+        "condition": "WHERE",
+        "resulting_condition": "t1.b > 5555"
+    },
+    
+    {
+        "condition": "ON expr",
+        "attached_to": "t2",
+        "resulting_condition": "t2.a = t1.a and t3.a = t1.a and t1.a + t1.a < 1000"
+    }
+]
+# The next query is test for:
+# MDEV-23646: Optimizer trace: optimize_cond() should show ON expression processing
+select
+json_detailed(json_extract(trace, '$**.condition_processing'))
+from
+information_schema.optimizer_trace;
+json_detailed(json_extract(trace, '$**.condition_processing'))
+[
+    
+    {
+        "condition": "WHERE",
+        "original_condition": "t1.b > 5555",
+        "steps": 
+        [
+            
+            {
+                "build_equal_items": 
+                {
+                    "condition": "ON expr",
+                    "attached_to": "t3",
+                    "resulting_condition": "t3.a + t2.a < 1000 and multiple equal(t2.a, t1.a, t3.a)"
+                }
+            },
+            
+            {
+                "transformation": "equality_propagation",
+                "resulting_condition": "t1.b > 5555"
+            },
+            
+            {
+                "transformation": "constant_propagation",
+                "resulting_condition": "t1.b > 5555"
+            },
+            
+            {
+                "transformation": "trivial_condition_removal",
+                "resulting_condition": "t1.b > 5555"
+            }
+        ]
+    }
+]
+drop table t1,t2,t3;
+#
+# MDEV-24325: Optimizer trace doesn't cover LATERAL DERIVED
+#
+create table t1 (a int, b int, index idx_b(b)) engine=myisam;
+insert into t1 values
+(8,3), (5,7), (1,2), (2,1), (9,7), (7,5), (2,2), (7,3),
+(9,3), (8,1), (4,5), (2,3);
+create table t2 (a int, b int, c char(127), index idx_a(a)) engine=myisam;
+insert into t2 values
+(7,10,'x'), (1,20,'a'), (2,23,'b'), (7,18,'z'), (1,30,'c'),
+(4,71,'d'), (3,15,'x'), (7,82,'y'), (8,12,'t'), (4,15,'b'),
+(11,33,'a'), (10,42,'u'), (4,53,'p'), (10,17,'r'), (2,90,'x'),
+(17,10,'s'), (11,20,'v'), (12,23,'y'), (17,18,'a'), (11,30,'d'),
+(24,71,'h'), (23,15,'i'), (27,82,'k'), (28,12,'p'), (24,15,'q'),
+(31,33,'f'), (30,42,'h'), (40,53,'m'), (30,17,'o'), (21,90,'b'),
+(37,10,'e'), (31,20,'g'), (32,23,'f'), (37,18,'n'), (41,30,'l'),
+(54,71,'j'), (53,15,'w'), (57,82,'z'), (58,12,'k'), (54,15,'p'),
+(61,33,'c'), (60,42,'a'), (62,53,'x'), (67,17,'g'), (64,90,'v');
+insert into t2 select a+10, b+10, concat(c,'f') from t2;
+analyze table t1,t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	Engine-independent statistics collected
+test.t1	analyze	status	OK
+test.t2	analyze	status	Engine-independent statistics collected
+test.t2	analyze	status	OK
+explain
+select t1.a,t.s,t.m
+from t1 join
+(select a, sum(t2.b) as s, min(t2.c) as m from t2 group by t2.a) t
+on t1.a=t.a
+where t1.b < 3;
+id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
+1	PRIMARY	t1	range	idx_b	idx_b	5	NULL	4	Using index condition; Using where
+1	PRIMARY	<derived2>	ref	key0	key0	5	test.t1.a	2	
+2	LATERAL DERIVED	t2	ref	idx_a	idx_a	5	test.t1.a	1	
+select
+json_detailed(json_extract(trace, '$**.choose_best_splitting')) 
+from
+information_schema.optimizer_trace;
+json_detailed(json_extract(trace, '$**.choose_best_splitting'))
+[
+    
+    [
+        
+        {
+            "considered_execution_plans": 
+            [
+                
+                {
+                    "plan_prefix": 
+                    [
+                    ],
+                    "table": "t2",
+                    "best_access_path": 
+                    {
+                        "considered_access_paths": 
+                        [
+                            
+                            {
+                                "access_type": "ref",
+                                "index": "idx_a",
+                                "used_range_estimates": false,
+                                "cause": "not available",
+                                "rows": 1.8367,
+                                "cost": 2.000585794,
+                                "chosen": true
+                            },
+                            
+                            {
+                                "type": "scan",
+                                "chosen": false,
+                                "cause": "cost"
+                            }
+                        ],
+                        "chosen_access_method": 
+                        {
+                            "type": "ref",
+                            "records": 1.8367,
+                            "cost": 2.000585794,
+                            "uses_join_buffering": false
+                        }
+                    },
+                    "rows_for_plan": 1.8367,
+                    "cost_for_plan": 2.367925794,
+                    "cost_for_sorting": 1.8367,
+                    "estimated_join_cardinality": 1.8367
+                }
+            ]
+        },
+        
+        {
+            "best_splitting": 
+            {
+                "table": "t2",
+                "key": "idx_a",
+                "record_count": 4,
+                "cost": 2.488945919,
+                "unsplit_cost": 25.72361682
+            }
+        }
+    ]
+]
+select
+json_detailed(json_extract(trace, '$**.lateral_derived')) 
+from
+information_schema.optimizer_trace;
+json_detailed(json_extract(trace, '$**.lateral_derived'))
+[
+    
+    {
+        "startup_cost": 9.955783677,
+        "splitting_cost": 2.488945919,
+        "records": 1
+    }
+]
+drop table t1,t2;
+#
+# Test table functions.
+#
+CREATE TABLE t1(id INT, f1 JSON);
+INSERT INTO t1 VALUES (1, '{\"1\": 1}'), (2, '{\"1\": 2}'), (3, '{\"1\": 3}'),
+(4, '{\"1\": 4}'), (5, '{\"1\": 5}'), (6, '{\"1\": 6}');
+SELECT * FROM t1 WHERE id IN
+(SELECT id FROM t1 as tt2,
+JSON_TABLE(f1, "$" COLUMNS (jf FOR ORDINALITY)) AS tbl);
+id	f1
+1	{"1": 1}
+2	{"1": 2}
+3	{"1": 3}
+4	{"1": 4}
+5	{"1": 5}
+6	{"1": 6}
+select json_detailed(json_extract(trace, '$**.best_join_order'))
+from information_schema.OPTIMIZER_TRACE;
+json_detailed(json_extract(trace, '$**.best_join_order'))
+[
+    
+    [
+        "t1",
+        "<subquery2>"
+    ]
+]
+DROP TABLE t1;
+# End of 10.6 tests
 set optimizer_trace='enabled=off';

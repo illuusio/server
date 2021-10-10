@@ -18,8 +18,7 @@ let page_size= `select @@innodb_page_size`;
 call mtr.add_suppression("\\[ERROR\\] InnoDB: Tablespace flags are invalid in datafile: .*test.t[rcd]\\.ibd");
 call mtr.add_suppression("\\[ERROR\\] InnoDB: Operating system error number .* in a file operation\\.");
 call mtr.add_suppression("\\[ERROR\\] InnoDB: The error means the system cannot find the path specified\\.");
-call mtr.add_suppression("\\[ERROR\\] InnoDB: If you are installing InnoDB, remember that you must create directories yourself, InnoDB does not create them\\.");
-call mtr.add_suppression("\\[Warning\\] InnoDB: Ignoring tablespace for `test`\\.`td` because it could not be opened\\.");
+call mtr.add_suppression("\\[Warning\\] InnoDB: Ignoring tablespace for test/td because it could not be opened\\.");
 
 CREATE TABLE tr(a INT)ENGINE=InnoDB ROW_FORMAT=REDUNDANT;
 CREATE TABLE tc(a INT)ENGINE=InnoDB ROW_FORMAT=COMPACT
@@ -48,6 +47,15 @@ close OUT or die;
 die unless open OUT, ">", "$ENV{MYSQL_TMP_DIR}/test/td.ibd";
 print OUT "xyz " x $ENV{page_size};
 close OUT or die;
+die unless open ISL, "+<", "$ENV{datadir}/test/td.isl";
+$_=<ISL>;
+if (m|^[a-zA-Z]:|)
+{
+  tr|/|\\|;
+  seek(ISL, 0, SEEK_SET) or die;
+  print ISL or die;
+}
+close ISL or die;
 EOF
 
 --let $restart_parameters= --skip-innodb-buffer-pool-load-at-startup

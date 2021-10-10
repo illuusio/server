@@ -91,8 +91,7 @@ bool is_log_table_write_query(enum enum_sql_command command);
 bool alloc_query(THD *thd, const char *packet, size_t packet_length);
 void mysql_init_select(LEX *lex);
 void mysql_parse(THD *thd, char *rawbuf, uint length,
-                 Parser_state *parser_state, bool is_com_multi,
-                 bool is_next_command);
+                 Parser_state *parser_state);
 bool mysql_new_select(LEX *lex, bool move_down, SELECT_LEX *sel);
 void create_select_for_variable(THD *thd, LEX_CSTRING *var_name);
 void create_table_set_open_action_and_adjust_tables(LEX *lex);
@@ -101,11 +100,17 @@ bool multi_delete_set_locks_and_link_aux_tables(LEX *lex);
 void create_table_set_open_action_and_adjust_tables(LEX *lex);
 int bootstrap(MYSQL_FILE *file);
 bool run_set_statement_if_requested(THD *thd, LEX *lex);
-int mysql_execute_command(THD *thd);
-bool do_command(THD *thd);
-bool dispatch_command(enum enum_server_command command, THD *thd,
-		      char* packet, uint packet_length,
-                      bool is_com_multi, bool is_next_command);
+int mysql_execute_command(THD *thd, bool is_called_from_prepared_stmt=false);
+enum dispatch_command_return
+{
+  DISPATCH_COMMAND_SUCCESS=0,
+  DISPATCH_COMMAND_CLOSE_CONNECTION= 1,
+  DISPATCH_COMMAND_WOULDBLOCK= 2
+};
+
+dispatch_command_return do_command(THD *thd, bool blocking = true);
+dispatch_command_return dispatch_command(enum enum_server_command command, THD *thd,
+                                         char* packet, uint packet_length, bool blocking = true);
 void log_slow_statement(THD *thd);
 bool append_file_to_dir(THD *thd, const char **filename_ptr,
                         const LEX_CSTRING *table_name);
@@ -126,7 +131,7 @@ bool check_stack_overrun(THD *thd, long margin, uchar *dummy);
 
 /* Variables */
 
-extern const char* any_db;
+extern const LEX_CSTRING any_db;
 extern uint sql_command_flags[];
 extern uint server_command_flags[];
 extern const LEX_CSTRING command_name[];

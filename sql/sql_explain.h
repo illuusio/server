@@ -74,7 +74,7 @@ class Json_writer;
 *************************************************************************************/
 
 
-const int FAKE_SELECT_LEX_ID= (int)UINT_MAX;
+const uint FAKE_SELECT_LEX_ID= UINT_MAX;
 
 class Explain_query;
 
@@ -108,7 +108,7 @@ public:
   };
 
   virtual enum explain_node_type get_type()= 0;
-  virtual int get_select_id()= 0;
+  virtual uint get_select_id()= 0;
 
   /**
     expression cache statistics
@@ -166,9 +166,9 @@ public:
 
   bool add_table(Explain_table_access *tab, Explain_query *query);
 
-  int get_select_id() { return select_id; }
+  uint get_select_id() { return select_id; }
 
-  int select_id;
+  uint select_id;
 
   int print_explain(Explain_query *query, select_result_sink *output,
                     uint8 explain_flags, bool is_analyze);
@@ -352,7 +352,7 @@ public:
   enum explain_node_type get_type() { return EXPLAIN_UNION; }
   unit_common_op operation;
 
-  int get_select_id()
+  uint get_select_id()
   {
     DBUG_ASSERT(union_members.elements() > 0);
     return union_members.at(0);
@@ -550,6 +550,7 @@ enum explain_extra_tag
   ET_CONST_ROW_NOT_FOUND,
   ET_UNIQUE_ROW_NOT_FOUND,
   ET_IMPOSSIBLE_ON_CONDITION,
+  ET_TABLE_FUNCTION,
 
   ET_total
 };
@@ -879,7 +880,7 @@ public:
   {}
 
   virtual enum explain_node_type get_type() { return EXPLAIN_UPDATE; }
-  virtual int get_select_id() { return 1; /* always root */ }
+  virtual uint get_select_id() { return 1; /* always root */ }
 
   const char *select_type;
 
@@ -959,7 +960,7 @@ public:
   StringBuffer<64> table_name;
 
   enum explain_node_type get_type() { return EXPLAIN_INSERT; }
-  int get_select_id() { return 1; /* always root */ }
+  uint get_select_id() { return 1; /* always root */ }
 
   int print_explain(Explain_query *query, select_result_sink *output, 
                     uint8 explain_flags, bool is_analyze);
@@ -986,7 +987,7 @@ public:
   bool deleting_all_rows;
 
   virtual enum explain_node_type get_type() { return EXPLAIN_DELETE; }
-  virtual int get_select_id() { return 1; /* always root */ }
+  virtual uint get_select_id() { return 1; /* always root */ }
 
   virtual int print_explain(Explain_query *query, select_result_sink *output, 
                             uint8 explain_flags, bool is_analyze);

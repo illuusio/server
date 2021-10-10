@@ -64,8 +64,8 @@ bool using_global_priv_table= true;
 
 // set that from field length in acl_load?
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
-const uint max_hostname_length= 60;
-const uint max_dbname_length= 64;
+const uint max_hostname_length= HOSTNAME_LENGTH;
+const uint max_dbname_length= NAME_CHAR_LEN;
 #endif
 
 const char *safe_vio_type_name(Vio *vio)
@@ -453,15 +453,15 @@ public:
   void print_grant(String *str)
   {
     str->append(STRING_WITH_LEN("GRANT PROXY ON '"));
-    str->append(proxied_user);
+    str->append(proxied_user, strlen(proxied_user));
     str->append(STRING_WITH_LEN("'@'"));
     if (proxied_host.hostname)
       str->append(proxied_host.hostname, strlen(proxied_host.hostname));
     str->append(STRING_WITH_LEN("' TO '"));
-    str->append(user);
+    str->append(user, strlen(user));
     str->append(STRING_WITH_LEN("'@'"));
     if (host.hostname)
-      str->append(host.hostname);
+      str->append(host.hostname, strlen(host.hostname));
     str->append(STRING_WITH_LEN("'"));
     if (with_grant)
       str->append(STRING_WITH_LEN(" WITH GRANT OPTION"));
@@ -655,7 +655,7 @@ bool ROLE_GRANT_PAIR::init(MEM_ROOT *mem, const char *username,
 #define ROLE_OPENED             (1L << 3)
 
 static DYNAMIC_ARRAY acl_hosts, acl_users, acl_proxy_users;
-static Dynamic_array<ACL_DB> acl_dbs(PSI_INSTRUMENT_MEM, 0U, 50U);
+static Dynamic_array<ACL_DB> acl_dbs(PSI_INSTRUMENT_MEM, 0, 50);
 typedef Dynamic_array<ACL_DB>::CMP_FUNC acl_dbs_cmp;
 static HASH acl_roles;
 /*
@@ -1776,7 +1776,7 @@ class User_table_json: public User_table
       if (value_len)
         json.append(',');
       json.append('"');
-      json.append(key);
+      json.append(key, strlen(key));
       json.append(STRING_WITH_LEN("\":"));
       if (string)
         json.append('"');
@@ -1947,7 +1947,7 @@ class Grant_tables
        We can read privilege tables even when !initialized.
        This can be acl_load() - server startup or FLUSH PRIVILEGES
        */
-    if (lock_type >= TL_WRITE_ALLOW_WRITE && !initialized)
+    if (lock_type >= TL_FIRST_WRITE && !initialized)
     {
       my_error(ER_OPTION_PREVENTS_STATEMENT, MYF(0), "--skip-grant-tables");
       DBUG_RETURN(-1);
@@ -1962,7 +1962,7 @@ class Grant_tables
                            NULL, lock_type);
         tl->open_type= OT_BASE_ONLY;
         tl->i_s_requested_object= OPEN_TABLE_ONLY;
-        tl->updating= lock_type >= TL_WRITE_ALLOW_WRITE;
+        tl->updating= lock_type >= TL_FIRST_WRITE;
         if (i >= FIRST_OPTIONAL_TABLE)
           tl->open_strategy= TABLE_LIST::OPEN_IF_EXISTS;
         tl->next_global= tl->next_local= first;
@@ -1987,7 +1987,7 @@ class Grant_tables
                          NULL, lock_type);
       tl->open_type= OT_BASE_ONLY;
       tl->i_s_requested_object= OPEN_TABLE_ONLY;
-      tl->updating= lock_type >= TL_WRITE_ALLOW_WRITE;
+      tl->updating= lock_type >= TL_FIRST_WRITE;
       p_user_table= &m_user_table_tabular;
       counter++;
       res= really_open(thd, tl, &unused);
@@ -2054,7 +2054,7 @@ class Grant_tables
   {
     DBUG_ENTER("Grant_tables::really_open:");
 #ifdef HAVE_REPLICATION
-    if (tables->lock_type >= TL_WRITE_ALLOW_WRITE &&
+    if (tables->lock_type >= TL_FIRST_WRITE &&
         thd->slave_thread && !thd->spcont)
     {
       /*
@@ -2795,7 +2795,7 @@ void acl_free(bool end)
 bool acl_reload(THD *thd)
 {
   DYNAMIC_ARRAY old_acl_hosts, old_acl_users, old_acl_proxy_users;
-  Dynamic_array<ACL_DB> old_acl_dbs(0U,0U);
+  Dynamic_array<ACL_DB> old_acl_dbs(PSI_INSTRUMENT_MEM, 0, 0);
   HASH old_acl_roles, old_acl_roles_mappings;
   MEM_ROOT old_mem;
   int result;
@@ -4025,10 +4025,9 @@ end:
 
 #ifdef WITH_WSREP
 wsrep_error_label:
-  if (WSREP(thd) && !thd->wsrep_applier)
+  if (WSREP(thd))
   {
-    WSREP_TO_ISOLATION_END;
-
+    wsrep_to_isolation_end(thd);
     thd->set_query(query_save);
   }
 #endif /* WITH_WSREP */
@@ -4169,10 +4168,9 @@ int acl_set_default_role(THD *thd, const char *host, const char *user,
 
 #ifdef WITH_WSREP
 wsrep_error_label:
-  if (WSREP(thd) && !thd->wsrep_applier)
+  if (WSREP(thd))
   {
-    WSREP_TO_ISOLATION_END;
-
+    wsrep_to_isolation_end(thd);
     thd->set_query(query_save);
   }
 #endif /* WITH_WSREP */
@@ -6190,8 +6188,8 @@ static int traverse_role_graph_impl(ACL_USER_BASE *user, void *context,
      It uses a Dynamic_array to reduce the number of
      malloc calls to a minimum
   */
-  Dynamic_array<NODE_STATE> stack(20,50);
-  Dynamic_array<ACL_USER_BASE *> to_clear(20,50);
+  Dynamic_array<NODE_STATE> stack(PSI_INSTRUMENT_MEM, 20,50);
+  Dynamic_array<ACL_USER_BASE *> to_clear(PSI_INSTRUMENT_MEM, 20, 50);
   NODE_STATE state;     /* variable used to insert elements in the stack */
   int result= 0;
 
@@ -6954,7 +6952,7 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
 		      bool revoke_grant)
 {
   privilege_t column_priv(NO_ACL);
-  int result;
+  int result, res;
   List_iterator <LEX_USER> str_list (user_list);
   LEX_USER *Str, *tmp_Str;
   bool create_new_users=0;
@@ -6981,13 +6979,14 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
 
       while ((column = column_iter++))
       {
-        uint unused_field_idx= NO_CACHED_FIELD_INDEX;
+        field_index_t unused_field_idx= NO_CACHED_FIELD_INDEX;
         TABLE_LIST *dummy;
         Field *f=find_field_in_table_ref(thd, table_list, column->column.ptr(),
                                          column->column.length(),
                                          column->column.ptr(), NULL, NULL,
-                                         NULL, TRUE, FALSE,
-                                         &unused_field_idx, FALSE, &dummy);
+                                         ignored_tables_list_t(NULL), NULL,
+                                         TRUE, FALSE, &unused_field_idx, FALSE,
+                                         &dummy);
         if (unlikely(f == (Field*)0))
         {
           my_error(ER_BAD_FIELD_ERROR, MYF(0),
@@ -7154,10 +7153,10 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
                                revoke_grant))
 	result= TRUE;
     }
-    if (int res= replace_table_table(thd, grant_table,
-                                     tables.tables_priv_table().table(),
-                                     *Str, db_name, table_name,
-                                     rights, column_priv, revoke_grant))
+    if ((res= replace_table_table(thd, grant_table,
+                                  tables.tables_priv_table().table(),
+                                  *Str, db_name, table_name,
+                                  rights, column_priv, revoke_grant)))
     {
       if (res > 0)
       {
@@ -8136,7 +8135,7 @@ bool check_grant(THD *thd, privilege_t want_access, TABLE_LIST *tables,
         We want to have either SELECT or INSERT rights to sequences depending
         on how they are accessed
       */
-      orig_want_access= ((t_ref->lock_type == TL_WRITE_ALLOW_WRITE) ?
+      orig_want_access= ((t_ref->lock_type >= TL_FIRST_WRITE) ?
                          INSERT_ACL : SELECT_ACL);
     }
 
@@ -8171,7 +8170,8 @@ bool check_grant(THD *thd, privilege_t want_access, TABLE_LIST *tables,
       continue;                                 // ok
 
     if (!(~t_ref->grant.privilege & want_access) ||
-        t_ref->is_anonymous_derived_table() || t_ref->schema_table)
+        t_ref->is_anonymous_derived_table() || t_ref->schema_table ||
+        t_ref->table_function)
     {
       /*
         It is subquery in the FROM clause. VIEW set t_ref->derived after
@@ -8180,7 +8180,8 @@ bool check_grant(THD *thd, privilege_t want_access, TABLE_LIST *tables,
         NOTE: is_derived() can't be used here because subquery in this case
         the FROM clase (derived tables) can be not be marked yet.
       */
-      if (t_ref->is_anonymous_derived_table() || t_ref->schema_table)
+      if (t_ref->is_anonymous_derived_table() || t_ref->schema_table ||
+          t_ref->table_function)
       {
         /*
           If it's a temporary table created for a subquery in the FROM
@@ -9132,7 +9133,7 @@ bool mysql_show_create_user(THD *thd, LEX_USER *lex_user)
     goto end;
   }
 
-  result.append("CREATE USER ");
+  result.append(STRING_WITH_LEN("CREATE USER "));
   append_identifier(thd, &result, username, strlen(username));
   add_user_parameters(thd, &result, acl_user, false);
 
@@ -9156,9 +9157,10 @@ bool mysql_show_create_user(THD *thd, LEX_USER *lex_user)
    of a user account, including both the manual expiration state of the
    account and the automatic expiration policy attached to it, we should
    print two statements here, a CREATE USER (printed above) and an ALTER USER */
-  if (acl_user->password_expired && acl_user->password_lifetime > -1) {
+  if (acl_user->password_expired && acl_user->password_lifetime > -1)
+  {
     result.length(0);
-    result.append("ALTER USER ");
+    result.append(STRING_WITH_LEN("ALTER USER "));
     append_identifier(thd, &result, username, strlen(username));
     result.append('@');
     append_identifier(thd, &result, acl_user->host.hostname,
@@ -9414,7 +9416,7 @@ static bool show_default_role(THD *thd, ACL_USER *acl_entry,
     def_str.length(0);
     def_str.append(STRING_WITH_LEN("SET DEFAULT ROLE "));
     append_identifier(thd, &def_str, def_rolename.str, def_rolename.length);
-    def_str.append(" FOR ");
+    def_str.append(STRING_WITH_LEN(" FOR "));
     append_identifier(thd, &def_str, acl_entry->user.str, acl_entry->user.length);
     DBUG_ASSERT(!(acl_entry->flags & IS_ROLE));
     def_str.append('@');
@@ -11271,7 +11273,7 @@ mysql_revoke_sp_privs(THD *thd, Grant_tables *tables, const Sp_handler *sph,
 bool mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
 {
   uint counter, revoked;
-  int result;
+  int result, res;
   ACL_DB *acl_db;
   DBUG_ENTER("mysql_revoke_all");
 
@@ -11355,30 +11357,33 @@ bool mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
     {
       for (counter= 0, revoked= 0 ; counter < column_priv_hash.records ; )
       {
-        const char *user,*host;
-        GRANT_TABLE *grant_table=
-          (GRANT_TABLE*) my_hash_element(&column_priv_hash, counter);
+	const char *user,*host;
+        GRANT_TABLE *grant_table= ((GRANT_TABLE*)
+                                   my_hash_element(&column_priv_hash, counter));
+
         user= grant_table->user;
         host= safe_str(grant_table->host.hostname);
 
         if (!strcmp(lex_user->user.str,user) &&
             !strcmp(lex_user->host.str, host))
-        {
-          List<LEX_COLUMN> columns;
-          /* TODO(cvicentiu) refactor to use
+	{
+	    List<LEX_COLUMN> columns;
+            /* TODO(cvicentiu) refactor replace_db_table to use
+               Db_table instead of TABLE directly. */
+	    if (replace_column_table(grant_table,
+                                     tables.columns_priv_table().table(),
+                                     *lex_user, columns, grant_table->db,
+                                     grant_table->tname, ALL_KNOWN_ACL, 1))
+              result= -1;
+
+          /* TODO(cvicentiu) refactor replace_db_table to use
              Db_table instead of TABLE directly. */
-          if (replace_column_table(grant_table,
-                                   tables.columns_priv_table().table(),
-                                   *lex_user, columns,
-                                   grant_table->db, grant_table->tname,
-                                   ALL_KNOWN_ACL, 1))
-            result= -1;
-          if (int res= replace_table_table(thd, grant_table,
-                                           tables.tables_priv_table().table(),
-                                           *lex_user,
-                                           grant_table->db, grant_table->tname,
-                                           ALL_KNOWN_ACL, NO_ACL, 1))
-          {
+	  if ((res= replace_table_table(thd, grant_table,
+                                        tables.tables_priv_table().table(),
+                                        *lex_user, grant_table->db,
+                                        grant_table->tname, ALL_KNOWN_ACL,
+                                        NO_ACL, 1)))
+	  {
             if (res > 0)
               result= -1;
             else
@@ -11391,8 +11396,8 @@ bool mysql_revoke_all(THD *thd,  List <LEX_USER> &list)
               continue;
             }
           }
-        }
-        counter++;
+	}
+	counter++;
       }
     } while (revoked);
 

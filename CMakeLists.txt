@@ -176,7 +176,6 @@ INCLUDE(systemd)
 INCLUDE(mysql_add_executable)
 INCLUDE(symlinks)
 INCLUDE(compile_flags)
-INCLUDE(pmem)
 
 # Handle options
 OPTION(DISABLE_SHARED 
@@ -273,7 +272,7 @@ SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DENABLED_DEBUG_SYNC")
  
 OPTION(ENABLE_GCOV "Enable gcov (debug, Linux builds only)" OFF)
 IF (ENABLE_GCOV)
-  MY_CHECK_AND_SET_COMPILER_FLAG("-fprofile-arcs -ftest-coverage -lgcov" DEBUG)
+  MY_CHECK_AND_SET_COMPILER_FLAG("-DHAVE_gcov -fprofile-arcs -ftest-coverage -lgcov" DEBUG)
 ENDIF()
 
 OPTION(WITHOUT_PACKED_SORT_KEYS "disable packed sort keys"  OFF)
@@ -366,7 +365,8 @@ ENDIF()
 # Run platform tests
 INCLUDE(configure.cmake)
 
-# force -DUSE_MYSYS_NEW unless already done by HAVE_CXX_NEW
+# Use mysys/my_new.cc if '#include <new>'  doesn't work.
+# One can also specify -DUSE_MYSYS_NEW explicitly, see mysys/my_new.cc
 IF(NOT HAVE_CXX_NEW)
   ADD_DEFINITIONS(-DUSE_MYSYS_NEW)
 ENDIF()
@@ -393,7 +393,7 @@ MYSQL_CHECK_READLINE()
 SET(MALLOC_LIBRARY "system")
 
 CHECK_PCRE()
-
+ADD_SUBDIRECTORY(tpool)
 CHECK_SYSTEMD()
 
 IF(CMAKE_CROSSCOMPILING AND NOT DEFINED CMAKE_CROSSCOMPILING_EMULATOR)
@@ -446,7 +446,6 @@ ADD_SUBDIRECTORY(client)
 ADD_SUBDIRECTORY(extra)
 ADD_SUBDIRECTORY(libservices)
 ADD_SUBDIRECTORY(sql/share)
-ADD_SUBDIRECTORY(tpool)
 
 IF(NOT WITHOUT_SERVER)
   ADD_SUBDIRECTORY(tests)

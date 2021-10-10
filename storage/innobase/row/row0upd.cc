@@ -127,10 +127,6 @@ row_upd_changes_first_fields_binary(
 Checks if index currently is mentioned as a referenced index in a foreign
 key constraint.
 
-NOTE that since we do not hold dict_sys.latch when leaving the
-function, it may be that the referencing table has been dropped when
-we leave this function: this function is only for heuristic use!
-
 @return true if referenced */
 static
 bool
@@ -139,64 +135,44 @@ row_upd_index_is_referenced(
 	dict_index_t*	index,	/*!< in: index */
 	trx_t*		trx)	/*!< in: transaction */
 {
-	dict_table_t*	table		= index->table;
-
-	if (table->referenced_set.empty()) {
-		return false;
-	}
-
-	const bool froze_data_dict = !trx->dict_operation_lock_mode;
-	if (froze_data_dict) {
-		row_mysql_freeze_data_dictionary(trx);
-	}
-
-	dict_foreign_set::iterator	it
-		= std::find_if(table->referenced_set.begin(),
-			       table->referenced_set.end(),
-			       dict_foreign_with_index(index));
-
-	const bool is_referenced = (it != table->referenced_set.end());
-
-	if (froze_data_dict) {
-		row_mysql_unfreeze_data_dictionary(trx);
-	}
-
-	return is_referenced;
+  dict_table_t *table= index->table;
+  /* The pointers in table->referenced_set are safe to dereference
+  thanks to the SQL layer having acquired MDL on all (grand)parent tables. */
+  dict_foreign_set::iterator end= table->referenced_set.end();
+  return end != std::find_if(table->referenced_set.begin(), end,
+                             dict_foreign_with_index(index));
 }
 
 #ifdef WITH_WSREP
 static
-ibool
+bool
 wsrep_row_upd_index_is_foreign(
 /*========================*/
 	dict_index_t*	index,	/*!< in: index */
 	trx_t*		trx)	/*!< in: transaction */
 {
-	dict_table_t*	table		= index->table;
-	ibool		froze_data_dict	= FALSE;
-	ibool		is_referenced	= FALSE;
+  if (!trx->is_wsrep())
+    return false;
 
-	if (table->foreign_set.empty()) {
-		return(FALSE);
-	}
+  dict_table_t *table= index->table;
 
-	if (trx->dict_operation_lock_mode == 0) {
-		row_mysql_freeze_data_dictionary(trx);
-		froze_data_dict = TRUE;
-	}
+  if (table->foreign_set.empty())
+    return false;
 
-	dict_foreign_set::iterator	it
-		= std::find_if(table->foreign_set.begin(),
-			       table->foreign_set.end(),
-			       dict_foreign_with_foreign_index(index));
+  /* No MDL protects dereferencing the members of table->foreign_set. */
+  const bool no_lock= !trx->dict_operation_lock_mode;
+  if (no_lock)
+    dict_sys.freeze();
 
-	is_referenced = (it != table->foreign_set.end());
+  auto end= table->foreign_set.end();
+  const bool is_referenced= end !=
+    std::find_if(table->foreign_set.begin(), end,
+                 [index](const dict_foreign_t* f)
+                 {return f->foreign_index == index;});
+  if (no_lock)
+    dict_sys.unfreeze();
 
-	if (froze_data_dict) {
-		row_mysql_unfreeze_data_dictionary(trx);
-	}
-
-	return(is_referenced);
+  return is_referenced;
 }
 #endif /* WITH_WSREP */
 
@@ -224,18 +200,14 @@ row_upd_check_references_constraints(
 	dict_foreign_t*	foreign;
 	mem_heap_t*	heap;
 	dtuple_t*	entry;
-	trx_t*		trx;
 	const rec_t*	rec;
 	dberr_t		err;
-	ibool		got_s_lock	= FALSE;
 
 	DBUG_ENTER("row_upd_check_references_constraints");
 
 	if (table->referenced_set.empty()) {
 		DBUG_RETURN(DB_SUCCESS);
 	}
-
-	trx = thr_get_trx(thr);
 
 	rec = btr_pcur_get_rec(pcur);
 	ut_ad(rec_offs_validate(rec, index, offsets));
@@ -249,12 +221,6 @@ row_upd_check_references_constraints(
 	DEBUG_SYNC_C("foreign_constraint_check_for_update");
 
 	mtr->start();
-
-	if (trx->dict_operation_lock_mode == 0) {
-		got_s_lock = TRUE;
-
-		row_mysql_freeze_data_dictionary(trx);
-	}
 
 	DEBUG_SYNC_C_IF_THD(thr_get_trx(thr)->mysql_thd,
 			    "foreign_constraint_check_for_insert");
@@ -286,21 +252,9 @@ row_upd_check_references_constraints(
 					FALSE, FALSE, DICT_ERR_IGNORE_NONE);
 			}
 
-			if (foreign_table) {
-				foreign_table->inc_fk_checks();
-			}
-
-			/* NOTE that if the thread ends up waiting for a lock
-			we will release dict_sys.latch temporarily!
-			But the inc_fk_checks() protects foreign_table from
-			being dropped while the check is running. */
-
 			err = row_ins_check_foreign_constraint(
 				FALSE, foreign, table, entry, thr);
 
-			if (foreign_table) {
-				foreign_table->dec_fk_checks();
-			}
 			if (ref_table != NULL) {
 				dict_table_close(ref_table, FALSE, FALSE);
 			}
@@ -314,10 +268,6 @@ row_upd_check_references_constraints(
 	err = DB_SUCCESS;
 
 func_exit:
-	if (got_s_lock) {
-		row_mysql_unfreeze_data_dictionary(trx);
-	}
-
 	mem_heap_free(heap);
 
 	DEBUG_SYNC_C("foreign_constraint_check_for_update_done");
@@ -341,17 +291,13 @@ wsrep_row_upd_check_foreign_constraints(
 	dict_foreign_t*	foreign;
 	mem_heap_t*	heap;
 	dtuple_t*	entry;
-	trx_t*		trx;
 	const rec_t*	rec;
 	dberr_t		err;
-	ibool		got_s_lock	= FALSE;
 	ibool		opened     	= FALSE;
 
 	if (table->foreign_set.empty()) {
 		return(DB_SUCCESS);
 	}
-
-	trx = thr_get_trx(thr);
 
 	/* TODO: make native slave thread bail out here */
 
@@ -365,12 +311,6 @@ wsrep_row_upd_check_foreign_constraints(
 	mtr_commit(mtr);
 
 	mtr_start(mtr);
-
-	if (trx->dict_operation_lock_mode == 0) {
-		got_s_lock = TRUE;
-
-		row_mysql_freeze_data_dictionary(trx);
-	}
 
 	for (dict_foreign_set::iterator it = table->foreign_set.begin();
 	     it != table->foreign_set.end();
@@ -419,10 +359,6 @@ wsrep_row_upd_check_foreign_constraints(
 
 	err = DB_SUCCESS;
 func_exit:
-	if (got_s_lock) {
-		row_mysql_unfreeze_data_dictionary(trx);
-	}
-
 	mem_heap_free(heap);
 
 	return(err);
@@ -1974,7 +1910,7 @@ row_upd_sec_index_entry(
 
 	const bool referenced = row_upd_index_is_referenced(index, trx);
 #ifdef WITH_WSREP
-	bool foreign = wsrep_row_upd_index_is_foreign(index, trx);
+	const bool foreign = wsrep_row_upd_index_is_foreign(index, trx);
 #endif /* WITH_WSREP */
 
 	heap = mem_heap_create(1024);
@@ -2762,7 +2698,6 @@ row_upd_clust_step(
 {
 	dict_index_t*	index;
 	btr_pcur_t*	pcur;
-	ibool		success;
 	dberr_t		err;
 	mtr_t		mtr;
 	rec_t*		rec;
@@ -2822,38 +2757,9 @@ row_upd_clust_step(
 		mode = BTR_MODIFY_LEAF;
 	}
 
-	success = btr_pcur_restore_position(mode, pcur, &mtr);
-
-	if (!success) {
+	if (!btr_pcur_restore_position(mode, pcur, &mtr)) {
 		err = DB_RECORD_NOT_FOUND;
 		goto exit_func;
-	}
-
-	/* If this is a row in SYS_INDEXES table of the data dictionary,
-	then we have to free the file segments of the index tree associated
-	with the index */
-
-	if (node->is_delete == PLAIN_DELETE
-	    && node->table->id == DICT_INDEXES_ID) {
-
-		ut_ad(!dict_index_is_online_ddl(index));
-
-		dict_drop_index_tree(pcur, trx, &mtr);
-
-		mtr.commit();
-
-		mtr.start();
-		index->set_modified(mtr);
-
-		success = btr_pcur_restore_position(BTR_MODIFY_LEAF, pcur,
-						    &mtr);
-		if (!success) {
-			err = DB_ERROR;
-
-			mtr.commit();
-
-			return(err);
-		}
 	}
 
 	rec = btr_pcur_get_rec(pcur);
@@ -2862,7 +2768,7 @@ row_upd_clust_step(
 
 	if (!flags && !node->has_clust_rec_x_lock) {
 		err = lock_clust_rec_modify_check_and_lock(
-			0, btr_pcur_get_block(pcur),
+			btr_pcur_get_block(pcur),
 			rec, index, offsets, thr);
 		if (err != DB_SUCCESS) {
 			goto exit_func;
@@ -2871,8 +2777,8 @@ row_upd_clust_step(
 
 	ut_ad(index->table->no_rollback() || index->table->is_temporary()
 	      || row_get_rec_trx_id(rec, index, offsets) == trx->id
-	      || lock_trx_has_expl_x_lock(trx, index->table,
-					  btr_pcur_get_block(pcur),
+	      || lock_trx_has_expl_x_lock(*trx, *index->table,
+					  btr_pcur_get_block(pcur)->page.id(),
 					  page_rec_get_heap_no(rec)));
 
 	if (node->is_delete == PLAIN_DELETE) {
@@ -3093,7 +2999,7 @@ row_upd_step(
 			/* It may be that the current session has not yet
 			started its transaction, or it has been committed: */
 
-			err = lock_table(0, node->table, LOCK_IX, thr);
+			err = lock_table(node->table, LOCK_IX, thr);
 
 			if (err != DB_SUCCESS) {
 

@@ -364,10 +364,6 @@ ut_strerr(
 		return("Cluster not found");
 	case DB_TABLE_NOT_FOUND:
 		return("Table not found");
-	case DB_MUST_GET_MORE_FILE_SPACE:
-		return("More file space needed");
-	case DB_TABLE_IS_BEING_USED:
-		return("Table is being used");
 	case DB_TOO_BIG_RECORD:
 		return("Record too big");
 	case DB_TOO_BIG_INDEX_COL:
@@ -432,8 +428,6 @@ ut_strerr(
 		return("End of index");
 	case DB_IO_ERROR:
 		return("I/O error");
-	case DB_TABLE_IN_FK_CHECK:
-		return("Table is being used in foreign key check");
 	case DB_NOT_FOUND:
 		return("not found");
 	case DB_ONLINE_LOG_TOO_BIG:
@@ -481,57 +475,6 @@ ut_strerr(
 	/* NOT REACHED */
 	return("Unknown error");
 }
-
-#ifdef UNIV_PFS_MEMORY
-
-/** Extract the basename of a file without its extension.
-For example, extract "foo0bar" out of "/path/to/foo0bar.cc".
-@param[in]	file		file path, e.g. "/path/to/foo0bar.cc"
-@param[out]	base		result, e.g. "foo0bar"
-@param[in]	base_size	size of the output buffer 'base', if there
-is not enough space, then the result will be truncated, but always
-'\0'-terminated
-@return number of characters that would have been printed if the size
-were unlimited (not including the final ‘\0’) */
-size_t
-ut_basename_noext(
-	const char*	file,
-	char*		base,
-	size_t		base_size)
-{
-	/* Assuming 'file' contains something like the following,
-	extract the file name without the extenstion out of it by
-	setting 'beg' and 'len'.
-	...mysql-trunk/storage/innobase/dict/dict0dict.cc:302
-                                             ^-- beg, len=9
-	*/
-
-	const char*	beg = strrchr(file, OS_PATH_SEPARATOR);
-
-	if (beg == NULL) {
-		beg = file;
-	} else {
-		beg++;
-	}
-
-	size_t		len = strlen(beg);
-
-	const char*	end = strrchr(beg, '.');
-
-	if (end != NULL) {
-		len = end - beg;
-	}
-
-	const size_t	copy_len = std::min(len, base_size - 1);
-
-	memcpy(base, beg, copy_len);
-
-	base[copy_len] = '\0';
-
-	return(len);
-}
-
-#endif /* UNIV_PFS_MEMORY */
 
 namespace ib {
 

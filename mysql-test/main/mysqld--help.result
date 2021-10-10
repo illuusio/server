@@ -76,6 +76,12 @@ The following specify which files/extra groups are read (specified before remain
  --binlog-do-db=name Tells the master it should log updates for the specified
  database, and exclude all others not explicitly
  mentioned.
+ --binlog-expire-logs-seconds=# 
+ If non-zero, binary logs will be purged after
+ binlog_expire_logs_seconds seconds; It and
+ expire_logs_days are linked, such that changes in one are
+ converted into the other. Possible purges happen at
+ startup and at binary log rotation.
  --binlog-file-cache-size=# 
  The size of file cache for the binary log
  --binlog-format=name 
@@ -268,7 +274,10 @@ The following specify which files/extra groups are read (specified before remain
  constant optimization
  --expire-logs-days=# 
  If non-zero, binary logs will be purged after
- expire_logs_days days; possible purges happen at startup
+ expire_logs_days days; It and binlog_expire_logs_seconds
+ are linked, such that changes in one are converted into
+ the other, presentable as a decimal value with 1/1000000
+ of the day precision; possible purges happen at startup
  and at binary log rotation
  --explicit-defaults-for-timestamp 
  This option causes CREATE TABLE to create all TIMESTAMP
@@ -467,6 +476,9 @@ The following specify which files/extra groups are read (specified before remain
  ALWAYS use row-based binary logging, the security issues
  do not exist and the binary logging cannot break, so you
  can safely set this to TRUE
+ --log-ddl-recovery=name 
+ Path to file used for recovery of DDL statements after a
+ crash
  --log-disabled-statements=name 
  Don't log certain types of statements to general log. Any
  combination of: slave, sp
@@ -667,7 +679,7 @@ The following specify which files/extra groups are read (specified before remain
  --old-mode=name     Used to emulate old behavior from earlier MariaDB or
  MySQL versions. Any combination of: 
  NO_DUP_KEY_WARNINGS_WITH_IGNORE, NO_PROGRESS_INFO, 
- ZERO_DATE_TIME_CAST
+ ZERO_DATE_TIME_CAST, UTF8_IS_UTF8MB3
  --old-passwords     Use old password encryption method (needed for 4.0 and
  older clients)
  --old-style-user-limits 
@@ -1469,6 +1481,7 @@ binlog-checksum CRC32
 binlog-commit-wait-count 0
 binlog-commit-wait-usec 100000
 binlog-direct-non-transactional-updates FALSE
+binlog-expire-logs-seconds 0
 binlog-file-cache-size 16384
 binlog-format MIXED
 binlog-optimize-thread-scheduling TRUE
@@ -1571,6 +1584,7 @@ log-bin-compress FALSE
 log-bin-compress-min-len 256
 log-bin-index (No default value)
 log-bin-trust-function-creators FALSE
+log-ddl-recovery ddl_recovery.log
 log-disabled-statements sp
 log-error 
 log-isam myisam.log
@@ -1590,7 +1604,7 @@ long-query-time 10
 low-priority-updates FALSE
 lower-case-table-names 1
 master-info-file master.info
-master-retry-count 86400
+master-retry-count 100000
 master-verify-checksum FALSE
 max-allowed-packet 16777216
 max-binlog-cache-size 18446744073709547520
@@ -1605,7 +1619,7 @@ max-join-size 18446744073709551615
 max-length-for-sort-data 1024
 max-password-errors 18446744073709551615
 max-prepared-stmt-count 16382
-max-recursive-iterations 18446744073709551615
+max-recursive-iterations 1000
 max-relay-log-size 1073741824
 max-rowid-filter-size 131072
 max-seeks-for-key 18446744073709551615
@@ -1637,7 +1651,7 @@ net-retry-count 10
 net-write-timeout 60
 old FALSE
 old-alter-table DEFAULT
-old-mode 
+old-mode UTF8_IS_UTF8MB3
 old-passwords FALSE
 old-style-user-limits FALSE
 optimizer-max-sel-arg-weight 32000
@@ -1830,5 +1844,5 @@ userstat FALSE
 verbose TRUE
 wait-timeout 28800
 
-To see what variables a running MySQL server is using, type
-'mysqladmin variables' instead of 'mysqld --verbose --help'.
+To see what variables a running server is using, type
+'SELECT * FROM INFORMATION_SCHEMA.GLOBAL_VARIABLES' instead of 'mysqld --verbose --help' or 'mariadbd --verbose --help'.

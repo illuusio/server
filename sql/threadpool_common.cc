@@ -23,10 +23,16 @@
 #include <sql_audit.h>
 #include <debug_sync.h>
 #include <threadpool.h>
+#include <sql_class.h>
+#include <sql_parse.h>
 
 #ifdef WITH_WSREP
 #include "wsrep_trans_observer.h"
 #endif /* WITH_WSREP */
+
+#ifdef _WIN32
+#include "threadpool_winsockets.h"
+#endif
 
 /* Threadpool parameters */
 
@@ -47,8 +53,8 @@ TP_STATISTICS tp_stats;
 
 
 static void  threadpool_remove_connection(THD *thd);
-static int   threadpool_process_request(THD *thd);
-static THD*  threadpool_add_connection(CONNECT *connect, void *scheduler_data);
+static dispatch_command_return threadpool_process_request(THD *thd);
+static THD*  threadpool_add_connection(CONNECT *connect, TP_connection *c);
 
 extern bool do_command(THD*);
 
@@ -191,10 +197,30 @@ void tp_callback(TP_connection *c)
     }
     c->connect= 0;
   }
-  else if (threadpool_process_request(thd))
+  else
   {
-    /* QUIT or an error occurred. */
-    goto error;
+retry:
+    switch(threadpool_process_request(thd))
+    {
+      case DISPATCH_COMMAND_WOULDBLOCK:
+        if (!thd->async_state.try_suspend())
+        {
+          /*
+            All async operations finished meanwhile, thus nobody is will wake up
+            this THD. Therefore, we'll resume "manually" here.
+          */
+          thd->async_state.m_state = thd_async_state::enum_async_state::RESUMED;
+          goto retry;
+        }
+        worker_context.restore();
+        return;
+      case DISPATCH_COMMAND_CLOSE_CONNECTION:
+        /* QUIT or an error occurred. */
+        goto error;
+      case DISPATCH_COMMAND_SUCCESS:
+        break;
+    }
+    thd->async_state.m_state= thd_async_state::enum_async_state::NONE;
   }
 
   /* Set priority */
@@ -220,15 +246,15 @@ error:
 }
 
 
-static THD* threadpool_add_connection(CONNECT *connect, void *scheduler_data)
+static THD *threadpool_add_connection(CONNECT *connect, TP_connection *c)
 {
   THD *thd= NULL;
 
   DBUG_EXECUTE_IF("CONNECT_wait",
   {
-    extern MYSQL_SOCKET unix_sock;
-    DBUG_ASSERT(unix_sock.fd >= 0);
-    while (unix_sock.fd >= 0)
+    extern Dynamic_array<MYSQL_SOCKET> listen_sockets;
+    DBUG_ASSERT(listen_sockets.size());
+    while (listen_sockets.size())
       my_sleep(1000);
   });
 
@@ -249,11 +275,11 @@ static THD* threadpool_add_connection(CONNECT *connect, void *scheduler_data)
       my_thread_end();
     return NULL;
   }
-  thd->event_scheduler.data = scheduler_data;
+
+  thd->event_scheduler.data= c;
   server_threads.insert(thd); // Make THD visible in show processlist
   delete connect; // must be after server_threads.insert, see close_connections()
   thd->set_mysys_var(mysys_var);
-
 
   /* Login. */
   thread_attach(thd);
@@ -267,6 +293,8 @@ static THD* threadpool_add_connection(CONNECT *connect, void *scheduler_data)
 
   if (thd_prepare_connection(thd))
     goto end;
+
+  c->init_vio(thd->net.vio);
 
   /*
     Check if THD is ok, as prepare_new_connection_state()
@@ -333,10 +361,13 @@ static bool has_unread_data(THD* thd)
 /**
  Process a single client request or a single batch.
 */
-static int threadpool_process_request(THD *thd)
+static dispatch_command_return threadpool_process_request(THD *thd)
 {
-  int retval= 0;
+  dispatch_command_return retval= DISPATCH_COMMAND_SUCCESS;
+
   thread_attach(thd);
+  if(thd->async_state.m_state == thd_async_state::enum_async_state::RESUMED)
+    goto resume;
 
   if (thd->killed >= KILL_CONNECTION)
   {
@@ -344,7 +375,7 @@ static int threadpool_process_request(THD *thd)
       killed flag was set by timeout handler
       or KILL command. Return error.
     */
-    retval= 1;
+    retval= DISPATCH_COMMAND_CLOSE_CONNECTION;
     if(thd->killed == KILL_WAIT_TIMEOUT)
       handle_wait_timeout(thd);
     goto end;
@@ -367,19 +398,27 @@ static int threadpool_process_request(THD *thd)
     if (mysql_audit_release_required(thd))
       mysql_audit_release(thd);
 
-    if ((retval= do_command(thd)) != 0)
-      goto end;
+resume:
+    retval= do_command(thd, false);
+    switch(retval)
+    {
+      case DISPATCH_COMMAND_WOULDBLOCK:
+      case DISPATCH_COMMAND_CLOSE_CONNECTION:
+        goto end;
+      case DISPATCH_COMMAND_SUCCESS:
+        break;
+    }
 
     if (!thd_is_connection_alive(thd))
     {
-      retval= 1;
+      retval=DISPATCH_COMMAND_CLOSE_CONNECTION;
       goto end;
     }
 
     set_thd_idle(thd);
 
     if (!has_unread_data(thd))
-    { 
+    {
       /* More info on this debug sync is in sql_parse.cc*/
       DEBUG_SYNC(thd, "before_do_command_net_read");
       goto end;
@@ -412,6 +451,9 @@ static bool tp_init()
     pool= 0;
     return true;
   }
+#ifdef _WIN32
+  init_win_aio_buffers(max_connections);
+#endif
   return false;
 }
 
@@ -513,6 +555,9 @@ static void tp_wait_end(THD *thd)
 static void tp_end()
 {
   delete pool;
+#ifdef _WIN32
+  destroy_win_aio_buffers();
+#endif
 }
 
 static void tp_post_kill_notification(THD *thd)
@@ -521,6 +566,15 @@ static void tp_post_kill_notification(THD *thd)
   if (c)
     c->priority= TP_PRIORITY_HIGH;
   post_kill_notification(thd);
+}
+
+/* Resume previously suspended THD */
+static void tp_resume(THD* thd)
+{
+  DBUG_ASSERT(thd->async_state.m_state == thd_async_state::enum_async_state::SUSPENDED);
+  thd->async_state.m_state = thd_async_state::enum_async_state::RESUMED;
+  TP_connection* c = get_TP_connection(thd);
+  pool->resume(c);
 }
 
 static scheduler_functions tp_scheduler_functions=
@@ -533,7 +587,8 @@ static scheduler_functions tp_scheduler_functions=
   tp_wait_begin,                      // thd_wait_begin
   tp_wait_end,                        // thd_wait_end
   tp_post_kill_notification,          // post kill notification
-  tp_end                              // end
+  tp_end,                              // end
+  tp_resume
 };
 
 void pool_of_threads_scheduler(struct scheduler_functions *func,

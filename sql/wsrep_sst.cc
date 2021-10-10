@@ -729,7 +729,7 @@ static int sst_append_env_var(wsp::env&   env,
   return -env.error();
 }
 
-#ifdef __WIN__
+#ifdef _WIN32
 /*
   Space, single quote, ampersand, backquote, I/O redirection
   characters, caret, all brackets, plus, exclamation and comma
@@ -803,7 +803,7 @@ static size_t estimate_cmd_len (bool* extra_args)
         else if (IS_REQ_ESCAPING(c))
         {
           cmd_len++;
-#ifdef __WIN__
+#ifdef _WIN32
           quotation= true;
 #endif
         }
@@ -832,7 +832,7 @@ static size_t estimate_cmd_len (bool* extra_args)
             else if (IS_REQ_ESCAPING(c))
             {
               cmd_len++;
-#ifdef __WIN__
+#ifdef _WIN32
               quotation= true;
 #endif
             }
@@ -888,7 +888,7 @@ static void copy_orig_argv (char* cmd_str)
         else if (IS_REQ_ESCAPING(c))
         {
           plain= false;
-#ifdef __WIN__
+#ifdef _WIN32
           quotation= true;
 #endif
         }
@@ -928,7 +928,7 @@ static void copy_orig_argv (char* cmd_str)
                 c = *arg++;
                 if (IS_REQ_ESCAPING(c))
                 {
-#ifdef __WIN__
+#ifdef _WIN32
                   *cmd_str++ = c;
 #else
                   *cmd_str++ = '\\';
@@ -968,7 +968,7 @@ static void copy_orig_argv (char* cmd_str)
             else if (IS_REQ_ESCAPING(c))
             {
               plain= false;
-#ifdef __WIN__
+#ifdef _WIN32
               quotation= true;
 #endif
             }
@@ -999,7 +999,7 @@ static void copy_orig_argv (char* cmd_str)
           {
             if (IS_REQ_ESCAPING(c))
             {
-#ifdef __WIN__
+#ifdef _WIN32
               *cmd_str++ = c;
 #else
               *cmd_str++ = '\\';
@@ -1430,6 +1430,8 @@ static int sst_donate_mysqldump (const char*         addr,
                                         wsrep::seqno::undefined()));
   Wsrep_server_state::instance().sst_sent(sst_sent_gtid, ret);
 
+  wsrep_donor_monitor_end();
+
   return ret;
 }
 
@@ -1494,7 +1496,7 @@ static int run_sql_command(THD *thd, const char *query)
     return -1;
   }
 
-  mysql_parse(thd, thd->query(), thd->query_length(), &ps, FALSE, FALSE);
+  mysql_parse(thd, thd->query(), thd->query_length(), &ps);
   if (thd->is_error())
   {
     int const err= thd->get_stmt_da()->sql_errno();
@@ -1527,10 +1529,10 @@ static int sst_flush_tables(THD* thd)
   if (!is_supported_parser_charset(current_charset))
   {
       /* Do not use non-supported parser character sets */
-      WSREP_WARN("Current client character set is non-supported parser character set: %s", current_charset->csname);
+      WSREP_WARN("Current client character set is non-supported parser character set: %s", current_charset->cs_name.str);
       thd->variables.character_set_client= &my_charset_latin1;
       WSREP_WARN("For SST temporally setting character set to : %s",
-                 my_charset_latin1.csname);
+                 my_charset_latin1.cs_name.str);
   }
 
   if (run_sql_command(thd, "FLUSH TABLES WITH READ LOCK"))
@@ -1629,10 +1631,10 @@ static void sst_disallow_writes (THD* thd, bool yes)
   if (!is_supported_parser_charset(current_charset))
   {
       /* Do not use non-supported parser character sets */
-      WSREP_WARN("Current client character set is non-supported parser character set: %s", current_charset->csname);
+      WSREP_WARN("Current client character set is non-supported parser character set: %s", current_charset->cs_name.str);
       thd->variables.character_set_client= &my_charset_latin1;
       WSREP_WARN("For SST temporally setting character set to : %s",
-                 my_charset_latin1.csname);
+                 my_charset_latin1.cs_name.str);
   }
 
   snprintf (query_str, query_max, "SET GLOBAL innodb_disallow_writes=%d",

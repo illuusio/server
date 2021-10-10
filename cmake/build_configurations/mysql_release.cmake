@@ -74,7 +74,6 @@ IF(FEATURE_SET)
   ENDIF()
   IF(num GREATER FEATURE_SET_large)
     SET(PLUGIN_PARTITION "STATIC")
-    #SET(PLUGIN_CASSANDRA "STATIC")
   ENDIF()
   IF(num GREATER FEATURE_SET_xlarge)
    # OPTION(WITH_ALL ON) 
@@ -142,31 +141,21 @@ IF(UNIX)
   SET(PLUGIN_AUTH_PAM YES CACHE BOOL "")
 
   IF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    IF(NOT IGNORE_AIO_CHECK)
-      # Ensure aio is available on Linux (required by InnoDB)
-      CHECK_INCLUDE_FILES(libaio.h HAVE_LIBAIO_H)
-      CHECK_LIBRARY_EXISTS(aio io_queue_init "" HAVE_LIBAIO)
-      IF(NOT HAVE_LIBAIO_H OR NOT HAVE_LIBAIO)
-        UNSET(HAVE_LIBAIO_H CACHE)
-        UNSET(HAVE_LIBAIO CACHE)
+    FIND_PACKAGE(URING)
+    FIND_PACKAGE(LIBAIO)
+    IF(NOT URING_FOUND AND NOT LIBAIO_FOUND AND NOT IGNORE_AIO_CHECK)
         MESSAGE(FATAL_ERROR "
-        aio is required on Linux, you need to install the required library:
+        Either liburing or libaio is required on Linux.
+        You can  install libaio like this:
 
           Debian/Ubuntu:              apt-get install libaio-dev
           RedHat/Fedora/Oracle Linux: yum install libaio-devel
           SuSE:                       zypper install libaio-devel
 
-          If you really do not want it, pass -DIGNORE_AIO_CHECK=ON to cmake.
+          If you really do not want it, pass -DIGNORE_AIO_CHECK=YES to cmake.
         ")
-      ENDIF()
-
-      # Unfortunately, linking shared libmysqld with static aio
-      # does not work,  unless we add also dynamic one. This also means
-      # libmysqld.so will depend on libaio.so
-      #SET(LIBMYSQLD_SO_EXTRA_LIBS aio)
     ENDIF()
   ENDIF()
-
 ENDIF()
 
 # Compiler options

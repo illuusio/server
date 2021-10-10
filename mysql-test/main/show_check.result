@@ -76,10 +76,11 @@ def	information_schema	STATISTICS	STATISTICS	NULLABLE	Null	253	3	0	N	1	0	8
 def	information_schema	STATISTICS	STATISTICS	INDEX_TYPE	Index_type	253	16	5	N	1	0	8
 def	information_schema	STATISTICS	STATISTICS	COMMENT	Comment	253	16	0	Y	0	0	8
 def	information_schema	STATISTICS	STATISTICS	INDEX_COMMENT	Index_comment	253	1024	0	N	1	0	8
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
-t1	0	PRIMARY	1	a	A	5	NULL	NULL		BTREE		
-t1	1	b	1	b	A	1	NULL	NULL		BTREE		
-t1	1	b	2	c	A	5	NULL	NULL		BTREE		
+def	information_schema	STATISTICS	STATISTICS	IGNORED	Ignored	253	3	2	N	1	0	8
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
+t1	0	PRIMARY	1	a	A	5	NULL	NULL		BTREE			NO
+t1	1	b	1	b	A	1	NULL	NULL		BTREE			NO
+t1	1	b	2	c	A	5	NULL	NULL		BTREE			NO
 insert into t1 values (5,5,5);
 ERROR 23000: Duplicate entry '5' for key 'PRIMARY'
 -- Here we enable metadata just to check that the collation of the
@@ -148,6 +149,7 @@ information_schema
 mtr
 mysql
 performance_schema
+sys
 test
 show databases like "test%";
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
@@ -169,11 +171,11 @@ Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	Engine-independent statistics collected
 test.t1	analyze	status	OK
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
-t1	0	PRIMARY	1	f1	A	1	NULL	NULL		BTREE		
-t1	0	PRIMARY	2	f2	A	3	NULL	NULL		BTREE		
-t1	0	PRIMARY	3	f3	A	9	NULL	NULL		BTREE		
-t1	0	PRIMARY	4	f4	A	18	NULL	NULL		BTREE		
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
+t1	0	PRIMARY	1	f1	A	1	NULL	NULL		BTREE			NO
+t1	0	PRIMARY	2	f2	A	3	NULL	NULL		BTREE			NO
+t1	0	PRIMARY	3	f3	A	9	NULL	NULL		BTREE			NO
+t1	0	PRIMARY	4	f4	A	18	NULL	NULL		BTREE			NO
 -- Here we enable metadata just to check that the collation of the
 -- resultset is non-binary for string type. This should be changed
 -- after Bug#29394 is implemented.
@@ -186,11 +188,11 @@ def					Msg_text	250	393216	2	Y	0	39	8
 Table	Op	Msg_type	Msg_text
 test.t1	repair	status	OK
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
-t1	0	PRIMARY	1	f1	A	1	NULL	NULL		BTREE		
-t1	0	PRIMARY	2	f2	A	3	NULL	NULL		BTREE		
-t1	0	PRIMARY	3	f3	A	9	NULL	NULL		BTREE		
-t1	0	PRIMARY	4	f4	A	18	NULL	NULL		BTREE		
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
+t1	0	PRIMARY	1	f1	A	1	NULL	NULL		BTREE			NO
+t1	0	PRIMARY	2	f2	A	3	NULL	NULL		BTREE			NO
+t1	0	PRIMARY	3	f3	A	9	NULL	NULL		BTREE			NO
+t1	0	PRIMARY	4	f4	A	18	NULL	NULL		BTREE			NO
 drop table t1;
 create temporary table t1 (a int not null);
 show create table t1;
@@ -660,8 +662,9 @@ def	information_schema	STATISTICS	STATISTICS	NULLABLE	Null	253	3	0	N	1	0	63
 def	information_schema	STATISTICS	STATISTICS	INDEX_TYPE	Index_type	253	16	5	N	1	0	63
 def	information_schema	STATISTICS	STATISTICS	COMMENT	Comment	253	16	0	Y	0	0	63
 def	information_schema	STATISTICS	STATISTICS	INDEX_COMMENT	Index_comment	253	1024	0	N	1	0	63
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
-t1	0	PRIMARY	1	field1	A	0	1000	NULL		BTREE		
+def	information_schema	STATISTICS	STATISTICS	IGNORED	Ignored	253	3	2	N	1	0	63
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
+t1	0	PRIMARY	1	field1	A	0	1000	NULL		BTREE			NO
 drop table t1;
 create table t1 (
 c1 int NOT NULL,
@@ -872,14 +875,14 @@ set names utf8;
 -- resultset is non-binary for string type. This should be changed
 -- after Bug#29394 is implemented.
 ----------------------------------------------------------------
-SHOW CHARACTER SET LIKE 'utf8';
+SHOW CHARACTER SET LIKE 'utf8mb3';
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
-def	information_schema	CHARACTER_SETS	CHARACTER_SETS	CHARACTER_SET_NAME	Charset	253	96	4	N	1	0	33
+def	information_schema	CHARACTER_SETS	CHARACTER_SETS	CHARACTER_SET_NAME	Charset	253	96	7	N	1	0	33
 def	information_schema	CHARACTER_SETS	CHARACTER_SETS	DESCRIPTION	Description	253	180	13	N	1	0	33
-def	information_schema	CHARACTER_SETS	CHARACTER_SETS	DEFAULT_COLLATE_NAME	Default collation	253	96	15	N	1	0	33
+def	information_schema	CHARACTER_SETS	CHARACTER_SETS	DEFAULT_COLLATE_NAME	Default collation	253	96	18	N	1	0	33
 def	information_schema	CHARACTER_SETS	CHARACTER_SETS	MAXLEN	Maxlen	8	3	1	N	32769	0	63
 Charset	Description	Default collation	Maxlen
-utf8	UTF-8 Unicode	utf8_general_ci	3
+utf8mb3	UTF-8 Unicode	utf8mb3_general_ci	3
 ----------------------------------------------------------------
 SHOW COLLATION LIKE 'latin1_bin';
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
@@ -930,8 +933,9 @@ def	information_schema	STATISTICS	STATISTICS	NULLABLE	Null	253	9	0	N	1	0	33
 def	information_schema	STATISTICS	STATISTICS	INDEX_TYPE	Index_type	253	48	5	N	1	0	33
 def	information_schema	STATISTICS	STATISTICS	COMMENT	Comment	253	48	0	Y	0	0	33
 def	information_schema	STATISTICS	STATISTICS	INDEX_COMMENT	Index_comment	253	3072	0	N	1	0	33
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
-t1	0	PRIMARY	1	c	A	0	NULL	NULL		BTREE		
+def	information_schema	STATISTICS	STATISTICS	IGNORED	Ignored	253	9	2	N	1	0	33
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
+t1	0	PRIMARY	1	c	A	0	NULL	NULL		BTREE			NO
 ----------------------------------------------------------------
 SELECT
 TABLE_CATALOG,
@@ -1019,7 +1023,7 @@ def	information_schema	TRIGGERS	TRIGGERS	ACTION_STATEMENT	Statement	252	589815	1
 def	information_schema	TRIGGERS	TRIGGERS	ACTION_TIMING	Timing	253	18	6	N	1	0	33
 def	information_schema	TRIGGERS	TRIGGERS	CREATED	Created	12	22	22	Y	128	2	63
 def	information_schema	TRIGGERS	TRIGGERS	SQL_MODE	sql_mode	253	24576	89	N	1	0	33
-def	information_schema	TRIGGERS	TRIGGERS	DEFINER	Definer	253	567	14	N	1	0	33
+def	information_schema	TRIGGERS	TRIGGERS	DEFINER	Definer	253	1152	14	N	1	0	33
 def	information_schema	TRIGGERS	TRIGGERS	CHARACTER_SET_CLIENT	character_set_client	253	96	6	N	1	0	33
 def	information_schema	TRIGGERS	TRIGGERS	COLLATION_CONNECTION	collation_connection	253	96	6	N	1	0	33
 def	information_schema	TRIGGERS	TRIGGERS	DATABASE_COLLATION	Database Collation	253	96	17	N	1	0	33
@@ -1063,7 +1067,7 @@ def	information_schema	TRIGGERS	TRIGGERS	ACTION_REFERENCE_NEW_TABLE	ACTION_REFER
 def	information_schema	TRIGGERS	TRIGGERS	ACTION_REFERENCE_OLD_ROW	ACTION_REFERENCE_OLD_ROW	253	9	3	N	1	0	33
 def	information_schema	TRIGGERS	TRIGGERS	ACTION_REFERENCE_NEW_ROW	ACTION_REFERENCE_NEW_ROW	253	9	3	N	1	0	33
 def	information_schema	TRIGGERS	TRIGGERS	SQL_MODE	SQL_MODE	253	24576	89	N	1	0	33
-def	information_schema	TRIGGERS	TRIGGERS	DEFINER	DEFINER	253	567	14	N	1	0	33
+def	information_schema	TRIGGERS	TRIGGERS	DEFINER	DEFINER	253	1152	14	N	1	0	33
 TRIGGER_CATALOG	TRIGGER_SCHEMA	TRIGGER_NAME	EVENT_MANIPULATION	EVENT_OBJECT_CATALOG	EVENT_OBJECT_SCHEMA	EVENT_OBJECT_TABLE	ACTION_CONDITION	ACTION_STATEMENT	ACTION_ORIENTATION	ACTION_TIMING	ACTION_REFERENCE_OLD_TABLE	ACTION_REFERENCE_NEW_TABLE	ACTION_REFERENCE_OLD_ROW	ACTION_REFERENCE_NEW_ROW	SQL_MODE	DEFINER
 def	test	t1_bi	INSERT	def	test	t1	NULL	SET @a = 1	ROW	BEFORE	NULL	NULL	OLD	NEW	STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	root@localhost
 SELECT CREATED FROM INFORMATION_SCHEMA.TRIGGERS WHERE trigger_name='t1_bi';
@@ -1091,7 +1095,7 @@ def	information_schema	VIEWS	VIEWS	TABLE_NAME	TABLE_NAME	253	192	2	N	1	0	33
 def	information_schema	VIEWS	VIEWS	VIEW_DEFINITION	VIEW_DEFINITION	252	589815	15	N	17	0	33
 def	information_schema	VIEWS	VIEWS	CHECK_OPTION	CHECK_OPTION	253	24	4	N	1	0	33
 def	information_schema	VIEWS	VIEWS	IS_UPDATABLE	IS_UPDATABLE	253	9	2	N	1	0	33
-def	information_schema	VIEWS	VIEWS	DEFINER	DEFINER	253	567	14	N	1	0	33
+def	information_schema	VIEWS	VIEWS	DEFINER	DEFINER	253	1152	14	N	1	0	33
 def	information_schema	VIEWS	VIEWS	SECURITY_TYPE	SECURITY_TYPE	253	21	7	N	1	0	33
 def	information_schema	VIEWS	VIEWS	CHARACTER_SET_CLIENT	CHARACTER_SET_CLIENT	253	96	6	N	1	0	33
 def	information_schema	VIEWS	VIEWS	COLLATION_CONNECTION	COLLATION_CONNECTION	253	96	6	N	1	0	33
@@ -1150,7 +1154,7 @@ def	information_schema	ROUTINES	ROUTINES	SQL_PATH	SQL_PATH	253	192	0	Y	0	0	33
 def	information_schema	ROUTINES	ROUTINES	SECURITY_TYPE	SECURITY_TYPE	253	21	7	N	1	0	33
 def	information_schema	ROUTINES	ROUTINES	SQL_MODE	SQL_MODE	253	24576	89	N	1	0	33
 def	information_schema	ROUTINES	ROUTINES	ROUTINE_COMMENT	ROUTINE_COMMENT	252	589815	0	N	17	0	33
-def	information_schema	ROUTINES	ROUTINES	DEFINER	DEFINER	253	567	14	N	1	0	33
+def	information_schema	ROUTINES	ROUTINES	DEFINER	DEFINER	253	1152	14	N	1	0	33
 SPECIFIC_NAME	ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	DTD_IDENTIFIER	ROUTINE_BODY	ROUTINE_DEFINITION	EXTERNAL_NAME	EXTERNAL_LANGUAGE	PARAMETER_STYLE	IS_DETERMINISTIC	SQL_DATA_ACCESS	SQL_PATH	SECURITY_TYPE	SQL_MODE	ROUTINE_COMMENT	DEFINER
 p1	def	test	p1	PROCEDURE	NULL	SQL	SELECT 1	NULL	NULL	SQL	NO	CONTAINS SQL	NULL	DEFINER	STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION		root@localhost
 ----------------------------------------------------------------
@@ -1205,7 +1209,7 @@ def	information_schema	ROUTINES	ROUTINES	SQL_PATH	SQL_PATH	253	192	0	Y	0	0	33
 def	information_schema	ROUTINES	ROUTINES	SECURITY_TYPE	SECURITY_TYPE	253	21	7	N	1	0	33
 def	information_schema	ROUTINES	ROUTINES	SQL_MODE	SQL_MODE	253	24576	89	N	1	0	33
 def	information_schema	ROUTINES	ROUTINES	ROUTINE_COMMENT	ROUTINE_COMMENT	252	589815	0	N	17	0	33
-def	information_schema	ROUTINES	ROUTINES	DEFINER	DEFINER	253	567	14	N	1	0	33
+def	information_schema	ROUTINES	ROUTINES	DEFINER	DEFINER	253	1152	14	N	1	0	33
 SPECIFIC_NAME	ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	DTD_IDENTIFIER	ROUTINE_BODY	ROUTINE_DEFINITION	EXTERNAL_NAME	EXTERNAL_LANGUAGE	PARAMETER_STYLE	IS_DETERMINISTIC	SQL_DATA_ACCESS	SQL_PATH	SECURITY_TYPE	SQL_MODE	ROUTINE_COMMENT	DEFINER
 f1	def	test	f1	FUNCTION	int(11)	SQL	RETURN 1	NULL	NULL	SQL	NO	CONTAINS SQL	NULL	DEFINER	STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION		root@localhost
 ----------------------------------------------------------------
@@ -1262,7 +1266,7 @@ PRIMARY KEY  (Codigo)
 show create table t1;
 Catalog	Database	Table	Table_alias	Column	Column_alias	Type	Length	Max length	Is_null	Flags	Decimals	Charsetnr
 def					Table	253	192	2	N	1	39	33
-def					Create Table	253	3072	458	N	1	39	33
+def					Create Table	253	3072	461	N	1	39	33
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `Codigo` int(10) unsigned NOT NULL AUTO_INCREMENT,
@@ -1275,7 +1279,7 @@ t1	CREATE TABLE `t1` (
   `Provincia` varchar(255) DEFAULT NULL,
   `Poblacion` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`Codigo`)
-) ENGINE=MyISAM AUTO_INCREMENT=11 DEFAULT CHARSET=utf8
+) ENGINE=MyISAM AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb3
 drop table t1;
 End of 5.0 tests
 SHOW AUTHORS;
@@ -1312,7 +1316,7 @@ show columns from `a\b` from `mysqlttest\1`;
 Field	Type	Null	Key	Default	Extra
 a	int(11)	YES		NULL	
 show keys from `mysqlttest\1`.`a\b`;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
 drop table `mysqlttest\1`.`a\b`;
 drop database `mysqlttest\1`;
 show engine foobar status;
@@ -1528,7 +1532,7 @@ LOCK TABLE t1 WRITE;
 connection default;
 SHOW CREATE TRIGGER t1_bi;
 Trigger	sql_mode	SQL Original Statement	character_set_client	collation_connection	Database Collation	Created
-t1_bi	STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` TRIGGER t1_bi BEFORE INSERT ON t1 FOR EACH ROW SET new.a = 1	utf8	utf8_general_ci	latin1_swedish_ci	#
+t1_bi	STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` TRIGGER t1_bi BEFORE INSERT ON t1 FOR EACH ROW SET new.a = 1	utf8mb3	utf8mb3_general_ci	latin1_swedish_ci	#
 connection con1;
 UNLOCK TABLES;
 # Test 2: ALTER TABLE with SHOW CREATE TRIGGER in transaction
@@ -1536,7 +1540,7 @@ connection default;
 START TRANSACTION;
 SHOW CREATE TRIGGER t1_bi;
 Trigger	sql_mode	SQL Original Statement	character_set_client	collation_connection	Database Collation	Created
-t1_bi	STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` TRIGGER t1_bi BEFORE INSERT ON t1 FOR EACH ROW SET new.a = 1	utf8	utf8_general_ci	latin1_swedish_ci	#
+t1_bi	STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` TRIGGER t1_bi BEFORE INSERT ON t1 FOR EACH ROW SET new.a = 1	utf8mb3	utf8mb3_general_ci	latin1_swedish_ci	#
 connection con1;
 ALTER TABLE t1 CHARACTER SET = utf8;
 disconnect con1;

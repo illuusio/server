@@ -1098,7 +1098,7 @@ call p1()//
 a
 1
 2
-drop procedure p1;
+drop procedure p1//
 create function f1() returns int
 begin
 Declare var1 int;
@@ -1111,13 +1111,13 @@ create procedure `p1`()
 begin
 select a, f1() from t1;
 end//
-SET @old_log_bin_trust_function_creators= @@global.log_bin_trust_function_creators;
-SET GLOBAL log_bin_trust_function_creators = 1;
+SET @old_log_bin_trust_function_creators= @@global.log_bin_trust_function_creators//
+SET GLOBAL log_bin_trust_function_creators = 1//
 call p1()//
 a	f1()
 1	2
 2	2
-SET GLOBAL log_bin_trust_function_creators = @old_log_bin_trust_function_creators;
+SET GLOBAL log_bin_trust_function_creators = @old_log_bin_trust_function_creators//
 drop procedure p1//
 drop function f1//
 drop table t1//
@@ -2210,7 +2210,32 @@ drop table t1;
 #
 # MDEV-24858 SIGABRT in DbugExit from my_malloc in Query_cache::init_cache Regression
 #
+SET @qc= @@query_cache_size;
 set global Query_cache_size=18446744073709547520;
+SET GLOBAL query_cache_size= @qc;
+#
+# MDEV-22301 JSON_TABLE: Queries are not inserted into query cache.
+#
+create table t1 (a text);
+insert into t1 values ('{"a":"foo"}');
+flush status;
+SHOW STATUS LIKE 'Qcache_inserts';
+Variable_name	Value
+Qcache_inserts	0
+select * from t1, json_table(t1.a, '$' columns (f varchar(20) path '$.a')) as jt;
+a	f
+{"a":"foo"}	foo
+SHOW STATUS LIKE 'Qcache_inserts';
+Variable_name	Value
+Qcache_inserts	1
+drop table t1;
+#
+# MDEV-25228 JSON_TABLE: Server crashes in Query_cache::unlink_table.
+#
+CREATE TABLE t (a INT);
+SELECT * FROM t JOIN JSON_TABLE('{}' , '$' COLUMNS(b FOR ORDINALITY)) AS jt;
+a	b
+DROP TABLE t;
 restore defaults
 SET GLOBAL query_cache_type= default;
 SET GLOBAL query_cache_size=@save_query_cache_size;

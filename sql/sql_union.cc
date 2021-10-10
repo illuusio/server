@@ -1084,7 +1084,9 @@ bool st_select_lex_unit::prepare_join(THD *thd_arg, SELECT_LEX *sl,
 
   thd_arg->lex->current_select= sl;
 
-  can_skip_order_by= is_union_select && !(sl->braces && sl->explicit_limit);
+  can_skip_order_by= (is_union_select && !(sl->braces &&
+                                           sl->limit_params.explicit_limit) &&
+                      !thd->lex->with_rownum);
 
   saved_error= join->prepare(sl->table_list.first,
                              (derived && derived->merged ? NULL : sl->where),
@@ -1184,11 +1186,11 @@ bool st_select_lex_unit::join_union_type_attributes(THD *thd_arg,
         been fixed yet. An Item_type_holder must be created based on a fixed
         Item, so use the inner Item instead.
       */
-      DBUG_ASSERT(item_tmp->is_fixed() ||
+      DBUG_ASSERT(item_tmp->fixed() ||
                   (item_tmp->type() == Item::REF_ITEM &&
                    ((Item_ref *)(item_tmp))->ref_type() ==
                    Item_ref::OUTER_REF));
-      if (!item_tmp->is_fixed())
+      if (!item_tmp->fixed())
         item_tmp= item_tmp->real_item();
       holders[holder_pos].add_argument(item_tmp);
     }
@@ -1340,7 +1342,7 @@ bool st_select_lex_unit::prepare(TABLE_LIST *derived_arg,
 	else
 	{
 	  sl->join->result= result;
-          lim.set_unlimited();
+          lim.clear();
 	  if (!sl->join->procedure &&
 	      result->prepare(sl->join->fields_list, this))
 	  {
@@ -1450,7 +1452,7 @@ bool st_select_lex_unit::prepare(TABLE_LIST *derived_arg,
         if (fake_select_lex)
 	{
           if (fake_select_lex->order_list.first ||
-              fake_select_lex->explicit_limit)
+              fake_select_lex->limit_params.explicit_limit)
           {
 	    my_error(ER_NOT_SUPPORTED_YET, MYF(0),
                      "global ORDER_BY/LIMIT in recursive CTE spec");
@@ -1510,7 +1512,7 @@ bool st_select_lex_unit::prepare(TABLE_LIST *derived_arg,
       if (!unit->first_select()->next_select())
       {
         if (!unit->fake_select_lex)
-	{
+        {
           Query_arena *arena, backup_arena;
           arena= thd->activate_stmt_arena_if_needed(&backup_arena);
           bool rc= unit->add_fake_select_lex(thd);
@@ -1521,17 +1523,13 @@ bool st_select_lex_unit::prepare(TABLE_LIST *derived_arg,
         }
         SELECT_LEX *fake= unit->fake_select_lex;
         fake->order_list= sl->order_list;
-        fake->explicit_limit= sl->explicit_limit;
-        fake->select_limit= sl->select_limit;
-        fake->offset_limit= sl->offset_limit;
+        fake->limit_params= sl->limit_params;
         sl->order_list.empty();
-        sl->explicit_limit= 0;
-        sl->select_limit= 0;
-        sl->offset_limit= 0;
+        sl->limit_params.clear();
         if (describe)
           fake->options|= SELECT_DESCRIBE;
       }
-      else if (!sl->explicit_limit)
+      else if (!sl->limit_params.explicit_limit)
         sl->order_list.empty();
     }
   }

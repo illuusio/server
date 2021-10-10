@@ -511,7 +511,7 @@ typedef struct st_maria_state_info
 #define MARIA_FILE_CREATE_RENAME_LSN_OFFSET 4
 #define MARIA_FILE_CREATE_TRID_OFFSET (4 + LSN_STORE_SIZE*3 + 11*8)
 
-#define MARIA_MAX_KEY_LENGTH    2000
+#define MARIA_MAX_KEY_LENGTH    2300
 #define MARIA_MAX_KEY_BUFF      (MARIA_MAX_KEY_LENGTH+HA_MAX_KEY_SEG*6+8+8 + \
                                  MARIA_MAX_PACK_TRANSID_SIZE)
 #define MARIA_MAX_POSSIBLE_KEY_BUFF  (MARIA_MAX_KEY_LENGTH + 24+ 6+6)
@@ -1247,6 +1247,7 @@ extern ulong maria_checkpoint_min_log_activity;
 extern HASH maria_stored_state;
 extern int (*maria_create_trn_hook)(MARIA_HA *);
 extern my_bool (*ma_killed)(MARIA_HA *);
+extern void (*ma_debug_crash_here)(const char *keyword);
 
 #ifdef HAVE_PSI_INTERFACE
 extern PSI_mutex_key key_SHARE_BITMAP_lock, key_SORT_INFO_mutex,

@@ -505,7 +505,7 @@ static void usage(void)
 		      maria_chk very silent.\n\
   -t, --tmpdir=path   Path for temporary files. Multiple paths can be\n\
                       specified, separated by ");
-#if defined( __WIN__) || defined(__NETWARE__)
+#if defined( _WIN32)
    printf("semicolon (;)");
 #else
    printf("colon (:)");
@@ -986,7 +986,7 @@ static void get_options(register int *argc,register char ***argv)
 
   if (set_collation_name)
     if (!(set_collation= get_charset_by_name(set_collation_name,
-                                             MYF(MY_WME))))
+                                             MYF(MY_UTF8_IS_UTF8MB3 | MY_WME))))
       my_exit(1);
 
   if (maria_data_root != default_log_dir && opt_log_dir == default_log_dir)
@@ -1594,6 +1594,12 @@ static void descript(HA_CHECK *param, register MARIA_HA *info, char *name)
     buff[MY_UUID_STRING_LENGTH]= 0;
     my_uuid2str(share->base.uuid, buff);
     printf("UUID:                %s\n", buff);
+    if (ma_control_file_inited() &&
+        memcmp(share->base.uuid, maria_uuid, MY_UUID_SIZE))
+      printf("Warning: File UUID not match control file UUID! "
+             "File is probably moved\n"
+             "It will be updated to new system on first usage if zerofill is "
+             "not done\n");
     pos=buff;
     if (share->state.changed & STATE_CRASHED)
       strmov(buff, share->state.changed & STATE_CRASHED_ON_REPAIR ?

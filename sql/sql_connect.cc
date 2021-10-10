@@ -23,7 +23,7 @@
 #include "mariadb.h"
 #include "mysqld.h"
 #include "sql_priv.h"
-#ifndef __WIN__
+#ifndef _WIN32
 #include <netdb.h>        // getservbyname, servent
 #endif
 #include "sql_audit.h"
@@ -798,7 +798,7 @@ bool thd_init_client_charset(THD *thd, uint cs_number)
     {
       /* Disallow non-supported parser character sets: UCS2, UTF16, UTF32 */
       my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), "character_set_client",
-               cs->csname);
+               cs->cs_name.str);
       return true;
     }
     thd->org_charset= cs;
@@ -1361,9 +1361,9 @@ void do_handle_one_connection(CONNECT *connect, bool put_in_cache)
 
   DBUG_EXECUTE_IF("CONNECT_wait",
   {
-    extern MYSQL_SOCKET unix_sock;
-    DBUG_ASSERT(unix_sock.fd >= 0);
-    while (unix_sock.fd >= 0)
+    extern Dynamic_array<MYSQL_SOCKET> listen_sockets;
+    DBUG_ASSERT(listen_sockets.size());
+    while (listen_sockets.size())
       my_sleep(1000);
   });
 

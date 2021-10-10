@@ -499,7 +499,7 @@ void BJNX::SetJsonValue(PGLOBAL g, PVAL vp, PBVAL vlp)
 		case TYPE_NULL:
 			vp->SetNull(true);
                         /* fall through */
-                default:
+		default:
 			vp->Reset();
 		} // endswitch Type
 
@@ -2902,7 +2902,7 @@ my_bool bson_array_grp_init(UDF_INIT *initid, UDF_ARGS *args, char *message)
 		return true;
 
 	PGLOBAL g = (PGLOBAL)initid->ptr;
-	(void) new(g) BJNX(g);
+	(void)  new(g) BJNX(g);
 
 	JsonMemSave(g);
 	return false;

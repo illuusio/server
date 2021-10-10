@@ -42,6 +42,7 @@
 #include "uniques.h"
 #include "sql_derived.h"                        // mysql_handle_derived
                                                 // end_read_record
+#include "sql_insert.h"          // fix_rownum_pointers
 #include "sql_partition.h"       // make_used_partitions_str
 
 #define MEM_STRIP_BUF_SIZE ((size_t) thd->variables.sortbuff_size)
@@ -365,10 +366,20 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
   query_plan.select_lex= thd->lex->first_select_lex();
   query_plan.table= table;
 
-  promote_select_describe_flag_if_needed(thd->lex);
+  thd->lex->promote_select_describe_flag_if_needed();
 
   if (mysql_prepare_delete(thd, table_list, &conds, &delete_while_scanning))
     DBUG_RETURN(TRUE);
+
+  if (table_list->has_period())
+  {
+    if (!table_list->period_conditions.start.item->const_item()
+        || !table_list->period_conditions.end.item->const_item())
+    {
+      my_error(ER_NOT_CONSTANT_EXPRESSION, MYF(0), "FOR PORTION OF");
+      DBUG_RETURN(true);
+    }
+  }
 
   if (delete_history)
     table->vers_write= false;
@@ -776,6 +787,8 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
   DBUG_ASSERT(table->file->inited != handler::NONE);
 
   THD_STAGE_INFO(thd, stage_updating);
+  fix_rownum_pointers(thd, thd->lex->current_select, &deleted);
+
   while (likely(!(error=info.read_record())) && likely(!thd->killed) &&
          likely(!thd->is_error()))
   {

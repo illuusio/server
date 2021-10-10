@@ -294,9 +294,7 @@ struct trx_undo_t {
 					log */
 	XID		xid;		/*!< X/Open XA transaction
 					identification */
-	ibool		dict_operation;	/*!< TRUE if a dict operation trx */
-	table_id_t	table_id;	/*!< if a dict operation, then the table
-					id */
+	bool		dict_operation;	/*!< TRUE if a dict operation trx */
 	trx_rseg_t*	rseg;		/*!< rseg where the undo log belongs */
 	/*-----------------------------*/
 	uint32_t	hdr_page_no;	/*!< page number of the header page in

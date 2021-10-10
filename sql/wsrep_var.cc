@@ -92,18 +92,14 @@ static bool refresh_provider_options()
   }
 }
 
-void wsrep_set_wsrep_on()
+void wsrep_set_wsrep_on(THD* thd)
 {
+  if (thd)
+    thd->wsrep_was_on= WSREP_ON_;
   WSREP_PROVIDER_EXISTS_= wsrep_provider &&
     strncasecmp(wsrep_provider, WSREP_NONE, FN_REFLEN);
   WSREP_ON_= global_system_variables.wsrep_on && WSREP_PROVIDER_EXISTS_;
 }
-
-/* This is intentionally declared as a weak global symbol, so that
-linking will succeed even if the server is built with a dynamically
-linked InnoDB. */
-ulong innodb_lock_schedule_algorithm __attribute__((weak));
-struct handlerton* innodb_hton_ptr __attribute__((weak));
 
 bool wsrep_on_update (sys_var *self, THD* thd, enum_var_type var_type)
 {
@@ -134,7 +130,7 @@ bool wsrep_on_update (sys_var *self, THD* thd, enum_var_type var_type)
     thd->variables.wsrep_on= global_system_variables.wsrep_on= saved_wsrep_on;
   }
 
-  wsrep_set_wsrep_on();
+  wsrep_set_wsrep_on(thd);
 
   if (var_type == OPT_GLOBAL)
   {
@@ -158,14 +154,6 @@ bool wsrep_on_check(sys_var *self, THD* thd, set_var* var)
 
   if (new_wsrep_on)
   {
-    if (innodb_hton_ptr && innodb_lock_schedule_algorithm != 0)
-    {
-      my_message(ER_WRONG_ARGUMENTS, " WSREP (galera) can't be enabled "
-                 "if innodb_lock_schedule_algorithm=VATS. Please configure"
-                 " innodb_lock_schedule_algorithm=FCFS and restart.", MYF(0));
-      return true;
-    }
-
     if (!WSREP_PROVIDER_EXISTS)
     {
       my_message(ER_WRONG_ARGUMENTS, "WSREP (galera) can't be enabled "
@@ -520,7 +508,7 @@ bool wsrep_provider_update (sys_var *self, THD* thd, enum_var_type type)
   if (!rcode)
     refresh_provider_options();
 
-  wsrep_set_wsrep_on();
+  wsrep_set_wsrep_on(thd);
   mysql_mutex_lock(&LOCK_global_system_variables);
 
   return rcode;
@@ -540,7 +528,7 @@ void wsrep_provider_init (const char* value)
 
   if (wsrep_provider) my_free((void *)wsrep_provider);
   wsrep_provider= my_strdup(PSI_INSTRUMENT_MEM, value, MYF(0));
-  wsrep_set_wsrep_on();
+  wsrep_set_wsrep_on(NULL);
 }
 
 bool wsrep_provider_options_check(sys_var *self, THD* thd, set_var* var)
@@ -978,6 +966,11 @@ bool wsrep_max_ws_size_update(sys_var *self, THD *thd, enum_var_type)
   return refresh_provider_options();
 }
 
+bool wsrep_mode_check(sys_var *self, THD* thd, set_var* var)
+{
+  return false;
+}
+
 #if UNUSED /* eaec266eb16c (Sergei Golubchik  2014-09-28) */
 static SHOW_VAR wsrep_status_vars[]=
 {
@@ -1104,5 +1097,27 @@ bool wsrep_gtid_domain_id_update(sys_var* self, THD *thd, enum_var_type)
   WSREP_DEBUG("wsrep_gtid_domain_id_update: %llu",
               wsrep_gtid_domain_id);
   wsrep_gtid_server.domain_id= wsrep_gtid_domain_id;
+  return false;
+}
+
+bool wsrep_strict_ddl_update(sys_var *self, THD* thd, enum_var_type var_type)
+{
+  // In case user still sets wsrep_strict_ddl we set new
+  // option to wsrep_mode
+  if (wsrep_strict_ddl)
+    wsrep_mode|= WSREP_MODE_STRICT_REPLICATION;
+  else
+    wsrep_mode&= (~WSREP_MODE_STRICT_REPLICATION);
+  return false;
+}
+
+bool wsrep_replicate_myisam_update(sys_var *self, THD* thd, enum_var_type var_type)
+{
+  // In case user still sets wsrep_replicate_myisam we set new
+  // option to wsrep_mode
+  if (wsrep_replicate_myisam)
+    wsrep_mode|= WSREP_MODE_REPLICATE_MYISAM;
+  else
+    wsrep_mode&= (~WSREP_MODE_REPLICATE_MYISAM);
   return false;
 }

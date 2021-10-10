@@ -34,7 +34,7 @@ TABLE_NAME	varchar(64)	NO
 VIEW_DEFINITION	longtext	NO			
 CHECK_OPTION	varchar(8)	NO			
 IS_UPDATABLE	varchar(3)	NO			
-DEFINER	varchar(189)	NO			
+DEFINER	varchar(384)	NO			
 SECURITY_TYPE	varchar(7)	NO			
 CHARACTER_SET_CLIENT	varchar(32)	NO			
 COLLATION_CONNECTION	varchar(32)	NO			
@@ -48,12 +48,12 @@ VIEWS	CREATE TEMPORARY TABLE `VIEWS` (
   `VIEW_DEFINITION` longtext NOT NULL DEFAULT '',
   `CHECK_OPTION` varchar(8) NOT NULL DEFAULT '',
   `IS_UPDATABLE` varchar(3) NOT NULL DEFAULT '',
-  `DEFINER` varchar(189) NOT NULL DEFAULT '',
+  `DEFINER` varchar(384) NOT NULL DEFAULT '',
   `SECURITY_TYPE` varchar(7) NOT NULL DEFAULT '',
   `CHARACTER_SET_CLIENT` varchar(32) NOT NULL DEFAULT '',
   `COLLATION_CONNECTION` varchar(32) NOT NULL DEFAULT '',
   `ALGORITHM` varchar(10) NOT NULL DEFAULT ''
-)  DEFAULT CHARSET=utf8
+)  DEFAULT CHARSET=utf8mb3
 SHOW COLUMNS FROM information_schema.VIEWS;
 Field	Type	Null	Key	Default	Extra
 TABLE_CATALOG	varchar(512)	NO			
@@ -62,15 +62,14 @@ TABLE_NAME	varchar(64)	NO
 VIEW_DEFINITION	longtext	NO			
 CHECK_OPTION	varchar(8)	NO			
 IS_UPDATABLE	varchar(3)	NO			
-DEFINER	varchar(189)	NO			
+DEFINER	varchar(384)	NO			
 SECURITY_TYPE	varchar(7)	NO			
 CHARACTER_SET_CLIENT	varchar(32)	NO			
 COLLATION_CONNECTION	varchar(32)	NO			
 ALGORITHM	varchar(10)	NO			
 SELECT table_catalog, table_schema, table_name
-FROM information_schema.views WHERE table_catalog IS NOT NULL;
+FROM information_schema.views WHERE table_catalog <> 'def';
 table_catalog	table_schema	table_name
-def	mysql	user
 ################################################################################
 # Testcase 3.2.13.2 + 3.2.13.3: INFORMATION_SCHEMA.VIEWS accessible information
 ################################################################################

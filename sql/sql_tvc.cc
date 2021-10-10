@@ -212,7 +212,7 @@ bool get_type_attributes_for_tvc(THD *thd,
     Item *item;
     for (uint holder_pos= 0 ; (item= it++); holder_pos++)
     {
-      DBUG_ASSERT(item->is_fixed());
+      DBUG_ASSERT(item->fixed());
       holders[holder_pos].add_argument(item);
     }
   }
@@ -397,8 +397,7 @@ bool table_value_constr::optimize(THD *thd)
   create_explain_query_if_not_exists(thd->lex, thd->mem_root);
   have_query_plan= QEP_AVAILABLE;
 
-  if (select_lex->select_number != UINT_MAX &&
-      select_lex->select_number != INT_MAX /* this is not a UNION's "fake select */ &&
+  if (select_lex->select_number != FAKE_SELECT_LEX_ID &&
       have_query_plan != QEP_NOT_PRESENT_YET &&
       thd->lex->explain && // for "SET" command in SPs.
       (!thd->lex->explain->get_select(select_lex->select_number)))
@@ -434,6 +433,8 @@ bool table_value_constr::exec(SELECT_LEX *sl)
   {
     DBUG_RETURN(true);
   }
+
+  fix_rownum_pointers(sl->parent_lex->thd, sl, &send_records);
 
   while ((elem= li++))
   {
@@ -652,7 +653,8 @@ static bool create_tvc_name(THD *thd, st_select_lex *parent_select,
 bool table_value_constr::to_be_wrapped_as_with_tail()
 {
   return  select_lex->master_unit()->first_select()->next_select() &&
-          select_lex->order_list.elements && select_lex->explicit_limit;
+          select_lex->order_list.elements &&
+          select_lex->limit_params.explicit_limit;
 }
 
 
@@ -800,15 +802,11 @@ st_select_lex *wrap_tvc_with_tail(THD *thd, st_select_lex *tvc_sl)
     return NULL;
 
   wrapper_sl->order_list= tvc_sl->order_list;
-  wrapper_sl->select_limit= tvc_sl->select_limit;
-  wrapper_sl->offset_limit= tvc_sl->offset_limit;
+  wrapper_sl->limit_params= tvc_sl->limit_params;
   wrapper_sl->braces= tvc_sl->braces;
-  wrapper_sl->explicit_limit= tvc_sl->explicit_limit;
   tvc_sl->order_list.empty();
-  tvc_sl->select_limit= NULL;
-  tvc_sl->offset_limit= NULL;
+  tvc_sl->limit_params.clear();
   tvc_sl->braces= 0;
-  tvc_sl->explicit_limit= false;
   if (tvc_sl->select_number == 1)
   {
     tvc_sl->select_number= wrapper_sl->select_number;

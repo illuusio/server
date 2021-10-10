@@ -50,6 +50,9 @@ Created 11/11/1995 Heikki Tuuri
 Also included in buf_flush_page_count. */
 ulint buf_lru_flush_page_count;
 
+/** Number of pages freed without flushing. Protected by buf_pool.mutex. */
+ulint buf_lru_freed_page_count;
+
 /** Number of pages flushed. Protected by buf_pool.mutex. */
 ulint buf_flush_page_count;
 
@@ -258,7 +261,7 @@ void buf_flush_remove_pages(ulint id)
       break;
 
     mysql_mutex_unlock(&buf_pool.mutex);
-    os_thread_yield();
+    std::this_thread::yield();
     mysql_mutex_lock(&buf_pool.mutex);
     buf_flush_wait_batch_end(false);
   }
@@ -371,11 +374,8 @@ void buf_page_write_complete(const IORequest &request)
   ut_ad(bpage->io_fix() == BUF_IO_WRITE);
   bpage->set_io_fix(BUF_IO_NONE);
 
-  /* Because this thread which does the unlocking might not be the same that
-  did the locking, we use a pass value != 0 in unlock, which simply
-  removes the newest lock debug record, without checking the thread id. */
   if (bpage->state() == BUF_BLOCK_FILE_PAGE)
-    rw_lock_sx_unlock_gen(&((buf_block_t*) bpage)->lock, BUF_IO_WRITE);
+    reinterpret_cast<buf_block_t*>(bpage)->lock.u_unlock(true);
 
   if (request.is_LRU())
   {
@@ -406,9 +406,7 @@ void buf_flush_update_zip_checksum(buf_frame_t *page, ulint size)
 {
   ut_ad(size > 0);
   mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM,
-                  page_zip_calc_checksum(page, size,
-                                         static_cast<srv_checksum_algorithm_t>
-                                         (srv_checksum_algorithm)));
+                  page_zip_calc_checksum(page, size, false));
 }
 
 /** Assign the full crc32 checksum for non-compressed page.
@@ -563,38 +561,8 @@ buf_flush_init_for_writing(
 		}
 	}
 
-	uint32_t checksum = BUF_NO_CHECKSUM_MAGIC;
-
-	switch (srv_checksum_algorithm_t(srv_checksum_algorithm)) {
-	case SRV_CHECKSUM_ALGORITHM_INNODB:
-	case SRV_CHECKSUM_ALGORITHM_STRICT_INNODB:
-		checksum = buf_calc_page_new_checksum(page);
-		mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM,
-				checksum);
-		/* With the InnoDB checksum, we overwrite the first 4 bytes of
-		the end lsn field to store the old formula checksum. Since it
-		depends also on the field FIL_PAGE_SPACE_OR_CHKSUM, it has to
-		be calculated after storing the new formula checksum. */
-		checksum = buf_calc_page_old_checksum(page);
-		break;
-	case SRV_CHECKSUM_ALGORITHM_FULL_CRC32:
-	case SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32:
-	case SRV_CHECKSUM_ALGORITHM_CRC32:
-	case SRV_CHECKSUM_ALGORITHM_STRICT_CRC32:
-		/* In other cases we write the same checksum to both fields. */
-		checksum = buf_calc_page_crc32(page);
-		mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM,
-				checksum);
-		break;
-	case SRV_CHECKSUM_ALGORITHM_NONE:
-	case SRV_CHECKSUM_ALGORITHM_STRICT_NONE:
-		mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM,
-				checksum);
-		break;
-		/* no default so the compiler will emit a warning if
-		new enum is added and not handled here */
-	}
-
+	const uint32_t checksum = buf_calc_page_crc32(page);
+	mach_write_to_4(page + FIL_PAGE_SPACE_OR_CHKSUM, checksum);
 	mach_write_to_4(page + srv_page_size - FIL_PAGE_END_LSN_OLD_CHKSUM,
 			checksum);
 }
@@ -803,8 +771,7 @@ inline void buf_pool_t::release_freed_page(buf_page_t *bpage)
   mysql_mutex_unlock(&flush_list_mutex);
 
   if (uncompressed)
-    rw_lock_sx_unlock_gen(&reinterpret_cast<buf_block_t*>(bpage)->lock,
-                          BUF_IO_WRITE);
+    reinterpret_cast<buf_block_t*>(bpage)->lock.u_unlock(true);
 
   buf_LRU_free_page(bpage, true);
   mysql_mutex_unlock(&mutex);
@@ -822,19 +789,17 @@ static bool buf_flush_page(buf_page_t *bpage, bool lru, fil_space_t *space)
   ut_ad(bpage->ready_for_flush());
   ut_ad((space->purpose == FIL_TYPE_TEMPORARY) ==
         (space == fil_system.temp_space));
-  ut_ad(space->purpose == FIL_TYPE_TABLESPACE ||
-        space->atomic_write_supported);
   ut_ad(space->referenced());
   ut_ad(lru || space != fil_system.temp_space);
 
-  rw_lock_t *rw_lock;
+  block_lock *rw_lock;
 
   if (bpage->state() != BUF_BLOCK_FILE_PAGE)
     rw_lock= nullptr;
   else
   {
     rw_lock= &reinterpret_cast<buf_block_t*>(bpage)->lock;
-    if (!rw_lock_sx_lock_nowait(rw_lock, BUF_IO_WRITE))
+    if (!rw_lock->u_lock_try(true))
       return false;
   }
 
@@ -930,8 +895,16 @@ static bool buf_flush_page(buf_page_t *bpage, bool lru, fil_space_t *space)
       }
 
 #if defined HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE || defined _WIN32
-      if (size != orig_size && space->punch_hole)
-        type= lru ? IORequest::PUNCH_LRU : IORequest::PUNCH;
+      if (size != orig_size)
+      {
+        switch (space->chain.start->punch_hole) {
+        case 1:
+          type= lru ? IORequest::PUNCH_LRU : IORequest::PUNCH;
+          break;
+        case 2:
+          size= orig_size;
+        }
+      }
 #endif
       frame=page;
     }
@@ -1054,8 +1027,8 @@ innodb_immediate_scrub_data_uncompressed from the freed ranges.
 @param space   tablespace which may contain ranges of freed pages */
 static void buf_flush_freed_pages(fil_space_t *space)
 {
-  const bool punch_hole= space->punch_hole;
-  if (!srv_immediate_scrub_data_uncompressed && !punch_hole)
+  const bool punch_hole= space->chain.start->punch_hole == 1;
+  if (!punch_hole && !srv_immediate_scrub_data_uncompressed)
     return;
   lsn_t flush_to_disk_lsn= log_sys.get_flushed_lsn();
 
@@ -1082,7 +1055,7 @@ static void buf_flush_freed_pages(fil_space_t *space)
                           (range.last - range.first + 1) * physical_size,
                           nullptr);
     }
-    else if (srv_immediate_scrub_data_uncompressed)
+    else
     {
       for (os_offset_t i= range.first; i <= range.last; i++)
       {
@@ -1242,14 +1215,14 @@ static void buf_flush_discard_page(buf_page_t *bpage)
   ut_ad(bpage->in_file());
   ut_ad(bpage->oldest_modification());
 
-  rw_lock_t *rw_lock;
+  block_lock *rw_lock;
 
   if (bpage->state() != BUF_BLOCK_FILE_PAGE)
     rw_lock= nullptr;
   else
   {
     rw_lock= &reinterpret_cast<buf_block_t*>(bpage)->lock;
-    if (!rw_lock_sx_lock_nowait(rw_lock, 0))
+    if (!rw_lock->u_lock_try(false))
       return;
   }
 
@@ -1259,7 +1232,7 @@ static void buf_flush_discard_page(buf_page_t *bpage)
   mysql_mutex_unlock(&buf_pool.flush_list_mutex);
 
   if (rw_lock)
-    rw_lock_sx_unlock(rw_lock);
+    rw_lock->u_unlock();
 
   buf_LRU_free_page(bpage, true);
 }
@@ -1350,13 +1323,6 @@ reacquire_mutex:
   if (space)
     space->release();
 
-  /* We keep track of all flushes happening as part of LRU flush. When
-  estimating the desired rate at which flush_list should be flushed,
-  we factor in this value. */
-  buf_lru_flush_page_count+= n->flushed;
-
-  mysql_mutex_assert_owner(&buf_pool.mutex);
-
   if (scanned)
     MONITOR_INC_VALUE_CUMULATIVE(MONITOR_LRU_BATCH_SCANNED,
                                  MONITOR_LRU_BATCH_SCANNED_NUM_CALL,
@@ -1377,14 +1343,13 @@ static ulint buf_do_LRU_batch(ulint max)
   n.flushed= 0;
   n.evicted= n_unzip_LRU_evicted;
   buf_flush_LRU_list_batch(max, &n);
+  mysql_mutex_assert_owner(&buf_pool.mutex);
 
   if (const ulint evicted= n.evicted - n_unzip_LRU_evicted)
-  {
-    MONITOR_INC_VALUE_CUMULATIVE(MONITOR_LRU_BATCH_EVICT_TOTAL_PAGE,
-                                 MONITOR_LRU_BATCH_EVICT_COUNT,
-                                 MONITOR_LRU_BATCH_EVICT_PAGES,
-                                 evicted);
-  }
+    buf_lru_freed_page_count+= evicted;
+
+  if (n.flushed)
+    buf_lru_flush_page_count+= n.flushed;
 
   return n.flushed;
 }
@@ -1690,7 +1655,7 @@ ulint buf_flush_LRU(ulint max_n)
   if (buf_pool.n_flush_LRU())
     return 0;
 
-  log_buffer_flush_to_disk(true);
+  log_buffer_flush_to_disk();
 
   mysql_mutex_lock(&buf_pool.mutex);
   if (buf_pool.n_flush_LRU_)
@@ -2189,11 +2154,9 @@ static ulint page_cleaner_flush_pages_recommendation(ulint last_pages_in,
 	return(n_pages);
 }
 
-/******************************************************************//**
-page_cleaner thread tasked with flushing dirty pages from the buffer
-pools. As of now we'll have only one coordinator.
-@return a dummy parameter */
-static os_thread_ret_t DECLARE_THREAD(buf_flush_page_cleaner)(void*)
+/** page_cleaner thread tasked with flushing dirty pages from the buffer
+pools. As of now we'll have only one coordinator. */
+static void buf_flush_page_cleaner()
 {
   my_thread_init();
 #ifdef UNIV_PFS_THREAD
@@ -2373,7 +2336,7 @@ do_checkpoint:
 #ifdef UNIV_DEBUG
     while (innodb_page_cleaner_disabled_debug && !buf_flush_sync_lsn &&
            srv_shutdown_state == SRV_SHUTDOWN_NONE)
-      os_thread_sleep(100000);
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
 #endif /* UNIV_DEBUG */
 
 #ifndef DBUG_OFF
@@ -2405,11 +2368,10 @@ next:
   mysql_mutex_unlock(&buf_pool.flush_list_mutex);
 
   my_thread_end();
-  /* We count the number of threads in os_thread_exit(). A created
-  thread should always use that to exit and not use return() to exit. */
-  os_thread_exit();
 
-  OS_THREAD_DUMMY_RETURN;
+#ifdef UNIV_PFS_THREAD
+  pfs_delete_thread();
+#endif
 }
 
 /** Initialize page_cleaner. */
@@ -2422,7 +2384,7 @@ ATTRIBUTE_COLD void buf_flush_page_cleaner_init()
   buf_flush_async_lsn= 0;
   buf_flush_sync_lsn= 0;
   buf_page_cleaner_is_active= true;
-  os_thread_create(buf_flush_page_cleaner);
+  std::thread(buf_flush_page_cleaner).detach();
 }
 
 /** @return the number of dirty pages in the buffer pool */
@@ -2469,8 +2431,6 @@ ATTRIBUTE_COLD void buf_flush_buffer_pool()
 NOTE: The calling thread is not allowed to hold any buffer page latches! */
 void buf_flush_sync()
 {
-  ut_ad(!sync_check_iterate(dict_sync_check()));
-
   for (;;)
   {
     const ulint n_flushed= buf_flush_list(srv_max_io_capacity);

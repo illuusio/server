@@ -75,27 +75,19 @@ static monitor_info_t	innodb_counter_info[] =
 	 MONITOR_NONE,
 	 MONITOR_DEFAULT_START, MONITOR_TABLE_OPEN},
 
-	{"metadata_table_handles_closed", "metadata",
-	 "Number of table handles closed",
-	 MONITOR_NONE,
-	 MONITOR_DEFAULT_START, MONITOR_TABLE_CLOSE},
-
-	{"metadata_table_reference_count", "metadata",
-	 "Table reference counter",
-	 MONITOR_NONE,
-	 MONITOR_DEFAULT_START, MONITOR_TABLE_REFERENCE},
-
 	/* ========== Counters for Lock Module ========== */
 	{"module_lock", "lock", "Lock Module",
 	 MONITOR_MODULE,
 	 MONITOR_DEFAULT_START, MONITOR_MODULE_LOCK},
 
 	{"lock_deadlocks", "lock", "Number of deadlocks",
-	 MONITOR_DEFAULT_ON,
+	 static_cast<monitor_type_t>(
+	 MONITOR_EXISTING | MONITOR_DEFAULT_ON | MONITOR_DISPLAY_CURRENT),
 	 MONITOR_DEFAULT_START, MONITOR_DEADLOCK},
 
 	{"lock_timeouts", "lock", "Number of lock timeouts",
-	 MONITOR_DEFAULT_ON,
+	 static_cast<monitor_type_t>(
+	 MONITOR_EXISTING | MONITOR_DEFAULT_ON | MONITOR_DISPLAY_CURRENT),
 	 MONITOR_DEFAULT_START, MONITOR_TIMEOUT},
 
 	{"lock_rec_lock_waits", "lock",
@@ -493,34 +485,16 @@ static monitor_info_t	innodb_counter_info[] =
 	/* Cumulative counter for LRU batch pages flushed */
 	{"buffer_LRU_batch_flush_total_pages", "buffer",
 	 "Total pages flushed as part of LRU batches",
-	 MONITOR_SET_OWNER, MONITOR_LRU_BATCH_FLUSH_COUNT,
-	 MONITOR_LRU_BATCH_FLUSH_TOTAL_PAGE},
-
-	{"buffer_LRU_batches_flush", "buffer",
-	 "Number of LRU batches",
-	 MONITOR_SET_MEMBER, MONITOR_LRU_BATCH_FLUSH_TOTAL_PAGE,
-	 MONITOR_LRU_BATCH_FLUSH_COUNT},
-
-	{"buffer_LRU_batch_flush_pages", "buffer",
-	 "Pages queued as an LRU batch",
-	 MONITOR_SET_MEMBER, MONITOR_LRU_BATCH_FLUSH_TOTAL_PAGE,
-	 MONITOR_LRU_BATCH_FLUSH_PAGES},
+	 static_cast<monitor_type_t>(
+	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
+	 MONITOR_DEFAULT_START, MONITOR_LRU_BATCH_FLUSH_TOTAL_PAGE},
 
 	/* Cumulative counter for LRU batch pages flushed */
 	{"buffer_LRU_batch_evict_total_pages", "buffer",
 	 "Total pages evicted as part of LRU batches",
-	 MONITOR_SET_OWNER, MONITOR_LRU_BATCH_EVICT_COUNT,
-	 MONITOR_LRU_BATCH_EVICT_TOTAL_PAGE},
-
-	{"buffer_LRU_batches_evict", "buffer",
-	 "Number of LRU batches",
-	 MONITOR_SET_MEMBER, MONITOR_LRU_BATCH_EVICT_TOTAL_PAGE,
-	 MONITOR_LRU_BATCH_EVICT_COUNT},
-
-	{"buffer_LRU_batch_evict_pages", "buffer",
-	 "Pages queued as an LRU batch",
-	 MONITOR_SET_MEMBER, MONITOR_LRU_BATCH_EVICT_TOTAL_PAGE,
-	 MONITOR_LRU_BATCH_EVICT_PAGES},
+	 static_cast<monitor_type_t>(
+	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
+	 MONITOR_DEFAULT_START, MONITOR_LRU_BATCH_EVICT_TOTAL_PAGE},
 
 	{"buffer_LRU_single_flush_failure_count", "Buffer",
 	 "Number of times attempt to flush a single page from LRU failed",
@@ -738,11 +712,6 @@ static monitor_info_t	innodb_counter_info[] =
 	 "Number of transactions rolled back to savepoint",
 	 MONITOR_NONE,
 	 MONITOR_DEFAULT_START, MONITOR_TRX_ROLLBACK_SAVEPOINT},
-
-	{"trx_active_transactions", "transaction",
-	 "Number of active transactions",
-	 MONITOR_NONE,
-	 MONITOR_DEFAULT_START, MONITOR_TRX_ACTIVE},
 
 	{"trx_rseg_history_len", "transaction",
 	 "Length of the TRX_RSEG_HISTORY list",
@@ -990,7 +959,6 @@ static monitor_info_t	innodb_counter_info[] =
 	 static_cast<monitor_type_t>(
 	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
 	 MONITOR_DEFAULT_START, MONITOR_OVLD_ADAPTIVE_HASH_SEARCH},
-#endif /* BTR_CUR_HASH_ADAPT */
 
 	{"adaptive_hash_searches_btree", "adaptive_hash_index",
 	 "Number of searches using B-tree on an index search",
@@ -998,7 +966,6 @@ static monitor_info_t	innodb_counter_info[] =
 	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
 	 MONITOR_DEFAULT_START, MONITOR_OVLD_ADAPTIVE_HASH_SEARCH_BTREE},
 
-#ifdef BTR_CUR_HASH_ADAPT
 	{"adaptive_hash_pages_added", "adaptive_hash_index",
 	 "Number of index pages on which the Adaptive Hash Index is built",
 	 MONITOR_NONE,
@@ -1121,11 +1088,6 @@ static monitor_info_t	innodb_counter_info[] =
 	 MONITOR_NONE,
 	 MONITOR_DEFAULT_START, MONITOR_MASTER_IDLE_LOOPS},
 
-	{"innodb_background_drop_table_usec", "server",
-	 "Time (in microseconds) spent to process drop table list",
-	 MONITOR_NONE,
-	 MONITOR_DEFAULT_START, MONITOR_SRV_BACKGROUND_DROP_TABLE_MICROSECOND},
-
 	{"innodb_log_flush_usec", "server",
 	 "Time (in microseconds) spent to flush log records",
 	 MONITOR_NONE,
@@ -1165,60 +1127,6 @@ static monitor_info_t	innodb_counter_info[] =
 	 static_cast<monitor_type_t>(
 	 MONITOR_EXISTING | MONITOR_DEFAULT_ON | MONITOR_DISPLAY_CURRENT),
 	 MONITOR_DEFAULT_START, MONITOR_OVLD_SRV_PAGE_SIZE},
-
-	{"innodb_rwlock_s_spin_waits", "server",
-	 "Number of rwlock spin waits due to shared latch request",
-	 static_cast<monitor_type_t>(
-	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-	 MONITOR_DEFAULT_START, MONITOR_OVLD_RWLOCK_S_SPIN_WAITS},
-
-	{"innodb_rwlock_x_spin_waits", "server",
-	 "Number of rwlock spin waits due to exclusive latch request",
-	 static_cast<monitor_type_t>(
-	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-	 MONITOR_DEFAULT_START, MONITOR_OVLD_RWLOCK_X_SPIN_WAITS},
-
-	{"innodb_rwlock_sx_spin_waits", "server",
-	 "Number of rwlock spin waits due to sx latch request",
-	 static_cast<monitor_type_t>(
-	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-	 MONITOR_DEFAULT_START, MONITOR_OVLD_RWLOCK_SX_SPIN_WAITS},
-
-	{"innodb_rwlock_s_spin_rounds", "server",
-	 "Number of rwlock spin loop rounds due to shared latch request",
-	 static_cast<monitor_type_t>(
-	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-	 MONITOR_DEFAULT_START, MONITOR_OVLD_RWLOCK_S_SPIN_ROUNDS},
-
-	{"innodb_rwlock_x_spin_rounds", "server",
-	 "Number of rwlock spin loop rounds due to exclusive latch request",
-	 static_cast<monitor_type_t>(
-	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-	 MONITOR_DEFAULT_START, MONITOR_OVLD_RWLOCK_X_SPIN_ROUNDS},
-
-	{"innodb_rwlock_sx_spin_rounds", "server",
-	 "Number of rwlock spin loop rounds due to sx latch request",
-	 static_cast<monitor_type_t>(
-	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-	 MONITOR_DEFAULT_START, MONITOR_OVLD_RWLOCK_SX_SPIN_ROUNDS},
-
-	{"innodb_rwlock_s_os_waits", "server",
-	 "Number of OS waits due to shared latch request",
-	 static_cast<monitor_type_t>(
-	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-	 MONITOR_DEFAULT_START, MONITOR_OVLD_RWLOCK_S_OS_WAITS},
-
-	{"innodb_rwlock_x_os_waits", "server",
-	 "Number of OS waits due to exclusive latch request",
-	 static_cast<monitor_type_t>(
-	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-	 MONITOR_DEFAULT_START, MONITOR_OVLD_RWLOCK_X_OS_WAITS},
-
-	{"innodb_rwlock_sx_os_waits", "server",
-	 "Number of OS waits due to sx latch request",
-	 static_cast<monitor_type_t>(
-	 MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-	 MONITOR_DEFAULT_START, MONITOR_OVLD_RWLOCK_SX_OS_WAITS},
 
 	/* ========== Counters for DML operations ========== */
 	{"module_dml", "dml", "Statistics for DMLs",
@@ -1274,11 +1182,6 @@ static monitor_info_t	innodb_counter_info[] =
 	 MONITOR_NONE,
 	 MONITOR_DEFAULT_START, MONITOR_BACKGROUND_DROP_INDEX},
 
-	{"ddl_background_drop_tables", "ddl",
-	 "Number of tables in background drop table list",
-	 MONITOR_NONE,
-	 MONITOR_DEFAULT_START, MONITOR_BACKGROUND_DROP_TABLE},
-
 	{"ddl_online_create_index", "ddl",
 	 "Number of indexes being created online",
 	 MONITOR_NONE,
@@ -1320,16 +1223,6 @@ static monitor_info_t	innodb_counter_info[] =
 	{"icp_match", "icp", "Index push-down condition matches",
 	 MONITOR_NONE,
 	 MONITOR_DEFAULT_START, MONITOR_ICP_MATCH},
-
-	/* ========== Mutex monitoring on/off ========== */
-	{"latch_status", "Latch counters",
-	 "Collect latch counters to display via SHOW ENGING INNODB MUTEX",
-	 MONITOR_MODULE,
-	 MONITOR_DEFAULT_START, MONITOR_MODULE_LATCHES},
-
-	{"latch", "sync", "Latch monitoring control",
-	 MONITOR_HIDDEN,
-	 MONITOR_DEFAULT_START, MONITOR_LATCHES},
 
 	/* ========== To turn on/off reset all counters ========== */
 	{"all", "All Counters", "Turn on/off and reset all counters",
@@ -1494,27 +1387,12 @@ srv_mon_set_module_control(
 /****************************************************************//**
 Get transaction system's rollback segment size in pages
 @return size in pages */
-static
-ulint
-srv_mon_get_rseg_size(void)
-/*=======================*/
+TPOOL_SUPPRESS_TSAN static ulint srv_mon_get_rseg_size()
 {
-	ulint		i;
-	ulint		value = 0;
-
-	/* rseg_array is a static array, so we can go through it without
-	mutex protection. In addition, we provide an estimate of the
-	total rollback segment size and to avoid mutex contention we
-	don't acquire the rseg->mutex" */
-	for (i = 0; i < TRX_SYS_N_RSEGS; ++i) {
-		const trx_rseg_t*	rseg = trx_sys.rseg_array[i];
-
-		if (rseg != NULL) {
-			value += rseg->curr_size;
-		}
-	}
-
-	return(value);
+  ulint size= 0;
+  for (const auto &rseg : trx_sys.rseg_array)
+    size+= rseg.curr_size;
+  return size;
 }
 
 /****************************************************************//**
@@ -1637,6 +1515,14 @@ srv_mon_process_existing_counter(
 		value = srv_stats.non_index_pages_written;
 		break;
 
+	case MONITOR_LRU_BATCH_FLUSH_TOTAL_PAGE:
+		value = buf_lru_flush_page_count;
+		break;
+
+	case MONITOR_LRU_BATCH_EVICT_TOTAL_PAGE:
+		value = buf_lru_freed_page_count;
+		break;
+
 	/* innodb_pages_read */
 	case MONITOR_OVLD_PAGES_READ:
 		value = buf_pool.stat.n_pages_read;
@@ -1737,42 +1623,6 @@ srv_mon_process_existing_counter(
 		value = srv_page_size;
 		break;
 
-	case MONITOR_OVLD_RWLOCK_S_SPIN_WAITS:
-		value = rw_lock_stats.rw_s_spin_wait_count;
-		break;
-
-	case MONITOR_OVLD_RWLOCK_X_SPIN_WAITS:
-		value = rw_lock_stats.rw_x_spin_wait_count;
-		break;
-
-	case MONITOR_OVLD_RWLOCK_SX_SPIN_WAITS:
-		value = rw_lock_stats.rw_sx_spin_wait_count;
-		break;
-
-	case MONITOR_OVLD_RWLOCK_S_SPIN_ROUNDS:
-		value = rw_lock_stats.rw_s_spin_round_count;
-		break;
-
-	case MONITOR_OVLD_RWLOCK_X_SPIN_ROUNDS:
-		value = rw_lock_stats.rw_x_spin_round_count;
-		break;
-
-	case MONITOR_OVLD_RWLOCK_SX_SPIN_ROUNDS:
-		value = rw_lock_stats.rw_sx_spin_round_count;
-		break;
-
-	case MONITOR_OVLD_RWLOCK_S_OS_WAITS:
-		value = rw_lock_stats.rw_s_os_wait_count;
-		break;
-
-	case MONITOR_OVLD_RWLOCK_X_OS_WAITS:
-		value = rw_lock_stats.rw_x_os_wait_count;
-		break;
-
-	case MONITOR_OVLD_RWLOCK_SX_OS_WAITS:
-		value = rw_lock_stats.rw_sx_os_wait_count;
-		break;
-
 	case MONITOR_OVLD_BUFFER_POOL_SIZE:
 		value = srv_buf_pool_size;
 		break;
@@ -1819,36 +1669,42 @@ srv_mon_process_existing_counter(
 
 	/* innodb_row_lock_current_waits */
 	case MONITOR_OVLD_ROW_LOCK_CURRENT_WAIT:
-		value = srv_stats.n_lock_wait_current_count;
+		// dirty read without lock_sys.wait_mutex
+		value = lock_sys.get_wait_pending();
 		break;
 
 	/* innodb_row_lock_time */
 	case MONITOR_OVLD_LOCK_WAIT_TIME:
-		value = srv_stats.n_lock_wait_time / 1000;
+		// dirty read without lock_sys.wait_mutex
+		value = lock_sys.get_wait_time_cumulative() / 1000;
 		break;
 
 	/* innodb_row_lock_time_max */
 	case MONITOR_OVLD_LOCK_MAX_WAIT_TIME:
-		value = lock_sys.n_lock_max_wait_time / 1000;
+		// dirty read without lock_sys.wait_mutex
+		value = lock_sys.get_wait_time_max() / 1000;
 		break;
 
 	/* innodb_row_lock_time_avg */
 	case MONITOR_OVLD_LOCK_AVG_WAIT_TIME:
-		if (srv_stats.n_lock_wait_count > 0) {
-			value = srv_stats.n_lock_wait_time / 1000
-				/ srv_stats.n_lock_wait_count;
+		mysql_mutex_lock(&lock_sys.wait_mutex);
+		if (auto count = lock_sys.get_wait_cumulative()) {
+			value = lock_sys.get_wait_time_cumulative() / 1000
+				/ count;
 		} else {
 			value = 0;
 		}
+		mysql_mutex_unlock(&lock_sys.wait_mutex);
 		break;
 
 	/* innodb_row_lock_waits */
 	case MONITOR_OVLD_ROW_LOCK_WAIT:
-		value = srv_stats.n_lock_wait_count;
+		// dirty read without lock_sys.wait_mutex
+		value = lock_sys.get_wait_cumulative();
 		break;
 
 	case MONITOR_RSEG_HISTORY_LEN:
-		value = trx_sys.rseg_history_len;
+		value = trx_sys.history_size();
 		break;
 
 	case MONITOR_RSEG_CUR_SIZE:
@@ -1946,11 +1802,11 @@ srv_mon_process_existing_counter(
 	case MONITOR_OVLD_ADAPTIVE_HASH_SEARCH:
 		value = btr_cur_n_sea;
 		break;
-#endif /* BTR_CUR_HASH_ADAPT */
 
 	case MONITOR_OVLD_ADAPTIVE_HASH_SEARCH_BTREE:
 		value = btr_cur_n_non_sea;
 		break;
+#endif /* BTR_CUR_HASH_ADAPT */
 
         case MONITOR_OVLD_PAGE_COMPRESS_SAVED:
 		value = srv_stats.page_compression_saved;
@@ -1972,6 +1828,12 @@ srv_mon_process_existing_counter(
 		break;
         case MONITOR_OVLD_PAGES_DECRYPTED:
 		value = srv_stats.pages_decrypted;
+		break;
+	case MONITOR_DEADLOCK:
+		value = lock_sys.deadlocks;
+		break;
+	case MONITOR_TIMEOUT:
+		value = lock_sys.timeouts;
 		break;
 
 	default:

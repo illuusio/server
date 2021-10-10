@@ -2,7 +2,7 @@
 
 Copyright (c) 1994, 2016, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
-Copyright (c) 2014, 2020, MariaDB Corporation.
+Copyright (c) 2014, 2021, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -223,27 +223,19 @@ btr_height_get(
 @param[in]	page	page number
 @param[in]	mode	latch mode
 @param[in]	merge	whether change buffer merge should be attempted
-@param[in]	file	file name
-@param[in]	line	line where called
 @param[in,out]	mtr	mini-transaction
 @return block */
-inline buf_block_t* btr_block_get_func(const dict_index_t& index,
-				       uint32_t page, ulint mode, bool merge,
-				       const char* file, unsigned line,
-				       mtr_t* mtr)
+inline buf_block_t *btr_block_get(const dict_index_t &index,
+                                  uint32_t page, ulint mode, bool merge,
+                                  mtr_t *mtr)
 {
 	dberr_t err;
 
 	if (buf_block_t* block = buf_page_get_gen(
 		    page_id_t(index.table->space->id, page),
 		    index.table->space->zip_size(), mode, NULL, BUF_GET,
-		    file, line, mtr, &err, merge && !index.is_clust())) {
+		    mtr, &err, merge && !index.is_clust())) {
 		ut_ad(err == DB_SUCCESS);
-		if (mode != RW_NO_LATCH) {
-			buf_block_dbg_add_level(block, index.is_ibuf()
-						? SYNC_IBUF_TREE_NODE
-						: SYNC_TREE_NODE);
-		}
 		return block;
 	} else {
 		ut_ad(err != DB_SUCCESS);
@@ -258,15 +250,6 @@ inline buf_block_t* btr_block_get_func(const dict_index_t& index,
 	}
 }
 
-/** Gets a buffer page and declares its latching order level.
-@param index index tree
-@param page page number
-@param mode latch mode
-@param merge whether change buffer merge should be attempted
-@param mtr mini-transaction handle
-@return the block descriptor */
-# define btr_block_get(index, page, mode, merge, mtr)		\
-	btr_block_get_func(index, page, mode, merge, __FILE__, __LINE__, mtr)
 /**************************************************************//**
 Gets the index id field of a page.
 @return index id */
@@ -347,20 +330,16 @@ btr_create(
 	mtr_t*			mtr);
 
 /** Free a persistent index tree if it exists.
-@param[in]	page_id		root page id
-@param[in]	zip_size	ROW_FORMAT=COMPRESSED page size, or 0
+@param[in,out]	space		tablespce
+@param[in]	page		root page number
 @param[in]	index_id	PAGE_INDEX_ID contents
 @param[in,out]	mtr		mini-transaction */
-void
-btr_free_if_exists(
-	const page_id_t		page_id,
-	ulint			zip_size,
-	index_id_t		index_id,
-	mtr_t*			mtr);
+void btr_free_if_exists(fil_space_t *space, uint32_t page,
+                        index_id_t index_id, mtr_t *mtr);
 
-/** Free an index tree in a temporary tablespace.
-@param[in]	page_id		root page id */
-void btr_free(const page_id_t page_id);
+/** Drop a temporary table
+@param table   temporary table */
+void btr_drop_temporary_table(const dict_table_t &table);
 
 /** Read the last used AUTO_INCREMENT value from PAGE_ROOT_AUTO_INC.
 @param[in,out]	index	clustered index
@@ -487,17 +466,12 @@ btr_page_split_and_insert(
 Inserts a data tuple to a tree on a non-leaf level. It is assumed
 that mtr holds an x-latch on the tree. */
 void
-btr_insert_on_non_leaf_level_func(
-/*==============================*/
+btr_insert_on_non_leaf_level(
 	ulint		flags,	/*!< in: undo logging and locking flags */
 	dict_index_t*	index,	/*!< in: index */
 	ulint		level,	/*!< in: level, must be > 0 */
 	dtuple_t*	tuple,	/*!< in: the record to be inserted */
-	const char*	file,	/*!< in: file name */
-	unsigned	line,	/*!< in: line where called */
 	mtr_t*		mtr);	/*!< in: mtr */
-#define btr_insert_on_non_leaf_level(f,i,l,t,m)			\
-	btr_insert_on_non_leaf_level_func(f,i,l,t,__FILE__,__LINE__,m)
 
 /** Set a child page pointer record as the predefined minimum record.
 @tparam has_prev  whether the page is supposed to have a left sibling
@@ -584,20 +558,6 @@ btr_get_size(
 	mtr_t*		mtr)	/*!< in/out: mini-transaction where index
 				is s-latched */
 	MY_ATTRIBUTE((warn_unused_result));
-/**************************************************************//**
-Gets the number of reserved and used pages in a B-tree.
-@return	number of pages reserved, or ULINT_UNDEFINED if the index
-is unavailable */
-UNIV_INTERN
-ulint
-btr_get_size_and_reserved(
-/*======================*/
-	dict_index_t*	index,	/*!< in: index */
-	ulint		flag,	/*!< in: BTR_N_LEAF_PAGES or BTR_TOTAL_SIZE */
-	ulint*		used,	/*!< out: number of pages used (<= reserved) */
-	mtr_t*		mtr)	/*!< in/out: mini-transaction where index
-				is s-latched */
-	__attribute__((nonnull));
 
 /**************************************************************//**
 Allocates a new file page to be used in an index tree. NOTE: we assume
@@ -648,10 +608,11 @@ btr_page_create(
 @param[in,out]	index	index tree
 @param[in,out]	block	block to be freed
 @param[in,out]	mtr	mini-transaction
-@param[in]	blob	whether this is freeing a BLOB page */
+@param[in]	blob	whether this is freeing a BLOB page
+@param[in]	latched	whether index->table->space->x_lock() was called */
 MY_ATTRIBUTE((nonnull))
 void btr_page_free(dict_index_t* index, buf_block_t* block, mtr_t* mtr,
-		   bool blob = false);
+		   bool blob = false, bool space_latched = false);
 
 /**************************************************************//**
 Gets the root node of a tree and x- or s-latches it.
@@ -735,10 +696,8 @@ void btr_level_list_remove(const buf_block_t& block, const dict_index_t& index,
 If page is the only on its level, this function moves its records to the
 father page, thus reducing the tree height.
 @return father block */
-UNIV_INTERN
 buf_block_t*
 btr_lift_page_up(
-/*=============*/
 	dict_index_t*	index,	/*!< in: index tree */
 	buf_block_t*	block,	/*!< in: page which is the only on its level;
 				must not be empty: use

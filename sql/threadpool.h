@@ -37,6 +37,8 @@ extern uint threadpool_mode; /* Thread pool implementation , windows or generic 
 #define DEFAULT_THREADPOOL_STALL_LIMIT 500U
 
 struct TP_connection;
+struct st_vio;
+
 extern void tp_callback(TP_connection *c);
 extern void tp_timeout_handler(TP_connection *c);
 
@@ -113,7 +115,7 @@ struct TP_connection
 
   virtual void wait_begin(int type)= 0;
   virtual void wait_end() = 0;
-
+  IF_WIN(virtual,) void init_vio(st_vio *){};
 };
 
 
@@ -131,9 +133,11 @@ struct TP_pool
   virtual int set_stall_limit(uint){ return 0; }
   virtual int get_thread_count() { return tp_stats.num_worker_threads; }
   virtual int get_idle_thread_count(){ return 0; }
+  virtual void resume(TP_connection* c)=0;
 };
 
 #ifdef _WIN32
+
 struct TP_pool_win:TP_pool
 {
   TP_pool_win();
@@ -143,6 +147,7 @@ struct TP_pool_win:TP_pool
   virtual void add(TP_connection *);
   virtual int set_max_threads(uint);
   virtual int set_min_threads(uint);
+  void resume(TP_connection *c);
 };
 #endif
 
@@ -156,6 +161,7 @@ struct TP_pool_generic :TP_pool
   virtual int set_pool_size(uint);
   virtual int set_stall_limit(uint);
   virtual int get_idle_thread_count();
+  void resume(TP_connection* c);
 };
 
 #endif /* HAVE_POOL_OF_THREADS */

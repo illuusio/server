@@ -769,7 +769,7 @@ deallocate prepare stmt;
 #
 # Test 3: View referencing an Information schema table
 #
-create view t1 as select table_name from information_schema.views order by table_name;
+create view t1 as select table_name from information_schema.views where table_schema <> 'sys' order by table_name;
 prepare stmt from "select * from t1";
 execute stmt;
 table_name
@@ -2244,7 +2244,6 @@ SUCCESS
 drop table if exists t1;
 create table t1 (a varchar(20));
 prepare stmt from "load data infile '../std_data_ln/words.dat' into table t1";
-ERROR HY000: This command is not supported in the prepared statement protocol yet
 drop table t1;
 #
 # SQLCOM_SHOW_DATABASES
@@ -2295,11 +2294,11 @@ drop table if exists t1;
 create table t1 (a int);
 prepare stmt from "show keys from t1 where (1) in (select * from t1)";
 execute stmt;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
 drop table t1;
 create table t1 (x int);
 execute stmt;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
 drop table t1;
 deallocate prepare stmt;
 #
@@ -2516,7 +2515,6 @@ SUCCESS
 drop view if exists v1;
 create view v1 as select 1;
 prepare stmt from "alter view v1 as select 2";
-ERROR HY000: This command is not supported in the prepared statement protocol yet
 drop view v1;
 # Cleanup
 #

@@ -86,16 +86,15 @@ TODO:
 #include <my_dir.h>
 #include <signal.h>
 #include <sslopt-vars.h>
-#ifndef __WIN__
+#ifndef _WIN32
 #include <sys/wait.h>
 #endif
 #include <ctype.h>
 #include <welcome_copyright_notice.h>   /* ORACLE_WELCOME_COPYRIGHT_NOTICE */
 
-#ifdef __WIN__
+#ifdef _WIN32
 #define srandom  srand
 #define random   rand
-#define snprintf _snprintf
 #endif
 
 
@@ -172,6 +171,8 @@ const char *opt_csv_str;
 File csv_file;
 
 static uint opt_protocol= 0;
+
+static uint protocol_to_force= MYSQL_PROTOCOL_DEFAULT;
 
 static int get_options(int *argc,char ***argv);
 static uint opt_mysql_port= 0;
@@ -280,7 +281,7 @@ static long int timedif(struct timeval a, struct timeval b)
     return s + us;
 }
 
-#ifdef __WIN__
+#ifdef _WIN32
 static int gettimeofday(struct timeval *tp, void *tzp)
 {
   unsigned int ticks;
@@ -319,6 +320,9 @@ int main(int argc, char **argv)
   MY_INIT(argv[0]);
   sf_leaking_memory=1; /* don't report memory leaks on early exits */
 
+  /* We need to know if protocol-related options originate from CLI args */
+  my_defaults_mark_files = TRUE;
+
   load_defaults_or_exit("my", load_default_groups, &argc, &argv);
   defaults_argv=argv;
   if (get_options(&argc,&argv))
@@ -327,6 +331,14 @@ int main(int argc, char **argv)
     my_end(0);
     exit(1);
   }
+
+  /* Command line options override configured protocol */
+  if (protocol_to_force > MYSQL_PROTOCOL_DEFAULT
+      && protocol_to_force != opt_protocol)
+  {
+    warn_protocol_override(host, &opt_protocol, protocol_to_force);
+  }
+
   sf_leaking_memory=0; /* from now on we cleanup properly */
 
   /* Seed the random number generator if we will be using it. */
@@ -652,7 +664,7 @@ static struct my_option my_long_options[] =
   {"password", 'p',
     "Password to use when connecting to server. If password is not given it's "
       "asked from the tty.", 0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef __WIN__
+#ifdef _WIN32
   {"pipe", 'W', "Use named pipes to connect to server.", 0, 0, 0, GET_NO_ARG,
     NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
@@ -727,8 +739,11 @@ static void usage(void)
 
 static my_bool
 get_one_option(const struct my_option *opt, const char *argument,
-               const char *filename __attribute__((unused)))
+               const char *filename)
 {
+  /* Track when protocol is set via CLI to not force overrides */
+  static my_bool ignore_protocol_override = FALSE;
+
   DBUG_ENTER("get_one_option");
   switch(opt->id) {
   case 'v':
@@ -756,8 +771,15 @@ get_one_option(const struct my_option *opt, const char *argument,
       tty_password= 1;
     break;
   case 'W':
-#ifdef __WIN__
+#ifdef _WIN32
     opt_protocol= MYSQL_PROTOCOL_PIPE;
+
+    /* Prioritize pipe if explicit via command line */
+    if (filename[0] == '\0')
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
 #endif
     break;
   case OPT_MYSQL_PROTOCOL:
@@ -766,6 +788,46 @@ get_one_option(const struct my_option *opt, const char *argument,
     {
       sf_leaking_memory= 1; /* no memory leak reports here */
       exit(1);
+    }
+
+    /* Specification of protocol via CLI trumps implicit overrides */
+    if (filename[0] == '\0')
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    break;
+  case 'P':
+    /* If port and socket are set, fall back to default behavior */
+    if (protocol_to_force == SOCKET_PROTOCOL_TO_FORCE)
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    /* If port is set via CLI, try to force protocol to TCP */
+    if (filename[0] == '\0' &&
+        !ignore_protocol_override &&
+        protocol_to_force == MYSQL_PROTOCOL_DEFAULT)
+    {
+      protocol_to_force = MYSQL_PROTOCOL_TCP;
+    }
+    break;
+  case 'S':
+    /* If port and socket are set, fall back to default behavior */
+    if (protocol_to_force == MYSQL_PROTOCOL_TCP)
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    /* Prioritize socket if set via command line */
+    if (filename[0] == '\0' &&
+        !ignore_protocol_override &&
+        protocol_to_force == MYSQL_PROTOCOL_DEFAULT)
+    {
+      protocol_to_force = SOCKET_PROTOCOL_TO_FORCE;
     }
     break;
   case '#':

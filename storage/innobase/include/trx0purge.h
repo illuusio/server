@@ -27,8 +27,9 @@ Created 3/26/1996 Heikki Tuuri
 #ifndef trx0purge_h
 #define trx0purge_h
 
-#include "trx0rseg.h"
+#include "trx0sys.h"
 #include "que0types.h"
+#include "srw_lock.h"
 
 #include <queue>
 
@@ -123,17 +124,19 @@ private:
 class purge_sys_t
 {
 public:
-	/** latch protecting view, m_enabled */
-	MY_ALIGNED(CACHE_LINE_SIZE)
-	mutable rw_lock_t		latch;
+  /** latch protecting view, m_enabled */
+  MY_ALIGNED(CACHE_LINE_SIZE) mutable srw_lock latch;
 private:
-	/** The purge will not remove undo logs which are >= this view */
-	MY_ALIGNED(CACHE_LINE_SIZE)
-	ReadViewBase	view;
-	/** whether purge is enabled; protected by latch and std::atomic */
-	std::atomic<bool>		m_enabled;
-	/** number of pending stop() calls without resume() */
-	Atomic_counter<int32_t>		m_paused;
+  /** The purge will not remove undo logs which are >= this view */
+  ReadViewBase view;
+  /** whether purge is enabled; protected by latch and std::atomic */
+  std::atomic<bool> m_enabled;
+  /** number of pending stop() calls without resume() */
+  Atomic_counter<uint32_t> m_paused;
+  /** number of stop_SYS() calls without resume_SYS() */
+  Atomic_counter<uint32_t> m_SYS_paused;
+  /** number of stop_FTS() calls without resume_FTS() */
+  Atomic_counter<uint32_t> m_FTS_paused;
 public:
 	que_t*		query;		/*!< The query graph which will do the
 					parallelized purge operation */
@@ -184,7 +187,7 @@ public:
 	purge_pq_t	purge_queue;	/*!< Binary min-heap, ordered on
 					TrxUndoRsegs::trx_no. It is protected
 					by the pq_mutex */
-	PQMutex		pq_mutex;	/*!< Mutex protecting purge_queue */
+	mysql_mutex_t	pq_mutex;	/*!< Mutex protecting purge_queue */
 
 	/** Undo tablespace file truncation (only accessed by the
 	srv_purge_coordinator_thread) */
@@ -235,30 +238,50 @@ public:
 
   /** @return whether the purge tasks are active */
   bool running() const;
-  /** Stop purge during FLUSH TABLES FOR EXPORT */
+  /** Stop purge during FLUSH TABLES FOR EXPORT. */
   void stop();
   /** Resume purge at UNLOCK TABLES after FLUSH TABLES FOR EXPORT */
   void resume();
+
+private:
+  void wait_SYS();
+  void wait_FTS();
+public:
+  /** Suspend purge in data dictionary tables */
+  void stop_SYS();
+  /** Resume purge in data dictionary tables */
+  static void resume_SYS(void *);
+  /** @return whether stop_SYS() is in effect */
+  bool must_wait_SYS() const { return m_SYS_paused; }
+  /** check stop_SYS() */
+  void check_stop_SYS() { if (must_wait_SYS()) wait_SYS(); }
+
+  /** Pause purge during a DDL operation that could drop FTS_ tables. */
+  void stop_FTS() { m_FTS_paused++; }
+  /** Resume purge after stop_FTS(). */
+  void resume_FTS() { ut_d(const auto p=) m_FTS_paused--; ut_ad(p); }
+  /** @return whether stop_SYS() is in effect */
+  bool must_wait_FTS() const { return m_FTS_paused; }
+  /** check stop_SYS() */
+  void check_stop_FTS() { if (must_wait_FTS()) wait_FTS(); }
+
   /** A wrapper around ReadView::changes_visible(). */
   bool changes_visible(trx_id_t id, const table_name_t &name) const
   {
-    ut_ad(rw_lock_own(&latch, RW_LOCK_S));
     return view.changes_visible(id, name);
   }
   /** A wrapper around ReadView::low_limit_no(). */
   trx_id_t low_limit_no() const
   {
-#if 0 /* Unfortunately we don't hold this assertion, see MDEV-22718. */
-    ut_ad(rw_lock_own(&latch, RW_LOCK_S));
-#endif
+    /* MDEV-22718 FIXME: We are not holding latch here! */
     return view.low_limit_no();
   }
   /** A wrapper around trx_sys_t::clone_oldest_view(). */
   void clone_oldest_view()
   {
-    rw_lock_x_lock(&latch);
+    latch.wr_lock(SRW_LOCK_CALL);
     trx_sys.clone_oldest_view(&view);
-    rw_lock_x_unlock(&latch);
+    latch.wr_unlock();
   }
 };
 

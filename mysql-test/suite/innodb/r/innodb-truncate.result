@@ -89,5 +89,18 @@ ALTER TABLE t1 RENAME TO t3;
 ERROR HY000: Error on rename of './test/t1' to './test/t3' (errno: 150 "Foreign key constraint is incorrectly formed")
 ALTER TABLE t1 FORCE;
 TRUNCATE TABLE t1;
-ERROR 42000: Cannot truncate a table referenced in a foreign key constraint (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`f2`) REFERENCES `test`.`t3` (`f2`))
+ERROR 42000: Cannot truncate a table referenced in a foreign key constraint (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`f2`) REFERENCES `test`.`t1` (`f2`))
 DROP TABLE t2, t1;
+#
+# MDEV-24861 Assertion `trx->rsegs.m_redo.rseg' failed
+# in innodb_prepare_commit_versioned
+#
+CREATE TABLE t1 (id INT PRIMARY KEY, f TEXT UNIQUE,
+s BIGINT UNSIGNED AS ROW START, e BIGINT UNSIGNED AS ROW END,
+PERIOD FOR SYSTEM_TIME(s,e))
+ENGINE=InnoDB WITH SYSTEM VERSIONING;
+CREATE TABLE t2 (id INT PRIMARY KEY) ENGINE=InnoDB;
+ALTER TABLE t1 FORCE;
+TRUNCATE TABLE t2;
+DROP TABLE t1, t2;
+# End of 10.6 tests

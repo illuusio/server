@@ -44,6 +44,7 @@ Created 2/25/1997 Heikki Tuuri
 #include "ibuf0ibuf.h"
 #include "log0log.h"
 #include "fil0fil.h"
+#include <mysql/service_thd_mdl.h>
 
 /*************************************************************************
 IMPORTANT NOTE: Any operation that generates redo MUST check that there
@@ -71,6 +72,18 @@ row_undo_ins_remove_clust_rec(
 	mtr_t		mtr;
 	dict_index_t*	index	= node->pcur.btr_cur.index;
 	bool		online;
+	table_id_t table_id = 0;
+	const bool dict_locked = node->trx->dict_operation_lock_mode
+		== RW_X_LATCH;
+restart:
+	MDL_ticket* mdl_ticket = nullptr;
+	ut_ad(!table_id || dict_locked
+	      || node->trx->dict_operation_lock_mode == 0);
+	dict_table_t *table = table_id
+		? dict_table_open_on_id(table_id, dict_locked,
+					DICT_TABLE_OP_OPEN_ONLY_IF_CACHED,
+					node->trx->mysql_thd, &mdl_ticket)
+		: nullptr;
 
 	ut_ad(index->is_primary());
 	ut_ad(node->trx->in_rollback);
@@ -88,8 +101,7 @@ row_undo_ins_remove_clust_rec(
 		online = dict_index_is_online_ddl(index);
 		if (online) {
 			ut_ad(node->rec_type == TRX_UNDO_INSERT_REC);
-			ut_ad(node->trx->dict_operation_lock_mode
-			      != RW_X_LATCH);
+			ut_ad(!node->trx->dict_operation_lock_mode);
 			ut_ad(node->table->id != DICT_INDEXES_ID);
 			ut_ad(node->table->id != DICT_COLUMNS_ID);
 			mtr_s_lock_index(index, &mtr);
@@ -127,20 +139,6 @@ row_undo_ins_remove_clust_rec(
 		mem_heap_free(heap);
 	} else {
 		switch (node->table->id) {
-		case DICT_INDEXES_ID:
-			ut_ad(!online);
-			ut_ad(node->trx->dict_operation_lock_mode
-			      == RW_X_LATCH);
-			ut_ad(node->rec_type == TRX_UNDO_INSERT_REC);
-
-			dict_drop_index_tree(&node->pcur, node->trx, &mtr);
-			mtr.commit();
-
-			mtr.start();
-			success = btr_pcur_restore_position(
-				BTR_MODIFY_LEAF, &node->pcur, &mtr);
-			ut_a(success);
-			break;
 		case DICT_COLUMNS_ID:
 			/* This is rolling back an INSERT into SYS_COLUMNS.
 			If it was part of an instant ALTER TABLE operation, we
@@ -153,16 +151,75 @@ row_undo_ins_remove_clust_rec(
 			      == RW_X_LATCH);
 			ut_ad(node->rec_type == TRX_UNDO_INSERT_REC);
 			if (rec_get_n_fields_old(rec)
-			    != DICT_NUM_FIELDS__SYS_COLUMNS) {
+			    != DICT_NUM_FIELDS__SYS_COLUMNS
+			    || (rec_get_1byte_offs_flag(rec)
+				? rec_1_get_field_end_info(rec, 0) != 8
+				: rec_2_get_field_end_info(rec, 0) != 8)) {
 				break;
 			}
-			ulint len;
-			const byte* data = rec_get_nth_field_old(
-				rec, DICT_FLD__SYS_COLUMNS__TABLE_ID, &len);
-			if (len != 8) {
-				break;
+			static_assert(!DICT_FLD__SYS_COLUMNS__TABLE_ID, "");
+			node->trx->evict_table(mach_read_from_8(rec));
+			break;
+		case DICT_INDEXES_ID:
+			ut_ad(!online);
+			ut_ad(node->trx->dict_operation_lock_mode
+			      == RW_X_LATCH);
+			ut_ad(node->rec_type == TRX_UNDO_INSERT_REC);
+			if (!table_id) {
+				table_id = mach_read_from_8(rec);
+				if (table_id) {
+					mtr.commit();
+					goto restart;
+				}
+				ut_ad("corrupted SYS_INDEXES record" == 0);
 			}
-			node->trx->evict_table(mach_read_from_8(data));
+
+			pfs_os_file_t d = OS_FILE_CLOSED;
+
+			if (const uint32_t space_id = dict_drop_index_tree(
+				    &node->pcur, node->trx, &mtr)) {
+				if (table) {
+					lock_release_on_rollback(node->trx,
+								 table);
+					if (!dict_locked) {
+						dict_sys.mutex_lock();
+					}
+					if (table->release()) {
+						dict_sys.remove(table);
+					} else if (table->space_id
+						   == space_id) {
+						table->space = nullptr;
+						table->file_unreadable = true;
+					}
+					if (!dict_locked) {
+						dict_sys.mutex_unlock();
+					}
+					table = nullptr;
+					if (!mdl_ticket);
+					else if (MDL_context* mdl_context =
+						 static_cast<MDL_context*>(
+							 thd_mdl_context(
+								 node->trx->
+								 mysql_thd))) {
+						mdl_context->release_lock(
+							mdl_ticket);
+						mdl_ticket = nullptr;
+					}
+				}
+
+				d = fil_delete_tablespace(space_id);
+			}
+
+			mtr.commit();
+
+			if (d != OS_FILE_CLOSED) {
+				os_file_close(d);
+			}
+
+			mtr.start();
+			success = btr_pcur_restore_position(
+				BTR_MODIFY_LEAF, &node->pcur, &mtr);
+			ut_a(success);
 		}
 	}
 
@@ -200,7 +257,7 @@ retry:
 
 		n_tries++;
 
-		os_thread_sleep(BTR_CUR_RETRY_SLEEP_TIME);
+		std::this_thread::sleep_for(BTR_CUR_RETRY_SLEEP_TIME);
 
 		goto retry;
 	}
@@ -213,6 +270,12 @@ func_exit:
 	}
 
 	btr_pcur_commit_specify_mtr(&node->pcur, &mtr);
+
+	if (UNIV_LIKELY_NULL(table)) {
+		dict_table_close(table, dict_locked, false,
+				 node->trx->mysql_thd, mdl_ticket);
+	}
+
 	return(err);
 }
 
@@ -336,7 +399,7 @@ retry:
 
 		n_tries++;
 
-		os_thread_sleep(BTR_CUR_RETRY_SLEEP_TIME);
+		std::this_thread::sleep_for(BTR_CUR_RETRY_SLEEP_TIME);
 
 		goto retry;
 	}
@@ -369,11 +432,11 @@ static bool row_undo_ins_parse_undo_rec(undo_node_t* node, bool dict_locked)
 		node->table = dict_table_open_on_id(table_id, dict_locked,
 						    DICT_TABLE_OP_NORMAL);
 	} else if (!dict_locked) {
-		mutex_enter(&dict_sys.mutex);
-		node->table = dict_sys.get_temporary_table(table_id);
-		mutex_exit(&dict_sys.mutex);
+		dict_sys.mutex_lock();
+		node->table = dict_sys.acquire_temporary_table(table_id);
+		dict_sys.mutex_unlock();
 	} else {
-		node->table = dict_sys.get_temporary_table(table_id);
+		node->table = dict_sys.acquire_temporary_table(table_id);
 	}
 
 	if (!node->table) {
@@ -386,19 +449,28 @@ static bool row_undo_ins_parse_undo_rec(undo_node_t* node, bool dict_locked)
 		goto close_table;
 	case TRX_UNDO_INSERT_METADATA:
 	case TRX_UNDO_INSERT_REC:
+	case TRX_UNDO_EMPTY:
 		break;
 	case TRX_UNDO_RENAME_TABLE:
 		dict_table_t* table = node->table;
 		ut_ad(!table->is_temporary());
-		ut_ad(dict_table_is_file_per_table(table)
+		ut_ad(table->file_unreadable
+		      || dict_table_is_file_per_table(table)
 		      == !is_system_tablespace(table->space_id));
 		size_t len = mach_read_from_2(node->undo_rec)
 			+ size_t(node->undo_rec - ptr) - 2;
 		ptr[len] = 0;
 		const char* name = reinterpret_cast<char*>(ptr);
 		if (strcmp(table->name.m_name, name)) {
-			dict_table_rename_in_cache(table, name, false,
-						   table_id != 0);
+			dict_table_rename_in_cache(
+				table, name,
+				!dict_table_t::is_temporary_name(name),
+				true);
+		} else if (table->space) {
+			const auto s = table->space->name();
+			if (len != s.size() || memcmp(name, s.data(), len)) {
+				table->rename_tablespace(name, true);
+			}
 		}
 		goto close_table;
 	}
@@ -422,11 +494,16 @@ close_table:
 		clust_index = dict_table_get_first_index(node->table);
 
 		if (clust_index != NULL) {
-			if (node->rec_type == TRX_UNDO_INSERT_REC) {
+			switch (node->rec_type) {
+			case TRX_UNDO_INSERT_REC:
 				ptr = trx_undo_rec_get_row_ref(
 					ptr, clust_index, &node->ref,
 					node->heap);
-			} else {
+				break;
+			case TRX_UNDO_EMPTY:
+				node->ref = nullptr;
+				return true;
+			default:
 				node->ref = &trx_undo_metadata;
 				if (!row_undo_search_clust_to_pcur(node)) {
 					/* An error probably occurred during
@@ -539,6 +616,9 @@ row_undo_ins(
 		return DB_SUCCESS;
 	}
 
+	ut_ad(node->table->is_temporary()
+	      || lock_table_has_locks(node->table));
+
 	/* Iterate over all the indexes and undo the insert.*/
 
 	node->index = dict_table_get_first_index(node->table);
@@ -565,11 +645,11 @@ row_undo_ins(
 		if (node->table->id == DICT_INDEXES_ID) {
 			ut_ad(!node->table->is_temporary());
 			if (!dict_locked) {
-				mutex_enter(&dict_sys.mutex);
+				dict_sys.mutex_lock();
 			}
 			err = row_undo_ins_remove_clust_rec(node);
 			if (!dict_locked) {
-				mutex_exit(&dict_sys.mutex);
+				dict_sys.mutex_unlock();
 			}
 		} else {
 			err = row_undo_ins_remove_clust_rec(node);
@@ -598,6 +678,11 @@ row_undo_ins(
 		log_free_check();
 		ut_ad(!node->table->is_temporary());
 		err = row_undo_ins_remove_clust_rec(node);
+		break;
+	case TRX_UNDO_EMPTY:
+		node->table->clear(thr);
+		err = DB_SUCCESS;
+		break;
 	}
 
 	dict_table_close(node->table, dict_locked, FALSE);

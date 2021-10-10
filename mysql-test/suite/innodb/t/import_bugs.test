@@ -15,5 +15,6 @@ UNLOCK TABLES;
 --error ER_TABLE_SCHEMA_MISMATCH
 ALTER TABLE imp_t1 IMPORT TABLESPACE;
 DROP TABLE imp_t1, t1;
+--remove_file $datadir/test/imp_t1.ibd
 
 SET GLOBAL innodb_checksum_algorithm=@save_innodb_checksum_algorithm;

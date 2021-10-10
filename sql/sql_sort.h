@@ -558,7 +558,9 @@ public:
   Bounds_checked_array<SORT_FIELD> local_sortorder;
   Addon_fields *addon_fields;     // Descriptors for companion fields.
   Sort_keys *sort_keys;
+  ha_rows *accepted_rows;         /* For ROWNUM */
   bool using_pq;
+  bool set_all_read_bits;
 
   uchar *unique_buff;
   bool not_killable;
@@ -578,7 +580,9 @@ public:
     tmp_buffer.set_charset(&my_charset_bin);
   }
   void init_for_filesort(uint sortlen, TABLE *table,
-                         ha_rows maxrows, bool sort_positions);
+                         ha_rows maxrows, Filesort *filesort);
+
+   void  (*unpack)(TABLE *);
   /// Enables the packing of addons if possible.
   void try_to_pack_addons(ulong max_length_for_sort_data);
 

@@ -1564,7 +1564,7 @@ Table	Create Table
 t1	CREATE TABLE `t1` (
   `a` text DEFAULT NULL,
   KEY `a` (`a`(1024))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3
 drop table t1;
 CREATE TABLE t1 (
 a INT,
@@ -2899,6 +2899,7 @@ Null
 Index_type	BTREE
 Comment	
 Index_comment	
+Ignored	NO
 Table	t1
 Non_unique	0
 Key_name	k
@@ -2912,6 +2913,7 @@ Null
 Index_type	BTREE
 Comment	
 Index_comment	
+Ignored	NO
 DROP TABLE t1;
 #
 # Bug #47453: InnoDB incorrectly changes TIMESTAMP columns when 

@@ -28,14 +28,14 @@ Created 1/8/1996 Heikki Tuuri
 #ifndef dict0mem_h
 #define dict0mem_h
 
+#include "dict0types.h"
 #include "data0type.h"
 #include "mem0mem.h"
 #include "row0types.h"
-#include "rem0types.h"
 #include "btr0types.h"
 #include "lock0types.h"
 #include "que0types.h"
-#include "sync0rw.h"
+#include "sux_lock.h"
 #include "ut0mem.h"
 #include "ut0rnd.h"
 #include "ut0byte.h"
@@ -298,17 +298,6 @@ parent table will fail, and user has to drop excessive foreign constraint
 before proceeds. */
 #define FK_MAX_CASCADE_DEL		15
 
-/** Create a table memory object.
-@param name     table name
-@param space    tablespace
-@param n_cols   total number of columns (both virtual and non-virtual)
-@param n_v_cols number of virtual columns
-@param flags    table flags
-@param flags2   table flags2
-@return own: table object */
-dict_table_t *dict_mem_table_create(const char *name, fil_space_t *space,
-                                    ulint n_cols, ulint n_v_cols, ulint flags,
-                                    ulint flags2);
 /****************************************************************/ /**
  Free a table memory object. */
 void
@@ -1011,15 +1000,6 @@ struct dict_index_t {
 				representation we add more columns */
 	unsigned	nulls_equal:1;
 				/*!< if true, SQL NULL == SQL NULL */
-#ifdef BTR_CUR_HASH_ADAPT
-#ifdef MYSQL_INDEX_DISABLE_AHI
- 	unsigned	disable_ahi:1;
-				/*!< whether to disable the
-				adaptive hash index.
-				Maybe this could be disabled for
-				temporary tables? */
-#endif
-#endif /* BTR_CUR_HASH_ADAPT */
 	unsigned	n_uniq:10;/*!< number of fields from the beginning
 				which are enough to determine an index
 				entry uniquely */
@@ -1148,8 +1128,8 @@ public:
 				when InnoDB was started up */
 	zip_pad_info_t	zip_pad;/*!< Information about state of
 				compression failures and successes */
-	mutable rw_lock_t	lock;	/*!< read-write lock protecting the
-				upper levels of the index tree */
+  /** lock protecting the non-leaf index pages */
+  mutable index_lock lock;
 
 	/** Determine if the index has been committed to the
 	data dictionary.
@@ -1414,6 +1394,11 @@ public:
 	everything in overflow) size of the longest possible row and index
 	of a field which made index records too big to fit on a page.*/
 	inline record_size_info_t record_size_info() const;
+
+  /** Clear the index tree and reinitialize the root page, in the
+  rollback of TRX_UNDO_EMPTY. The BTR_SEG_LEAF is freed and reinitialized.
+  @param thr query thread */
+  void clear(que_thr_t *thr);
 };
 
 /** Detach a virtual column from an index.
@@ -1538,24 +1523,6 @@ struct dict_foreign_with_index {
 
 	const dict_index_t*	m_index;
 };
-
-#ifdef WITH_WSREP
-/** A function object to find a foreign key with the given index as the
-foreign index. Return the foreign key with matching criteria or NULL */
-struct dict_foreign_with_foreign_index {
-
-	dict_foreign_with_foreign_index(const dict_index_t*	index)
-	: m_index(index)
-	{}
-
-	bool operator()(const dict_foreign_t*	foreign) const
-	{
-		return(foreign->foreign_index == m_index);
-	}
-
-	const dict_index_t*	m_index;
-};
-#endif
 
 /* A function object to check if the foreign constraint is between different
 tables.  Returns true if foreign key constraint is between different tables,
@@ -1811,7 +1778,7 @@ typedef enum {
 } dict_frm_t;
 
 /** Data structure for a database table.  Most fields will be
-initialized to 0, NULL or FALSE in dict_mem_table_create(). */
+zero-initialized in dict_table_t::create(). */
 struct dict_table_t {
 
 	/** Get reference count.
@@ -1861,7 +1828,7 @@ struct dict_table_t {
 	which denotes temporary or intermediate tables in MariaDB. */
 	static bool is_temporary_name(const char* name)
 	{
-		return strstr(name, "/" TEMP_FILE_PREFIX) != NULL;
+		return strstr(name, "/#sql");
 	}
 
 	/** @return whether instant ALTER TABLE is in effect */
@@ -1964,23 +1931,6 @@ struct dict_table_t {
 		return versioned() && cols[vers_start].mtype == DATA_INT;
 	}
 
-	void inc_fk_checks()
-	{
-#ifdef UNIV_DEBUG
-		int32_t fk_checks=
-#endif
-		n_foreign_key_checks_running++;
-		ut_ad(fk_checks >= 0);
-	}
-	void dec_fk_checks()
-	{
-#ifdef UNIV_DEBUG
-		int32_t fk_checks=
-#endif
-		n_foreign_key_checks_running--;
-		ut_ad(fk_checks > 0);
-	}
-
 	/** For overflow fields returns potential max length stored inline */
 	inline size_t get_overflow_field_local_len() const;
 
@@ -1996,6 +1946,56 @@ struct dict_table_t {
 			char (&tbl_name)[NAME_LEN + 1],
 			size_t *db_name_len, size_t *tbl_name_len) const;
 
+  /** Clear the table when rolling back TRX_UNDO_EMPTY */
+  void clear(que_thr_t *thr);
+
+#ifdef UNIV_DEBUG
+  /** @return whether the current thread holds the lock_mutex */
+  bool lock_mutex_is_owner() const
+  { return lock_mutex_owner == os_thread_get_curr_id(); }
+  /** @return whether the current thread holds the stats_mutex (lock_mutex) */
+  bool stats_mutex_is_owner() const
+  { return lock_mutex_owner == os_thread_get_curr_id(); }
+#endif /* UNIV_DEBUG */
+  void lock_mutex_init() { lock_mutex.init(); }
+  void lock_mutex_destroy() { lock_mutex.destroy(); }
+  /** Acquire lock_mutex */
+  void lock_mutex_lock()
+  {
+    ut_ad(!lock_mutex_is_owner());
+    lock_mutex.wr_lock();
+    ut_ad(!lock_mutex_owner.exchange(os_thread_get_curr_id()));
+  }
+  /** Try to acquire lock_mutex */
+  bool lock_mutex_trylock()
+  {
+    ut_ad(!lock_mutex_is_owner());
+    bool acquired= lock_mutex.wr_lock_try();
+    ut_ad(!acquired || !lock_mutex_owner.exchange(os_thread_get_curr_id()));
+    return acquired;
+  }
+  /** Release lock_mutex */
+  void lock_mutex_unlock()
+  {
+    ut_ad(lock_mutex_owner.exchange(0) == os_thread_get_curr_id());
+    lock_mutex.wr_unlock();
+  }
+
+  /* stats mutex lock currently defaults to lock_mutex but in the future,
+  there could be a use-case to have separate mutex for stats.
+  extra indirection (through inline so no performance hit) should
+  help simplify code and increase long-term maintainability */
+  void stats_mutex_init() { lock_mutex_init(); }
+  void stats_mutex_destroy() { lock_mutex_destroy(); }
+  void stats_mutex_lock() { lock_mutex_lock(); }
+  void stats_mutex_unlock() { lock_mutex_unlock(); }
+
+  /** Rename the data file.
+  @param new_name     name of the table
+  @param replace      whether to replace the file with the new name
+                      (as part of rolling back TRUNCATE) */
+  dberr_t rename_tablespace(const char *new_name, bool replace) const;
+
 private:
 	/** Initialize instant->field_map.
 	@param[in]	table	table definition to copy from */
@@ -2003,12 +2003,12 @@ private:
 public:
 	/** Id of the table. */
 	table_id_t				id;
-	/** Hash chain node. */
-	hash_node_t				id_hash;
-	/** Table name. */
+	/** dict_sys.id_hash chain node */
+	dict_table_t*				id_hash;
+	/** Table name in name_hash */
 	table_name_t				name;
-	/** Hash chain node. */
-	hash_node_t				name_hash;
+	/** dict_sys.name_hash chain node */
+	dict_table_t*				name_hash;
 
 	/** Memory heap */
 	mem_heap_t*				heap;
@@ -2055,12 +2055,6 @@ public:
 
 	/** TRUE if the table object has been added to the dictionary cache. */
 	unsigned				cached:1;
-
-	/** TRUE if the table is to be dropped, but not yet actually dropped
-	(could in the background drop list). It is turned on at the beginning
-	of row_drop_table_for_mysql() and turned off just before we start to
-	update system tables for the drop. It is protected by dict_sys.latch. */
-	unsigned				to_be_dropped:1;
 
 	/** Number of non-virtual columns defined so far. */
 	unsigned				n_def:10;
@@ -2156,23 +2150,24 @@ public:
 	/** Maximum recursive level we support when loading tables chained
 	together with FK constraints. If exceeds this level, we will stop
 	loading child table into memory along with its parent table. */
-	unsigned				fk_max_recusive_level:8;
+	byte					fk_max_recusive_level;
 
-	/** Count of how many foreign key check operations are currently being
-	performed on the table. We cannot drop the table while there are
-	foreign key checks running on it. */
-	Atomic_counter<int32_t>			n_foreign_key_checks_running;
+  /** DDL transaction that last touched the table definition, or 0 if
+  no history is available. This includes possible changes in
+  ha_innobase::prepare_inplace_alter_table() and
+  ha_innobase::commit_inplace_alter_table(). */
+  trx_id_t def_trx_id;
 
-	/** Transactions whose view low limit is greater than this number are
-	not allowed to store to the MySQL query cache or retrieve from it.
-	When a trx with undo logs commits, it sets this to the value of the
-	transaction id. */
-	trx_id_t				query_cache_inv_trx_id;
+  /** Last transaction that inserted into an empty table.
+  Updated while holding exclusive table lock and an exclusive
+  latch on the clustered index root page (which must also be
+  an empty leaf page), and an ahi_latch (if btr_search_enabled). */
+  Atomic_relaxed<trx_id_t> bulk_trx_id;
 
-	/** Transaction id that last touched the table definition. Either when
-	loading the definition or CREATE TABLE, or ALTER TABLE (prepare,
-	commit, and rollback phases). */
-	trx_id_t				def_trx_id;
+  /** Original table name, for MDL acquisition in purge. Normally,
+  this points to the same as name. When is_temporary_name(name.m_name) holds,
+  this should be a copy of the original table name, allocated from heap. */
+  table_name_t mdl_name;
 
 	/*!< set of foreign key constraints in the table; these refer to
 	columns in other tables */
@@ -2278,7 +2273,7 @@ public:
 	kept in trx_t. In order to quickly determine whether a transaction has
 	locked the AUTOINC lock we keep a pointer to the transaction here in
 	the 'autoinc_trx' member. This is to avoid acquiring the
-	lock_sys_t::mutex and scanning the vector in trx_t.
+	lock_sys.latch and scanning the vector in trx_t.
 	When an AUTOINC lock has to wait, the corresponding lock instance is
 	created on the trx lock heap rather than use the pre-allocated instance
 	in autoinc_lock below. */
@@ -2290,25 +2285,40 @@ public:
 	from a select. */
 	lock_t*					autoinc_lock;
 
-	/** Mutex protecting the autoincrement counter. */
-	std::mutex				autoinc_mutex;
+  /** Mutex protecting autoinc. */
+  srw_mutex autoinc_mutex;
+private:
+  /** Mutex protecting locks on this table. */
+  srw_mutex lock_mutex;
+#ifdef UNIV_DEBUG
+  /** The owner of lock_mutex (0 if none) */
+  Atomic_relaxed<os_thread_id_t> lock_mutex_owner{0};
+#endif
+public:
+  /** Autoinc counter value to give to the next inserted row. */
+  uint64_t autoinc;
 
-	/** Autoinc counter value to give to the next inserted row. */
-	ib_uint64_t				autoinc;
+  /** The transaction that currently holds the the AUTOINC lock on this table.
+  Protected by lock_mutex.
+  The thread that is executing autoinc_trx may read this field without
+  holding a latch, in row_lock_table_autoinc_for_mysql().
+  Only the autoinc_trx thread may clear this field; it cannot be
+  modified on the behalf of a transaction that is being handled by a
+  different thread. */
+  Atomic_relaxed<const trx_t*> autoinc_trx;
 
-	/** This counter is used to track the number of granted and pending
-	autoinc locks on this table. This value is set after acquiring the
-	lock_sys_t::mutex but we peek the contents to determine whether other
-	transactions have acquired the AUTOINC lock or not. Of course only one
-	transaction can be granted the lock but there can be multiple
-	waiters. */
-	ulong					n_waiting_or_granted_auto_inc_locks;
-
-	/** The transaction that currently holds the the AUTOINC lock on this
-	table. Protected by lock_sys.mutex. */
-	const trx_t*				autoinc_trx;
+  /** Number of granted or pending autoinc_lock on this table. This
+  value is set after acquiring lock_sys.latch but
+  in innodb_autoinc_lock_mode=1 (the default),
+  ha_innobase::innobase_lock_autoinc() will perform a dirty read
+  to determine whether other transactions have acquired the autoinc_lock. */
+  uint32_t n_waiting_or_granted_auto_inc_locks;
 
 	/* @} */
+
+  /** Number of granted or pending LOCK_S or LOCK_X on the table.
+  Protected by lock_sys.assert_locked(*this). */
+  uint32_t n_lock_x_or_s;
 
 	/** FTS specific state variables. */
 	fts_t*					fts;
@@ -2318,23 +2328,29 @@ public:
 	in X mode of this table's indexes. */
 	ib_quiesce_t				quiesce;
 
-	/** Count of the number of record locks on this table. We use this to
-	determine whether we can evict the table from the dictionary cache.
-	It is protected by lock_sys.mutex. */
-	ulint					n_rec_locks;
+  /** Count of the number of record locks on this table. We use this to
+  determine whether we can evict the table from the dictionary cache.
+  Modified when lock_sys.is_writer(), or
+  lock_sys.assert_locked(page_id) and trx->mutex_is_owner() hold.
+  @see trx_lock_t::trx_locks */
+  Atomic_counter<uint32_t> n_rec_locks;
 
 private:
-	/** Count of how many handles are opened to this table. Dropping of the
-	table is NOT allowed until this count gets to zero. MySQL does NOT
-	itself check the number of open handles at DROP. */
-	Atomic_counter<uint32_t>		n_ref_count;
-
+  /** Count of how many handles are opened to this table. Dropping of the
+  table is NOT allowed until this count gets to zero. MySQL does NOT
+  itself check the number of open handles at DROP. */
+  Atomic_counter<uint32_t> n_ref_count;
 public:
-	/** List of locks on the table. Protected by lock_sys.mutex. */
-	table_lock_list_t			locks;
+  /** List of locks on the table. Protected by lock_sys.assert_locked(lock). */
+  table_lock_list_t locks;
 
-	/** Timestamp of the last modification of this table. */
-	time_t					update_time;
+  /** Timestamp of the last modification of this table. */
+  Atomic_relaxed<time_t> update_time;
+  /** Transactions whose view low limit is greater than this number are
+  not allowed to access the MariaDB query cache.
+  @see innobase_query_caching_table_check_low()
+  @see trx_t::commit_tables() */
+  Atomic_relaxed<trx_id_t> query_cache_inv_trx_id;
 
 #ifdef UNIV_DEBUG
 	/** Value of 'magic_n'. */
@@ -2358,10 +2374,21 @@ public:
     return false;
   }
 
-  /** Check whether the table name is same as mysql/innodb_stats_table
-  or mysql/innodb_index_stats.
-  @return true if the table name is same as stats table */
-  bool is_stats_table() const;
+  /** @return whether the name is
+  mysql.innodb_index_stats or mysql.innodb_table_stats */
+  inline bool is_stats_table() const;
+
+  /** Create metadata.
+  @param name     table name
+  @param space    tablespace
+  @param n_cols   total number of columns (both virtual and non-virtual)
+  @param n_v_cols number of virtual columns
+  @param flags    table flags
+  @param flags2   table flags2
+  @return newly allocated table object */
+  static dict_table_t *create(const span<const char> &name, fil_space_t *space,
+                              ulint n_cols, ulint n_v_cols, ulint flags,
+                              ulint flags2);
 };
 
 inline void dict_index_t::set_modified(mtr_t& mtr) const

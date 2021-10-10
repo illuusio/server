@@ -254,6 +254,7 @@ int spider_reset_conn_setted_parameter(
   conn->sql_log_off = spider_param_remote_sql_log_off();
   conn->wait_timeout = spider_param_remote_wait_timeout(thd);
   conn->sql_mode = full_sql_mode + 1;
+  myf utf8_flag= thd->get_utf8_flag();
   if (thd && spider_param_remote_time_zone())
   {
     int tz_length = strlen(spider_param_remote_time_zone());
@@ -267,8 +268,8 @@ int spider_reset_conn_setted_parameter(
   if (spider_param_remote_access_charset())
   {
     if (!(conn->access_charset =
-      get_charset_by_csname(spider_param_remote_access_charset(),
-        MY_CS_PRIMARY, MYF(MY_WME))))
+        get_charset_by_csname(spider_param_remote_access_charset(),
+        MY_CS_PRIMARY, MYF(utf8_flag | MY_WME))))
       DBUG_RETURN(ER_UNKNOWN_CHARACTER_SET);
   } else
     conn->access_charset = NULL;
@@ -566,7 +567,7 @@ SPIDER_CONN *spider_create_conn(
   char *tmp_name, *tmp_host, *tmp_username, *tmp_password, *tmp_socket;
   char *tmp_wrapper, *tmp_db, *tmp_ssl_ca, *tmp_ssl_capath, *tmp_ssl_cert;
   char *tmp_ssl_cipher, *tmp_ssl_key, *tmp_default_file, *tmp_default_group;
-  char *tmp_dsn;
+  char *tmp_dsn, *tmp_filedsn, *tmp_driver;
   DBUG_ENTER("spider_create_conn");
 
   if (unlikely(!UTC))
@@ -618,6 +619,10 @@ SPIDER_CONN *spider_create_conn(
           (uint) (share->tgt_default_groups_lengths[link_idx] + 1),
         &tmp_dsn,
           (uint) (share->tgt_dsns_lengths[link_idx] + 1),
+        &tmp_filedsn,
+          (uint) (share->tgt_filedsns_lengths[link_idx] + 1),
+        &tmp_driver,
+          (uint) (share->tgt_drivers_lengths[link_idx] + 1),
         &need_mon, (uint) (sizeof(int)),
         NullS))
     ) {
@@ -726,6 +731,24 @@ SPIDER_CONN *spider_create_conn(
         share->tgt_dsns_lengths[link_idx]);
     } else
       conn->tgt_dsn = NULL;
+    conn->tgt_filedsn_length =
+      share->tgt_filedsns_lengths[link_idx];
+    if (conn->tgt_filedsn_length)
+    {
+      conn->tgt_filedsn = tmp_filedsn;
+      memcpy(conn->tgt_filedsn, share->tgt_filedsns[link_idx],
+        share->tgt_filedsns_lengths[link_idx]);
+    } else
+      conn->tgt_filedsn = NULL;
+    conn->tgt_driver_length =
+      share->tgt_drivers_lengths[link_idx];
+    if (conn->tgt_driver_length)
+    {
+      conn->tgt_driver = tmp_driver;
+      memcpy(conn->tgt_driver, share->tgt_drivers[link_idx],
+        share->tgt_drivers_lengths[link_idx]);
+    } else
+      conn->tgt_driver = NULL;
     conn->tgt_port = share->tgt_ports[link_idx];
     conn->tgt_ssl_vsc = share->tgt_ssl_vscs[link_idx];
     conn->dbton_id = share->sql_dbton_ids[link_idx];

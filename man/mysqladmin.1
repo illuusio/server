@@ -1,6 +1,6 @@
 '\" t
 .\"
-.TH "\FBMYSQLADMIN\FR" "1" "27 June 2019" "MariaDB 10\&.5" "MariaDB Database System"
+.TH "\FBMYSQLADMIN\FR" "1" "15 May 2020" "MariaDB 10\&.6" "MariaDB Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -266,6 +266,19 @@ Flush relay log\&.
 flush\-slow\-log
 .sp
 Flush slow query log\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+flush\-ssl
+.sp
+Flush SSL certificates\&.
 .RE
 .sp
 .RS 4
@@ -1092,6 +1105,7 @@ On Windows, connect to the server via a named pipe\&. This option applies only i
 .sp
 The TCP/IP port number to use for the connection or 0 for default to, 
 in order of preference, my.cnf, $MYSQL_TCP_PORT, /etc/services, built-in default (3306)\&.
+Forces --protocol=tcp when specified on the command line without other connection properties\&.
 .RE
 .sp
 .RS 4
@@ -1214,6 +1228,7 @@ executes commands indefinitely until interrupted\&.
 .sp
 For connections to
 localhost, the Unix socket file to use, or, on Windows, the name of the named pipe to use\&.
+Forces --protocol=socket when specified on the command line without other connection properties; on Windows, forces --protocol=pipe\&.
 .RE
 .sp
 .RS 4
@@ -1509,7 +1524,7 @@ The maximum number of seconds to wait for server shutdown\&. The default value i
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright 2007-2008 MySQL AB, 2008-2010 Sun Microsystems, Inc., 2010-2019 MariaDB Foundation
+Copyright 2007-2008 MySQL AB, 2008-2010 Sun Microsystems, Inc., 2010-2020 MariaDB Foundation
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

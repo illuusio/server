@@ -119,15 +119,17 @@ SET (SQL_SOURCE
                sql_list.cc sql_load.cc sql_manager.cc
                sql_parse.cc sql_bootstrap.cc
                sql_partition.cc sql_plugin.cc sql_prepare.cc sql_rename.cc 
-               debug_sync.cc
+               debug_sync.cc debug.cc
                sql_repl.cc sql_select.cc sql_show.cc sql_state.c
                group_by_handler.cc derived_handler.cc select_handler.cc
                sql_statistics.cc sql_string.cc lex_string.h
                sql_table.cc sql_test.cc sql_trigger.cc sql_udf.cc sql_union.cc
+               ddl_log.cc ddl_log.h
                sql_update.cc sql_view.cc strfunc.cc table.cc thr_malloc.cc 
                sql_time.cc tztime.cc unireg.cc item_xmlfunc.cc 
                uniques.cc
-               rpl_tblmap.cc sql_binlog.cc event_scheduler.cc event_data_objects.cc
+               rpl_tblmap.cc sql_binlog.cc event_scheduler.cc
+               event_data_objects.cc
                event_queue.cc event_db_repository.cc 
                sql_tablespace.cc events.cc ../sql-common/my_user.c 
                partition_info.cc rpl_utility.cc rpl_utility_server.cc
@@ -148,7 +150,6 @@ SET (SQL_SOURCE
                opt_index_cond_pushdown.cc opt_subselect.cc
                opt_table_elimination.cc sql_expression_cache.cc
                gcalc_slicescan.cc gcalc_tools.cc
-               ../sql-common/mysql_async.c
                my_apc.cc mf_iocache_encr.cc item_jsonfunc.cc
                my_json_writer.cc
                rpl_gtid.cc rpl_parallel.cc
@@ -167,6 +168,7 @@ SET (SQL_SOURCE
                rowid_filter.cc rowid_filter.h
                opt_trace.cc
                table_cache.cc encryption.cc temporary_tables.cc
+               json_table.cc
                proxy_protocol.cc backup.cc xa.cc
                ${CMAKE_CURRENT_BINARY_DIR}/lex_hash.h
                ${CMAKE_CURRENT_BINARY_DIR}/lex_token.h
@@ -181,7 +183,7 @@ IF ((CMAKE_SYSTEM_NAME MATCHES "Linux" OR
     AND (NOT DISABLE_THREADPOOL))
  ADD_DEFINITIONS(-DHAVE_POOL_OF_THREADS)
  IF(WIN32)
-   SET(SQL_SOURCE ${SQL_SOURCE} threadpool_win.cc)
+   SET(SQL_SOURCE ${SQL_SOURCE} threadpool_win.cc threadpool_winsockets.cc threadpool_winsockets.h)
  ENDIF()
  SET(SQL_SOURCE ${SQL_SOURCE} threadpool_generic.cc)
  SET(SQL_SOURCE ${SQL_SOURCE} threadpool_common.cc)
@@ -189,7 +191,7 @@ IF ((CMAKE_SYSTEM_NAME MATCHES "Linux" OR
 ENDIF()
 
 IF(WIN32)
-  SET(SQL_SOURCE ${SQL_SOURCE} handle_connections_win.cc nt_servc.cc)
+  SET(SQL_SOURCE ${SQL_SOURCE} handle_connections_win.cc winmain.cc)
 ENDIF()
 
 MYSQL_ADD_PLUGIN(partition ha_partition.cc STORAGE_ENGINE DEFAULT STATIC_ONLY
@@ -261,7 +263,9 @@ IF(MSVC OR CMAKE_SYSTEM_NAME MATCHES AIX)
    sql_builtins
   )
   IF(MSVC)
-    SET_TARGET_PROPERTIES(server PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
+    IF(NOT WITHOUT_DYNAMIC_PLUGINS)
+     SET_TARGET_PROPERTIES(server PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
+    ENDIF()
   ELSE()
     SET_TARGET_PROPERTIES(server PROPERTIES AIX_EXPORT_ALL_SYMBOLS TRUE)
   ENDIF()
@@ -372,7 +376,7 @@ ADD_CUSTOM_COMMAND(
   DEPENDS gen_lex_hash
 )
 
-MYSQL_ADD_EXECUTABLE(mariadb-tzinfo-to-sql tztime.cc COMPONENT Server)
+MYSQL_ADD_EXECUTABLE(mariadb-tzinfo-to-sql tztime.cc)
 SET_TARGET_PROPERTIES(mariadb-tzinfo-to-sql PROPERTIES COMPILE_FLAGS "-DTZINFO2SQL")
 TARGET_LINK_LIBRARIES(mariadb-tzinfo-to-sql mysys mysys_ssl)
 
@@ -420,7 +424,7 @@ IF(TARGET mariadbd AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CROSSCOMPILING
      COMMAND ${CMAKE_COMMAND} -E make_directory data
      COMMAND ${CMAKE_COMMAND} -E chdir data ${CMAKE_COMMAND}
      ${CONFIG_PARAM}
-     -DTOP_SRCDIR="${CMAKE_SOURCE_DIR}"
+     -DTOP_SRCDIR="${CMAKE_BINARY_DIR}"
      -DBINDIR="${CMAKE_CURRENT_BINARY_DIR}"
      -DMYSQLD_EXECUTABLE="$<TARGET_FILE:mariadbd>"
      -DCMAKE_CFG_INTDIR="${CMAKE_CFG_INTDIR}"
@@ -447,14 +451,15 @@ IF(WIN32)
   # Create bootstrapper SQL script
   ADD_CUSTOM_COMMAND(OUTPUT    
     ${my_bootstrap_sql}
-    COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR}/scripts
-    cmd /c copy mysql_system_tables.sql+mysql_system_tables_data.sql+fill_help_tables.sql+mysql_performance_tables.sql+mysql_test_db.sql ${native_outfile}
+    COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}/scripts
+    cmd /c copy mysql_system_tables.sql+mysql_system_tables_data.sql+fill_help_tables.sql+mysql_performance_tables.sql+mysql_test_db.sql+mysql_sys_schema.sql ${native_outfile}
     DEPENDS
     ${CMAKE_SOURCE_DIR}/scripts/mysql_system_tables.sql
     ${CMAKE_SOURCE_DIR}/scripts/mysql_system_tables_data.sql
     ${CMAKE_SOURCE_DIR}/scripts/fill_help_tables.sql
     ${CMAKE_SOURCE_DIR}/scripts/mysql_performance_tables.sql
     ${CMAKE_SOURCE_DIR}/scripts/mysql_test_db.sql
+    ${CMAKE_BINARY_DIR}/scripts/mysql_sys_schema.sql
   )
 
   ADD_CUSTOM_COMMAND(

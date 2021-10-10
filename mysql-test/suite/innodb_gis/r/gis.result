@@ -1489,8 +1489,8 @@ ERROR HY000: Illegal parameter data type varchar for operation 'st_union'
 # MDEV-25758 InnoDB spatial indexes miss large geometry
 #	fields after MDEV-25459
 #
-CREATE TABLE t1(l LINESTRING NOT NULL, SPATIAL INDEX(l))ENGINE=InnoDB ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=1;
-SELECT GROUP_CONCAT(CONCAT(seq, ' ', seq) SEPARATOR ',') INTO @g FROM seq_0_to_190;
+CREATE TABLE t1(l LINESTRING NOT NULL, SPATIAL INDEX(l))ENGINE=InnoDB;
+SELECT GROUP_CONCAT(CONCAT(seq, ' ', seq) SEPARATOR ',') INTO @g FROM seq_0_to_504;
 INSERT INTO t1 SET l=ST_GeomFromText(CONCAT('LINESTRING(',@g,',0 0)'));
 SELECT COUNT(*) FROM t1 WHERE MBRIntersects(GeomFromText('Polygon((0 0,0 10,10 10,10 0,0 0))'), l);
 COUNT(*)

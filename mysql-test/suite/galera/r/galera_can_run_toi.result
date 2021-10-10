@@ -25,11 +25,10 @@ SET SESSION default_storage_engine=MyISAM;
 SELECT @@default_storage_engine;
 @@default_storage_engine
 MyISAM
-SET GLOBAL wsrep_replicate_myisam=OFF;
-SET GLOBAL wsrep_strict_ddl=ON;
+SET GLOBAL wsrep_mode=STRICT_REPLICATION;
 CREATE TABLE t3 (c1 VARCHAR(10)) ENGINE=InnoDB;
 ALTER TABLE t3 ENGINE=NonExistentEngine;
-ERROR HY000: DDL-statement is forbidden as table storage engine does not support Galera replication
+ERROR HY000: Galera replication not supported
 SHOW CREATE TABLE t3;
 Table	Create Table
 t3	CREATE TABLE `t3` (

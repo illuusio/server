@@ -101,8 +101,9 @@ extern ulong       wsrep_running_applier_threads;
 extern ulong       wsrep_running_rollbacker_threads;
 extern bool        wsrep_new_cluster;
 extern bool        wsrep_gtid_mode;
-extern my_bool     wsrep_strict_ddl;
 extern uint        wsrep_gtid_domain_id;
+extern ulonglong   wsrep_mode;
+extern my_bool     wsrep_strict_ddl;
 
 enum enum_wsrep_reject_types {
   WSREP_REJECT_NONE,    /* nothing rejected */
@@ -132,6 +133,16 @@ enum enum_wsrep_ignore_apply_error {
     WSREP_IGNORE_ERRORS_ON_RECONCILING_DML= 0x2,
     WSREP_IGNORE_ERRORS_ON_DDL= 0x4,
     WSREP_IGNORE_ERRORS_MAX= 0x7
+};
+
+/* wsrep_mode features */
+enum enum_wsrep_mode {
+  WSREP_MODE_STRICT_REPLICATION= (1ULL << 0),
+  WSREP_MODE_BINLOG_ROW_FORMAT_ONLY= (1ULL << 1),
+  WSREP_MODE_REQUIRED_PRIMARY_KEY= (1ULL << 2),
+  WSREP_MODE_REPLICATE_MYISAM= (1ULL << 3),
+  WSREP_MODE_REPLICATE_ARIA= (1ULL << 4),
+  WSREP_MODE_DISALLOW_LOCAL_GTID= (1ULL << 5)
 };
 
 // Streaming Replication
@@ -210,6 +221,10 @@ extern void wsrep_close_applier_threads(int count);
 extern void wsrep_stop_replication(THD *thd);
 extern bool wsrep_start_replication(const char *wsrep_cluster_address);
 extern void wsrep_shutdown_replication();
+extern bool wsrep_check_mode (enum_wsrep_mode mask);
+extern bool wsrep_check_mode_after_open_table (THD *thd, const handlerton *hton,
+                                               TABLE_LIST *tables);
+extern bool wsrep_check_mode_before_cmd_execute (THD *thd);
 extern bool wsrep_must_sync_wait (THD* thd, uint mask= WSREP_SYNC_WAIT_BEFORE_READ);
 extern bool wsrep_sync_wait (THD* thd, uint mask= WSREP_SYNC_WAIT_BEFORE_READ);
 extern enum wsrep::provider::status
@@ -378,7 +393,7 @@ int wsrep_to_isolation_begin(THD *thd, const char *db_, const char *table_,
                              const wsrep::key_array *fk_tables= nullptr,
                              const HA_CREATE_INFO* create_info= nullptr);
 
-bool wsrep_should_replicate_ddl(THD* thd, const enum legacy_db_type db_type);
+bool wsrep_should_replicate_ddl(THD* thd, const handlerton *db_type);
 bool wsrep_should_replicate_ddl_iterate(THD* thd, const TABLE_LIST* table_list);
 
 void wsrep_to_isolation_end(THD *thd);

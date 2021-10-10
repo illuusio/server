@@ -192,6 +192,8 @@ FILE *stderror_file=0;
 static uint opt_protocol= 0;
 static char *opt_plugin_dir= 0, *opt_default_auth= 0;
 
+static uint protocol_to_force= MYSQL_PROTOCOL_DEFAULT;
+
 /*
 Dynamic_string wrapper functions. In this file use these
 wrappers, they will terminate the process if there is
@@ -502,7 +504,7 @@ static struct my_option my_long_options[] =
   {"password", 'p',
    "Password to use when connecting to server. If password is not given it's solicited on the tty.",
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef __WIN__
+#ifdef _WIN32
   {"pipe", 'W', "Use named pipes to connect to server.", 0, 0, 0, GET_NO_ARG,
    NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
@@ -860,8 +862,12 @@ uchar* get_table_key(const char *entry, size_t *length,
 static my_bool
 get_one_option(const struct my_option *opt,
                const char *argument,
-               const char *filename __attribute__((unused)))
+               const char *filename)
 {
+
+  /* Track when protocol is set via CLI to not force overrides */
+  static my_bool ignore_protocol_override = FALSE;
+
   switch (opt->id) {
   case 'p':
     if (argument == disabled_my_option)
@@ -890,8 +896,15 @@ get_one_option(const struct my_option *opt,
       exit(1);
     break;
   case 'W':
-#ifdef __WIN__
+#ifdef _WIN32
     opt_protocol= MYSQL_PROTOCOL_PIPE;
+
+    /* Prioritize pipe if explicit via command line */
+    if (filename[0] == '\0')
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
 #endif
     break;
   case 'N':
@@ -1042,10 +1055,50 @@ get_one_option(const struct my_option *opt,
       sf_leaking_memory= 1; /* no memory leak reports here */
       exit(1);
     }
+
+    /* Specification of protocol via CLI trumps implicit overrides */
+    if (filename[0] == '\0')
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
     break;
   case (int) OPT_DEFAULT_CHARSET:
     if (default_charset == disabled_my_option)
       default_charset= (char *)mysql_universal_client_charset;
+    break;
+  case 'P':
+    /* If port and socket are set, fall back to default behavior */
+    if (protocol_to_force == SOCKET_PROTOCOL_TO_FORCE)
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    /* If port is set via CLI, try to force protocol to TCP */
+    if (filename[0] == '\0' &&
+        !ignore_protocol_override &&
+        protocol_to_force == MYSQL_PROTOCOL_DEFAULT)
+    {
+      protocol_to_force = MYSQL_PROTOCOL_TCP;
+    }
+    break;
+  case 'S':
+    /* If port and socket are set, fall back to default behavior */
+    if (protocol_to_force == MYSQL_PROTOCOL_TCP)
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    /* Prioritize socket if set via command line */
+    if (filename[0] == '\0' &&
+        !ignore_protocol_override &&
+        protocol_to_force == MYSQL_PROTOCOL_DEFAULT)
+    {
+      protocol_to_force = SOCKET_PROTOCOL_TO_FORCE;
+    }
     break;
   }
   return 0;
@@ -1058,6 +1111,9 @@ static int get_options(int *argc, char ***argv)
 
   opt_max_allowed_packet= *mysql_params->p_max_allowed_packet;
   opt_net_buffer_length= *mysql_params->p_net_buffer_length;
+
+  /* We need to know if protocol-related options originate from CLI args */
+  my_defaults_mark_files = TRUE;
 
   md_result_file= stdout;
   load_defaults_or_exit("my", load_default_groups, argc, argv);
@@ -1088,6 +1144,16 @@ static int get_options(int *argc, char ***argv)
 
   if ((ho_error= handle_options(argc, argv, my_long_options, get_one_option)))
     return(ho_error);
+
+  /*
+     Command line options override configured protocol
+   */
+  if (protocol_to_force > MYSQL_PROTOCOL_DEFAULT
+      && protocol_to_force != opt_protocol)
+  {
+    warn_protocol_override(current_host, &opt_protocol, protocol_to_force);
+  }
+
 
   /*
     Dumping under --system=stats with --replace or --inser-ignore is safe and will not
@@ -1261,7 +1327,8 @@ static int get_options(int *argc, char ***argv)
   }
   if (strcmp(default_charset, MYSQL_AUTODETECT_CHARSET_NAME) &&
       !(charset_info= get_charset_by_csname(default_charset,
-                                            MY_CS_PRIMARY, MYF(MY_WME))))
+                                            MY_CS_PRIMARY,
+                                            MYF(MY_UTF8_IS_UTF8MB3 | MY_WME))))
     exit(1);
   if ((*argc < 1 && (!opt_alldbs && !opt_system)) || (*argc > 0 && opt_alldbs))
   {
@@ -1572,7 +1639,7 @@ static int switch_db_collation(FILE *sql_file,
     char quoted_db_buf[NAME_LEN * 2 + 3];
     char *quoted_db_name= quote_name(db_name, quoted_db_buf, FALSE);
 
-    CHARSET_INFO *db_cl= get_charset_by_name(required_db_cl_name, MYF(0));
+    CHARSET_INFO *db_cl= get_charset_by_name(required_db_cl_name, MYF(MY_UTF8_IS_UTF8MB3));
 
     if (!db_cl)
       return 1;
@@ -1580,8 +1647,8 @@ static int switch_db_collation(FILE *sql_file,
     fprintf(sql_file,
             "ALTER DATABASE %s CHARACTER SET %s COLLATE %s %s\n",
             (const char *) quoted_db_name,
-            (const char *) db_cl->csname,
-            (const char *) db_cl->name,
+            (const char *) db_cl->cs_name.str,
+            (const char *) db_cl->coll_name.str,
             (const char *) delimiter);
 
     *db_cl_altered= 1;
@@ -1603,7 +1670,7 @@ static int restore_db_collation(FILE *sql_file,
   char quoted_db_buf[NAME_LEN * 2 + 3];
   char *quoted_db_name= quote_name(db_name, quoted_db_buf, FALSE);
 
-  CHARSET_INFO *db_cl= get_charset_by_name(db_cl_name, MYF(0));
+  CHARSET_INFO *db_cl= get_charset_by_name(db_cl_name, MYF(MY_UTF8_IS_UTF8MB3));
 
   if (!db_cl)
     return 1;
@@ -1611,8 +1678,8 @@ static int restore_db_collation(FILE *sql_file,
   fprintf(sql_file,
           "ALTER DATABASE %s CHARACTER SET %s COLLATE %s %s\n",
           (const char *) quoted_db_name,
-          (const char *) db_cl->csname,
-          (const char *) db_cl->name,
+          (const char *) db_cl->cs_name.str,
+          (const char *) db_cl->coll_name.str,
           (const char *) delimiter);
 
   return 0;
@@ -4053,7 +4120,7 @@ static void dump_table(const char *table, const char *db, const uchar *hash_key,
 
     dynstr_append_checked(&query_string, " /*!50138 CHARACTER SET ");
     dynstr_append_checked(&query_string, default_charset == mysql_universal_client_charset ?
-                                         my_charset_bin.name : /* backward compatibility */
+                                         my_charset_bin.coll_name.str : /* backward compatibility */
                                          default_charset);
     dynstr_append_checked(&query_string, " */");
 
@@ -5228,6 +5295,10 @@ static int dump_all_databases()
         !my_strcasecmp(&my_charset_latin1, row[0], PERFORMANCE_SCHEMA_DB_NAME))
       continue;
 
+   if (mysql_get_server_version(mysql) >= FIRST_SYS_SCHEMA_VERSION &&
+       !my_strcasecmp(&my_charset_latin1, row[0], SYS_SCHEMA_DB_NAME))
+     continue;
+
     if (include_database(row[0]))
       if (dump_all_tables_in_db(row[0]))
         result=1;
@@ -5250,6 +5321,10 @@ static int dump_all_databases()
 
       if (mysql_get_server_version(mysql) >= FIRST_PERFORMANCE_SCHEMA_VERSION &&
           !my_strcasecmp(&my_charset_latin1, row[0], PERFORMANCE_SCHEMA_DB_NAME))
+        continue;
+
+     if (mysql_get_server_version(mysql) >= FIRST_SYS_SCHEMA_VERSION &&
+        !my_strcasecmp(&my_charset_latin1, row[0], SYS_SCHEMA_DB_NAME))
         continue;
 
       if (include_database(row[0]))

@@ -202,8 +202,6 @@ base_configs="$base_configs --with-extra-charsets=complex "
 base_configs="$base_configs --enable-thread-safe-client "
 base_configs="$base_configs --with-big-tables $maintainer_mode"
 base_configs="$base_configs --with-plugin-aria --with-aria-tmp-tables --with-plugin-s3=STATIC"
-# Following is to get tokudb to work
-base_configs="$base_configs --with-jemalloc=NO"
 
 if test -d "$path/../cmd-line-utils/readline"
 then
@@ -276,13 +274,7 @@ fi
 # As cmake doesn't like CC and CXX with a space, use symlinks from
 # /usr/lib64/ccache if they exits.
 
-if test "$USING_GCOV" != "1"
-then
-  # Not using gcov; Safe to use ccache
-  CCACHE_GCOV_VERSION_ENABLED=1
-fi
-
-if ccache -V > /dev/null 2>&1 && test "$CCACHE_GCOV_VERSION_ENABLED" = "1"
+if ccache -V > /dev/null 2>&1 && test "$CCACHE_DISABLE" != "1" && test "$CC" = "gcc"
 then
     if test -x /usr/lib64/ccache/gcc
     then
@@ -307,7 +299,7 @@ gcov_compile_flags="$gcov_compile_flags -DMYSQL_SERVER_SUFFIX=-gcov -DHAVE_gcov"
 
 #
 # The following plugins doesn't work on 32 bit systems
-disable_64_bit_plugins="--without-plugin-tokudb --without-plugin-rocksdb"
+disable_64_bit_plugins="--without-plugin-rocksdb"
 
 
 # GCC4 needs -fprofile-arcs -ftest-coverage on the linker command line (as well

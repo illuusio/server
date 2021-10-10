@@ -36,6 +36,9 @@ class Index_statistics;
 
 class THD;
 
+/* Array index type for table.field[] */
+typedef uint16 field_index_t;
+
 typedef struct st_date_time_format {
   uchar positions[8];
   char  time_separator;			/* Separator between hour and minute */
@@ -82,10 +85,10 @@ typedef struct st_key_part_info {	/* Info about a key part */
   */
   uint16 store_length;
   uint16 key_type;
-  uint16 fieldnr;                       /* Fieldnr begins counting from 1 */
+  field_index_t fieldnr;                /* Fieldnr begins counting from 1 */
   uint16 key_part_flag;                 /* 0 or HA_REVERSE_SORT */
   uint8 type;
-  uint8 null_bit;			/* Position to null_bit */
+  uint8 null_bit;                       /* Position to null_bit */
 } KEY_PART_INFO ;
 
 class engine_option_value;
@@ -165,6 +168,10 @@ typedef struct st_key {
   double actual_rec_per_key(uint i);
 
   bool without_overlaps;
+  /*
+    TRUE if index needs to be ignored
+  */
+  bool is_ignored;
 } KEY;
 
 
@@ -173,6 +180,7 @@ struct st_join_table;
 typedef struct st_reginfo {		/* Extra info about reg */
   struct st_join_table *join_tab;	/* Used by SELECT() */
   enum thr_lock_type lock_type;		/* How database is used */
+  bool skip_locked;
   bool not_exists_optimize;
   /*
     TRUE <=> range optimizer found that there is no rows satisfying
@@ -529,7 +537,8 @@ public:
     OPT_OR_REPLACE= 16,                // CREATE OR REPLACE TABLE
     OPT_OR_REPLACE_SLAVE_GENERATED= 32,// REPLACE was added on slave, it was
                                        // not in the original query on master.
-    OPT_IF_EXISTS= 64
+    OPT_IF_EXISTS= 64,
+    OPT_CREATE_SELECT= 128             // CREATE ... SELECT
   };
 
 private:
@@ -557,6 +566,8 @@ public:
   { return m_options & OPT_OR_REPLACE_SLAVE_GENERATED; }
   bool like() const { return m_options & OPT_LIKE; }
   bool if_exists() const { return m_options & OPT_IF_EXISTS; }
+  bool is_create_select() const { return m_options & OPT_CREATE_SELECT; }
+
   void add(const DDL_options_st::Options other)
   {
     m_options= (Options) ((uint) m_options | (uint) other);
@@ -803,13 +814,14 @@ public:
     uint defined_lock:1;
     uint update_lock:1;
     uint defined_timeout:1;
+    uint skip_locked:1;
   };
   ulong timeout;
 
 
   void empty()
   {
-    defined_lock= update_lock= defined_timeout= FALSE;
+    defined_lock= update_lock= defined_timeout= skip_locked= FALSE;
     timeout= 0;
   }
   void set_to(st_select_lex *sel);
@@ -818,13 +830,17 @@ public:
 class Lex_select_limit
 {
 public:
+  /* explicit LIMIT clause was used */
   bool explicit_limit;
+  bool with_ties;
   Item *select_limit, *offset_limit;
 
-  void empty()
+  void clear()
   {
-    explicit_limit= FALSE;
-    select_limit= offset_limit= NULL;
+    explicit_limit= FALSE;    // No explicit limit given by user
+    with_ties= FALSE;         // No use of WITH TIES operator
+    select_limit= NULL;       // denotes the default limit = HA_POS_ERROR
+    offset_limit= NULL;       // denotes the default offset = 0
   }
 };
 

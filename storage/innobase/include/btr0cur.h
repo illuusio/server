@@ -33,6 +33,9 @@ Created 10/16/1994 Heikki Tuuri
 #include "rem0types.h"
 #include "gis0type.h"
 #include "my_base.h"
+#ifdef BTR_CUR_HASH_ADAPT
+# include "srw_lock.h"
+#endif
 
 /** Mode flags for btr_cur operations; these can be ORed */
 enum {
@@ -155,8 +158,6 @@ btr_cur_instant_root_init(dict_index_t* index, const page_t* page)
 @param[in]	modify_clock	modify clock value
 @param[in,out]	latch_mode	BTR_SEARCH_LEAF, ...
 @param[in,out]	cursor		cursor
-@param[in]	file		file name
-@param[in]	line		line where called
 @param[in]	mtr		mini-transaction
 @return true if success */
 bool
@@ -165,8 +166,6 @@ btr_cur_optimistic_latch_leaves(
 	ib_uint64_t	modify_clock,
 	ulint*		latch_mode,
 	btr_cur_t*	cursor,
-	const char*	file,
-	unsigned	line,
 	mtr_t*		mtr);
 
 /********************************************************************//**
@@ -202,30 +201,26 @@ btr_cur_search_to_nth_level_func(
 	btr_cur_t*	cursor, /*!< in/out: tree cursor; the cursor page is
 				s- or x-latched, but see also above! */
 #ifdef BTR_CUR_HASH_ADAPT
-	rw_lock_t*	ahi_latch,
-				/*!< in: currently held btr_search_latch
-				(in RW_S_LATCH mode), or NULL */
+	srw_lock*	ahi_latch,
+				/*!< in: currently held AHI rdlock, or NULL */
 #endif /* BTR_CUR_HASH_ADAPT */
-	const char*	file,	/*!< in: file name */
-	unsigned	line,	/*!< in: line where called */
 	mtr_t*		mtr,	/*!< in/out: mini-transaction */
 	ib_uint64_t	autoinc = 0);
 				/*!< in: PAGE_ROOT_AUTO_INC to be written
 				(0 if none) */
 #ifdef BTR_CUR_HASH_ADAPT
-# define btr_cur_search_to_nth_level(i,l,t,m,lm,c,a,fi,li,mtr) \
-	btr_cur_search_to_nth_level_func(i,l,t,m,lm,c,a,fi,li,mtr)
+# define btr_cur_search_to_nth_level(i,l,t,m,lm,c,a,mtr) \
+	btr_cur_search_to_nth_level_func(i,l,t,m,lm,c,a,mtr)
 #else /* BTR_CUR_HASH_ADAPT */
-# define btr_cur_search_to_nth_level(i,l,t,m,lm,c,a,fi,li,mtr) \
-	btr_cur_search_to_nth_level_func(i,l,t,m,lm,c,fi,li,mtr)
+# define btr_cur_search_to_nth_level(i,l,t,m,lm,c,a,mtr) \
+	btr_cur_search_to_nth_level_func(i,l,t,m,lm,c,mtr)
 #endif /* BTR_CUR_HASH_ADAPT */
 
 /*****************************************************************//**
 Opens a cursor at either end of an index.
 @return DB_SUCCESS or error code */
 dberr_t
-btr_cur_open_at_index_side_func(
-/*============================*/
+btr_cur_open_at_index_side(
 	bool		from_left,	/*!< in: true if open to the low end,
 					false if to the high end */
 	dict_index_t*	index,		/*!< in: index */
@@ -233,29 +228,19 @@ btr_cur_open_at_index_side_func(
 	btr_cur_t*	cursor,		/*!< in/out: cursor */
 	ulint		level,		/*!< in: level to search for
 					(0=leaf) */
-	const char*	file,		/*!< in: file name */
-	unsigned	line,		/*!< in: line where called */
 	mtr_t*		mtr)		/*!< in/out: mini-transaction */
 	MY_ATTRIBUTE((nonnull));
-
-#define btr_cur_open_at_index_side(f,i,l,c,lv,m)			\
-	btr_cur_open_at_index_side_func(f,i,l,c,lv,__FILE__,__LINE__,m)
 
 /**********************************************************************//**
 Positions a cursor at a randomly chosen position within a B-tree.
 @return true if the index is available and we have put the cursor, false
 if the index is unavailable */
 bool
-btr_cur_open_at_rnd_pos_func(
-/*=========================*/
+btr_cur_open_at_rnd_pos(
 	dict_index_t*	index,		/*!< in: index */
 	ulint		latch_mode,	/*!< in: BTR_SEARCH_LEAF, ... */
 	btr_cur_t*	cursor,		/*!< in/out: B-tree cursor */
-	const char*	file,		/*!< in: file name */
-	unsigned	line,		/*!< in: line where called */
 	mtr_t*		mtr);		/*!< in: mtr */
-#define btr_cur_open_at_rnd_pos(i,l,c,m)				\
-	btr_cur_open_at_rnd_pos_func(i,l,c,__FILE__,__LINE__,m)
 /*************************************************************//**
 Tries to perform an insert to a page in an index tree, next to cursor.
 It is assumed that mtr holds an x-latch on the page. The operation does
@@ -949,9 +934,9 @@ is still a good change of success a little later.  Try this many
 times. */
 #define BTR_CUR_RETRY_DELETE_N_TIMES	100
 /** If pessimistic delete fails because of lack of file space, there
-is still a good change of success a little later.  Sleep this many
-microseconds between retries. */
-#define BTR_CUR_RETRY_SLEEP_TIME	50000
+is still a good change of success a little later.  Sleep this time
+between retries. */
+static const std::chrono::milliseconds BTR_CUR_RETRY_SLEEP_TIME(50);
 
 /** The reference in a field for which data is stored on a different page.
 The reference is at the end of the 'locally' stored part of the field.
@@ -984,16 +969,16 @@ earlier version of the row.  In rollback we are not allowed to free an
 inherited external field. */
 #define BTR_EXTERN_INHERITED_FLAG	64U
 
+#ifdef BTR_CUR_HASH_ADAPT
 /** Number of searches down the B-tree in btr_cur_search_to_nth_level(). */
-extern Atomic_counter<ulint>	btr_cur_n_non_sea;
+extern ib_counter_t<ulint, ib_counter_element_t>	btr_cur_n_non_sea;
 /** Old value of btr_cur_n_non_sea.  Copied by
 srv_refresh_innodb_monitor_stats().  Referenced by
 srv_printf_innodb_monitor(). */
 extern ulint	btr_cur_n_non_sea_old;
-#ifdef BTR_CUR_HASH_ADAPT
 /** Number of successful adaptive hash index lookups in
 btr_cur_search_to_nth_level(). */
-extern ulint	btr_cur_n_sea;
+extern ib_counter_t<ulint, ib_counter_element_t>	btr_cur_n_sea;
 /** Old value of btr_cur_n_sea.  Copied by
 srv_refresh_innodb_monitor_stats().  Referenced by
 srv_printf_innodb_monitor(). */

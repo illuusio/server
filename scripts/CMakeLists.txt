@@ -30,7 +30,7 @@ ENDMACRO()
 
 IF(NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CROSSCOMPILING_EMULATOR)
  INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include)
- ADD_EXECUTABLE(comp_sql comp_sql.c)
+ ADD_EXECUTABLE(comp_sql comp_sql.c ../sql/sql_bootstrap.cc)
  TARGET_LINK_LIBRARIES(comp_sql)
 ENDIF()
 
@@ -40,19 +40,22 @@ IF(NOT WIN32 OR  (CMAKE_CROSSCOMPILING AND NOT DEFINED CMAKE_CROSSCOMPILING_EMUL
   MARK_AS_ADVANCED(CAT_EXECUTABLE)
 ENDIF()
 
+IF(NOT ("${CMAKE_BINARY_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}"))
+  FOREACH(f fill_help_tables.sql mysql_system_tables_fix.sql mysql_system_tables.sql mysql_system_tables_data.sql mysql_performance_tables.sql)
+    CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/${f} ${CMAKE_CURRENT_BINARY_DIR}/${f} COPYONLY)
+  ENDFOREACH()
+ENDIF()
+
 IF(CAT_EXECUTABLE)
   SET(CAT_COMMAND COMMAND
-    ${CMAKE_COMMAND} -E chdir  ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CAT_EXECUTABLE} mysql_system_tables_fix.sql mysql_system_tables.sql mysql_performance_tables.sql >
-    ${CMAKE_CURRENT_BINARY_DIR}/mysql_fix_privilege_tables.sql
+    ${CAT_EXECUTABLE} mysql_system_tables_fix.sql mysql_system_tables.sql mysql_performance_tables.sql mysql_sys_schema.sql>
+    mysql_fix_privilege_tables.sql
   )
 ELSEIF(WIN32)
-  FILE(TO_NATIVE_PATH ${CMAKE_CURRENT_BINARY_DIR}/mysql_fix_privilege_tables.sql
-   native_outfile )
   SET(CAT_COMMAND
-   COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_CURRENT_SOURCE_DIR}
-   cmd /c copy /b mysql_system_tables_fix.sql + mysql_system_tables.sql +  mysql_performance_tables.sql
-   ${native_outfile} )
+   COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_CURRENT_BINARY_DIR}
+   cmd /c copy /b mysql_system_tables_fix.sql + mysql_system_tables.sql +  mysql_performance_tables.sql + mysql_sys_schema.sql
+   mysql_fix_privilege_tables.sql )
 ELSE()
   MESSAGE(FATAL_ERROR "Cannot concatenate files")
 ENDIF()
@@ -70,6 +73,7 @@ ADD_CUSTOM_COMMAND(
   ${CMAKE_CURRENT_SOURCE_DIR}/mysql_system_tables.sql
   ${CMAKE_CURRENT_SOURCE_DIR}/mysql_system_tables_fix.sql
   ${CMAKE_CURRENT_SOURCE_DIR}/mysql_performance_tables.sql
+  ${CMAKE_CURRENT_BINARY_DIR}/mysql_sys_schema.sql
 )
 
 # Add target for the above to be built
@@ -78,7 +82,7 @@ ADD_CUSTOM_TARGET(GenFixPrivs
   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mysql_fix_privilege_tables_sql.c
 )
 
-IF(UNIX)
+IF(UNIX AND NOT WITHOUT_SERVER)
  FILE(WRITE ${CMAKE_CURRENT_BINARY_DIR}/make_binary_distribution
    "cd ${CMAKE_BINARY_DIR} && '${CMAKE_CPACK_COMMAND}' -G TGZ --config CPackConfig.cmake\n" )
  EXECUTE_PROCESS(
@@ -113,6 +117,7 @@ INSTALL(FILES
   ${CMAKE_CURRENT_SOURCE_DIR}/mysql_test_data_timezone.sql
   ${CMAKE_CURRENT_BINARY_DIR}/maria_add_gis_sp.sql
   ${CMAKE_CURRENT_BINARY_DIR}/maria_add_gis_sp_bootstrap.sql
+  ${CMAKE_CURRENT_BINARY_DIR}/mysql_sys_schema.sql
   ${FIX_PRIVILEGES_SQL}
   DESTINATION ${INSTALL_MYSQLSHAREDIR} COMPONENT Server
 )
@@ -141,11 +146,11 @@ IF(UNIX)
   # FIND_PROC and CHECK_PID are used by mysqld_safe
 IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
   SET (FIND_PROC
-    "ps wwwp $PID | grep -v mysqld_safe | grep -- $MYSQLD > /dev/null")
+    "ps wwwp $PID | grep -vE mariadbd-safe -vE mysqld_safe | grep -- $MYSQLD > /dev/null")
 ENDIF()
 IF(NOT FIND_PROC AND CMAKE_SYSTEM_NAME MATCHES "SunOS")
   SET (FIND_PROC
-    "ps -p $PID | grep -v mysqld_safe | grep -- $MYSQLD > /dev/null")
+    "ps -p $PID | grep -v mariadbd-safe | grep -- $MYSQLD > /dev/null")
 ENDIF()
 
 IF(NOT FIND_PROC)
@@ -153,7 +158,7 @@ IF(NOT FIND_PROC)
   EXECUTE_PROCESS(COMMAND ps -uaxww OUTPUT_QUIET ERROR_QUIET RESULT_VARIABLE result)
   IF(result MATCHES 0)
      SET( FIND_PROC
-       "ps -uaxww | grep -v mysqld_safe | grep -- $MYSQLD | grep $PID > /dev/null")
+       "ps -uaxww | grep -v mariadbd-safe | grep -- $MYSQLD | grep $PID > /dev/null")
   ENDIF()
 ENDIF()
 
@@ -161,7 +166,7 @@ IF(NOT FIND_PROC)
   # SysV style
   EXECUTE_PROCESS(COMMAND ps -ef OUTPUT_QUIET ERROR_QUIET RESULT_VARIABLE result)
   IF(result MATCHES 0)
-    SET( FIND_PROC "ps -ef | grep -v mysqld_safe | grep -- $MYSQLD | grep $PID > /dev/null")
+    SET( FIND_PROC "ps -ef | grep -v mariadbd-safe | grep -- $MYSQLD | grep $PID > /dev/null")
   ENDIF()
 ENDIF()
 
@@ -208,7 +213,7 @@ SET(pkgdata_locations "$basedir/${INSTALL_MYSQLSHAREDIR} $basedir/share $basedir
 # install mysql_install_db.sh at this point since it needs
 # different values for the above variables that will change
 # afterwards
-IF(UNIX)
+IF(UNIX AND NOT WITHOUT_SERVER)
   CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/mysql_install_db.sh
     ${CMAKE_CURRENT_BINARY_DIR}/mariadb-install-db ESCAPE_QUOTES @ONLY)
   EXECUTE_PROCESS(COMMAND chmod +x ${CMAKE_CURRENT_BINARY_DIR}/mariadb-install-db)
@@ -254,6 +259,11 @@ SET(msql2mysql_COMPONENT Client)
 SET(mariadb-access_COMPONENT Client)
 SET(mariadb-find-rows_COMPONENT Client)
 SET(mytop_COMPONENT Mytop)
+SET(mariadb-hotcopy_COMPONENT COMPONENT Client)
+SET(mariadb-convert-table-format_COMPONENT COMPONENT Client)
+SET(mariadb-setpermission_COMPONENT COMPONENT Client)
+SET(mariadb-secure-installation_COMPONENT COMPONENT Client)
+SET(mariadb-dumpslow_COMPONENT COMPONENT Client)
 
 IF(WIN32)
   # On Windows, some .sh and some .pl.in files are configured
@@ -312,7 +322,7 @@ ELSE()
       mariadb-fix-extensions
       mariadbd-multi
       mariadbd-safe
-      mariadb-dumpslow
+      ${SYSTEMD_SCRIPTS}
     )
   ENDIF()
   # Configure this one, for testing, but do not install it.
@@ -326,12 +336,12 @@ ELSE()
     mariadb-access
     mariadb-convert-table-format
     mariadb-find-rows
+    mariadb-dumpslow
     mysql_config
     mytop
     mariadb-hotcopy
     ${SERVER_SCRIPTS}
     ${WSREP_SCRIPTS}
-    ${SYSTEMD_SCRIPTS}
   )
 
   FOREACH(file ${BIN_SCRIPTS})
@@ -393,3 +403,5 @@ IF(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_CXX_FLAGS MATCHES "-static")
     COMPONENT Development)
   ENDIF()
 ENDIF()
+
+ADD_SUBDIRECTORY(sys_schema)

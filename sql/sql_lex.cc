@@ -52,7 +52,8 @@ const LEX_CSTRING null_clex_str=  {NULL, 0};
 const LEX_CSTRING empty_clex_str= {"", 0};
 const LEX_CSTRING star_clex_str=  {"*", 1};
 const LEX_CSTRING param_clex_str= {"?", 1};
-
+const LEX_CSTRING NULL_clex_str=  {STRING_WITH_LEN("NULL")};
+const LEX_CSTRING error_clex_str= {STRING_WITH_LEN("error")};
 
 /**
   Helper action for a case expression statement (the expr in 'CASE expr').
@@ -613,7 +614,8 @@ Query_tables_list::binlog_stmt_unsafe_errcode[BINLOG_STMT_UNSAFE_COUNT] =
   ER_BINLOG_UNSAFE_CREATE_SELECT_AUTOINC,
   ER_BINLOG_UNSAFE_UPDATE_IGNORE,
   ER_BINLOG_UNSAFE_INSERT_TWO_KEYS,
-  ER_BINLOG_UNSAFE_AUTOINC_NOT_FIRST
+  ER_BINLOG_UNSAFE_AUTOINC_NOT_FIRST,
+  ER_BINLOG_UNSAFE_SKIP_LOCKED
 };
 
 
@@ -1252,35 +1254,42 @@ void LEX::start(THD *thd_arg)
   unit.slave= current_select= all_selects_list= &builtin_select;
   sql_cache= LEX::SQL_CACHE_UNSPECIFIED;
   describe= 0;
-  analyze_stmt= 0;
-  explain_json= false;
   context_analysis_only= 0;
   derived_tables= 0;
   with_cte_resolution= false;
   only_cte_resolution= false;
-  safe_to_cache_query= 1;
   parsing_options.reset();
-  empty_field_list_on_rset= 0;
   part_info= 0;
   m_sql_cmd= NULL;
   duplicates= DUP_ERROR;
-  ignore= 0;
   spname= NULL;
   spcont= NULL;
   proc_list.first= 0;
-  escape_used= FALSE;
-  default_used= FALSE;
   query_tables= 0;
   reset_query_tables_list(FALSE);
   clause_that_disallows_subselect= NULL;
-  selects_allow_into= FALSE;
-  selects_allow_procedure= FALSE;
-  use_only_table_context= FALSE;
-  parse_vcol_expr= FALSE;
-  check_exists= FALSE;
-  create_info.lex_start();
-  verbose= 0;
 
+  /* reset bool variables */
+  is_shutdown_wait_for_slaves= 0;
+  selects_allow_procedure= 0;
+  parse_vcol_expr= 0;
+  analyze_stmt= 0;
+  explain_json= 0;
+  local_file= 0;
+  check_exists= 0;
+  verbose= 0;
+  safe_to_cache_query= 1;
+  ignore= 0;
+  next_is_main= 0;
+  next_is_down= 0;
+  empty_field_list_on_rset= 0;
+  use_only_table_context= 0;
+  escape_used= 0;
+  default_used= 0;
+  with_rownum= FALSE;
+  is_lex_started= 1;
+
+  create_info.lex_start();
   name= null_clex_str;
   event_parse_data= NULL;
   profile_options= PROFILE_NONE;
@@ -1308,11 +1317,6 @@ void LEX::start(THD *thd_arg)
 
   vers_conditions.empty();
   period_conditions.empty();
-
-  is_lex_started= TRUE;
-
-  next_is_main= FALSE;
-  next_is_down= FALSE;
 
   wild= 0;
   exchange= 0;
@@ -1403,6 +1407,7 @@ int Lex_input_stream::find_keyword(Lex_ident_cli_st *kwd,
       case EXCEPTION_MARIADB_SYM:      return EXCEPTION_ORACLE_SYM;
       case EXIT_MARIADB_SYM:           return EXIT_ORACLE_SYM;
       case GOTO_MARIADB_SYM:           return GOTO_ORACLE_SYM;
+      case MINUS_ORACLE_SYM:           return EXCEPT_SYM;
       case NUMBER_MARIADB_SYM:         return NUMBER_ORACLE_SYM;
       case OTHERS_MARIADB_SYM:         return OTHERS_ORACLE_SYM;
       case PACKAGE_MARIADB_SYM:        return PACKAGE_ORACLE_SYM;
@@ -2779,8 +2784,10 @@ int Lex_input_stream::scan_ident_middle(THD *thd, Lex_ident_cli_st *str,
   if (resolve_introducer && m_tok_start[0] == '_')
   {
     ErrConvString csname(str->str + 1, str->length - 1, &my_charset_bin);
+    myf utf8_flag= thd->get_utf8_flag();
     CHARSET_INFO *cs= get_charset_by_csname(csname.ptr(),
-                                            MY_CS_PRIMARY, MYF(0));
+                                                 MY_CS_PRIMARY,
+                                             MYF(utf8_flag));
     if (cs)
     {
       body_utf8_append(m_cpp_text_start, m_cpp_tok_start + length);
@@ -2896,28 +2903,33 @@ void st_select_lex_unit::init_query()
 {
   init_query_common();
   set_linkage(GLOBAL_OPTIONS_TYPE);
-  lim.set_unlimited();
+  lim.clear();
   union_distinct= 0;
-  prepared= optimized= optimized_2= executed= 0;
-  bag_set_op_optimized= 0;
-  optimize_started= 0;
   item= 0;
   union_result= 0;
   table= 0;
   fake_select_lex= 0;
   saved_fake_select_lex= 0;
-  cleaned= 0;
   item_list.empty();
-  describe= 0;
   found_rows_for_union= 0;
   derived= 0;
-  is_view= false;
   with_clause= 0;
   with_element= 0;
+
+  /* reset all bit fields */
+  prepared= 0;
+  optimized= 0;
+  optimized_2= 0;
+  executed= 0;
+  cleaned= 0;
+  bag_set_op_optimized= 0;
+  optimize_started= 0;
+  have_except_all_or_intersect_all= 0;
+  with_wrapped_tvc= 0;
+  is_view= 0;
+  describe= 0;
   cloned_from= 0;
-  columns_are_renamed= false;
-  with_wrapped_tvc= false;
-  have_except_all_or_intersect_all= false;
+  columns_are_renamed= 0;
 }
 
 void st_select_lex::init_query()
@@ -2930,14 +2942,39 @@ void st_select_lex::init_query()
   leaf_tables_prep.empty();
   leaf_tables.empty();
   item_list.empty();
+  fix_after_optimize.empty();
   min_max_opt_list.empty();
+  limit_params.clear();
   join= 0;
   having= prep_having= where= prep_where= 0;
   cond_pushed_into_where= cond_pushed_into_having= 0;
   attach_to_conds.empty();
   olap= UNSPECIFIED_OLAP_TYPE;
+
+  /* reset all bit fields */
+  is_item_list_lookup= 0;
+  have_merged_subqueries= 0;
+  is_set_query_expr_tail= 0;
+  with_sum_func= with_rownum= 0;
+  braces= 0;
+  automatic_brackets= 0;
   having_fix_field= 0;
   having_fix_field_for_pushed_cond= 0;
+  subquery_in_having= 0;
+  is_item_list_lookup= 0;
+  with_all_modifier= 0;
+  is_correlated= 0;
+  first_natural_join_processing= 1;
+  first_cond_optimization= 1;
+  no_wrap_view_item= 0;
+  exclude_from_table_unique_test= 0;
+  in_tvc= 0;
+  skip_locked= 0;
+  m_non_agg_field_used= 0;
+  m_agg_func_used= 0;
+  m_custom_agg_func_used= 0;
+  is_service_select= 0;
+
   context.select_lex= this;
   context.init();
   cond_count= between_count= with_wild= 0;
@@ -2950,29 +2987,18 @@ void st_select_lex::init_query()
   n_child_sum_items= 0;
   hidden_bit_fields= 0;
   fields_in_window_functions= 0;
-  subquery_in_having= explicit_limit= 0;
-  is_item_list_lookup= 0;
   changed_elements= 0;
-  first_natural_join_processing= 1;
-  first_cond_optimization= 1;
-  is_service_select= 0;
   parsing_place= NO_MATTER;
   save_parsing_place= NO_MATTER;
   context_analysis_place= NO_MATTER;
-  exclude_from_table_unique_test= no_wrap_view_item= FALSE;
   nest_level= 0;
   link_next= 0;
   prep_leaf_list_state= UNINIT;
-  have_merged_subqueries= FALSE;
   bzero((char*) expr_cache_may_be_used, sizeof(expr_cache_may_be_used));
   select_list_tables= 0;
-  m_non_agg_field_used= false;
-  m_agg_func_used= false;
-  m_custom_agg_func_used= false;
   window_specs.empty();
   window_funcs.empty();
   tvc= 0;
-  in_tvc= false;
   versioned_tables= 0;
   pushdown_select= 0;
 }
@@ -2988,6 +3014,7 @@ void st_select_lex::init_select()
   db= null_clex_str;
   having= 0;
   table_join_options= 0;
+  select_lock= select_lock_type::NONE;
   in_sum_expr= with_wild= 0;
   options= 0;
   ftfunc_list_alloc.empty();
@@ -2995,20 +3022,24 @@ void st_select_lex::init_select()
   ftfunc_list= &ftfunc_list_alloc;
   order_list.empty();
   /* Set limit and offset to default values */
-  select_limit= 0;      /* denotes the default limit = HA_POS_ERROR */
-  offset_limit= 0;      /* denotes the default offset = 0 */
-  is_set_query_expr_tail= false;
+  limit_params.clear();
+
+  /* Reset bit fields */
+  is_set_query_expr_tail= 0;
   with_sum_func= 0;
   with_all_modifier= 0;
   is_correlated= 0;
+  in_tvc= 0;
+  skip_locked= 0;
+  m_non_agg_field_used= 0;
+  m_agg_func_used= 0;
+  m_custom_agg_func_used= 0;
+
   cur_pos_in_select_list= UNDEF_POS;
   cond_value= having_value= Item::COND_UNDEF;
   inner_refs_list.empty();
   insert_tables= 0;
   merged_into= 0;
-  m_non_agg_field_used= false;
-  m_agg_func_used= false;
-  m_custom_agg_func_used= false;
   name_visibility_map.clear_all();
   with_dep= 0;
   join= 0;
@@ -3018,7 +3049,6 @@ void st_select_lex::init_select()
   tvc= 0;
   in_funcs.empty();
   curr_tvc_name= 0;
-  in_tvc= false;
   versioned_tables= 0;
   nest_flags= 0;
 }
@@ -3381,7 +3411,7 @@ bool st_select_lex::mark_as_dependent(THD *thd, st_select_lex *last,
 */
 bool st_select_lex::test_limit()
 {
-  if (select_limit != 0)
+  if (limit_params.select_limit)
   {
     my_error(ER_NOT_SUPPORTED_YET, MYF(0),
              "LIMIT & IN/ALL/ANY/SOME subquery");
@@ -3400,24 +3430,26 @@ st_select_lex* st_select_lex_unit::outer_select()
 
 ha_rows st_select_lex::get_offset()
 {
-  ulonglong val= 0;
+  ha_rows val= 0;
 
+  Item *offset_limit= limit_params.offset_limit;
   if (offset_limit)
   {
     // see comment for st_select_lex::get_limit()
     bool err= offset_limit->fix_fields_if_needed(master_unit()->thd, NULL);
     DBUG_ASSERT(!err);
-    val= err ? HA_POS_ERROR : offset_limit->val_uint();
+    val= err ? HA_POS_ERROR : (ha_rows)offset_limit->val_uint();
   }
 
-  return (ha_rows)val;
+  return val;
 }
 
 
 ha_rows st_select_lex::get_limit()
 {
-  ulonglong val= HA_POS_ERROR;
+  ha_rows val= HA_POS_ERROR;
 
+  Item *select_limit= limit_params.select_limit;
   if (select_limit)
   {
     /*
@@ -3448,10 +3480,10 @@ ha_rows st_select_lex::get_limit()
     */
     bool err= select_limit->fix_fields_if_needed(master_unit()->thd, NULL);
     DBUG_ASSERT(!err);
-    val= err ? HA_POS_ERROR : select_limit->val_uint();
+    val= err ? HA_POS_ERROR : (ha_rows) select_limit->val_uint();
   }
 
-  return (ha_rows)val;
+  return val;
 }
 
 
@@ -3515,12 +3547,6 @@ List<Item>* st_select_lex::get_item_list()
 {
   return &item_list;
 }
-
-ulong st_select_lex::get_table_join_options()
-{
-  return table_join_options;
-}
-
 
 bool st_select_lex::setup_ref_array(THD *thd, uint order_group_num)
 {
@@ -3624,10 +3650,10 @@ void LEX::print(String *str, enum_query_type query_type)
         (*ord->item)->print(str, query_type);
       }
     }
-    if (sel->select_limit)
+    if (sel->limit_params.select_limit)
     {
       str->append(STRING_WITH_LEN(" LIMIT "));
-      sel->select_limit->print(str, query_type);
+      sel->limit_params.select_limit->print(str, query_type);
     }
   }
   else if (sql_command == SQLCOM_DELETE)
@@ -3659,10 +3685,10 @@ void LEX::print(String *str, enum_query_type query_type)
         (*ord->item)->print(str, query_type);
       }
     }
-    if (sel->select_limit)
+    if (sel->limit_params.select_limit)
     {
       str->append(STRING_WITH_LEN(" LIMIT "));
-      sel->select_limit->print(str, query_type);
+      sel->limit_params.select_limit->print(str, query_type);
     }
   }
   else
@@ -3764,15 +3790,38 @@ void st_select_lex::print_limit(THD *thd,
       return;
     }
   }
-  if (explicit_limit && select_limit)
+  if (limit_params.explicit_limit &&
+      limit_params.select_limit)
   {
-    str->append(STRING_WITH_LEN(" limit "));
-    if (offset_limit)
+    /*
+      [OFFSET n]
+      FETCH FIRST n ROWS WITH TIES
+
+      For FETCH FIRST n ROWS ONLY we fall back to the "limit" specification
+      as it's identical.
+    */
+    if (limit_params.with_ties)
     {
-      offset_limit->print(str, query_type);
-      str->append(',');
+      if (limit_params.offset_limit)
+      {
+        str->append(STRING_WITH_LEN(" offset "));
+        limit_params.offset_limit->print(str, query_type);
+        str->append(STRING_WITH_LEN(" rows "));
+      }
+      str->append(STRING_WITH_LEN(" fetch first "));
+      limit_params.select_limit->print(str, query_type);
+      str->append(STRING_WITH_LEN(" rows with ties"));
     }
-    select_limit->print(str, query_type);
+    else
+    {
+      str->append(STRING_WITH_LEN(" limit "));
+      if (limit_params.offset_limit)
+      {
+        limit_params.offset_limit->print(str, query_type);
+        str->append(',');
+      }
+      limit_params.select_limit->print(str, query_type);
+    }
   }
 }
 
@@ -3826,6 +3875,12 @@ void LEX::cleanup_lex_after_parse_error(THD *thd)
       thd->lex->sphead= NULL;
     }
   }
+
+  /*
+    json_table must be NULL before the query.
+    Didn't want to overload LEX::start, it's enough to put it here.
+  */
+  thd->lex->json_table= 0;
 }
 
 /*
@@ -3912,9 +3967,10 @@ void Query_tables_list::destroy_query_tables_list()
 */
 
 LEX::LEX()
-  : explain(NULL), result(0), part_info(NULL), arena_for_set_stmt(0), mem_root_for_set_stmt(0),
-    option_type(OPT_DEFAULT), context_analysis_only(0), sphead(0),
-    default_used(0), is_lex_started(0), limit_rows_examined_cnt(ULONGLONG_MAX)
+  : explain(NULL), result(0), part_info(NULL), arena_for_set_stmt(0),
+    mem_root_for_set_stmt(0), json_table(NULL), default_used(0),
+    with_rownum(0), is_lex_started(0), option_type(OPT_DEFAULT),
+    context_analysis_only(0), sphead(0), limit_rows_examined_cnt(ULONGLONG_MAX)
 {
 
   init_dynamic_array2(PSI_INSTRUMENT_ME, &plugins, sizeof(plugin_ref),
@@ -3980,7 +4036,7 @@ bool LEX::can_be_merged()
           first_select_lex()->with_sum_func == 0 &&
           first_select_lex()->table_list.elements >= 1 &&
           !(first_select_lex()->options & SELECT_DISTINCT) &&
-          first_select_lex()->select_limit == 0);
+          first_select_lex()->limit_params.select_limit == 0);
 }
 
 
@@ -4027,6 +4083,10 @@ bool LEX::can_use_merged()
   SYNOPSIS
     LEX::can_not_use_merged()
 
+  @param no_update_or_delete Set to 1 if we can't use merge with multiple-table
+                             updates, like when used from
+                             TALE_LIST::init_derived()
+
   DESCRIPTION
     Temporary table algorithm will be used on all SELECT levels for queries
     listed here (see also LEX::can_use_merged()).
@@ -4036,10 +4096,9 @@ bool LEX::can_use_merged()
     TRUE  - VIEWs with MERGE algorithms can be used
 */
 
-bool LEX::can_not_use_merged()
+bool LEX::can_not_use_merged(bool no_update_or_delete)
 {
-  switch (sql_command)
-  {
+  switch (sql_command) {
   case SQLCOM_CREATE_VIEW:
   case SQLCOM_SHOW_CREATE:
   /*
@@ -4049,6 +4108,13 @@ bool LEX::can_not_use_merged()
   */
   case SQLCOM_SHOW_FIELDS:
     return TRUE;
+
+  case SQLCOM_UPDATE_MULTI:
+  case SQLCOM_DELETE_MULTI:
+    if (no_update_or_delete)
+      return TRUE;
+    /* Fall through */
+
   default:
     return FALSE;
   }
@@ -4179,9 +4245,8 @@ void st_select_lex_unit::set_limit(st_select_lex *sl)
 {
   DBUG_ASSERT(!thd->stmt_arena->is_stmt_prepare());
 
-  lim.set_limit(sl->get_limit(), sl->get_offset());
+  lim.set_limit(sl->get_limit(), sl->get_offset(), sl->limit_params.with_ties);
 }
-
 
 /**
   Decide if a temporary table is needed for the UNION.
@@ -4362,7 +4427,7 @@ void LEX::set_trg_event_type_for_tables()
       parsing.
     */
     if (static_cast<int>(tables->lock_type) >=
-        static_cast<int>(TL_WRITE_ALLOW_WRITE))
+        static_cast<int>(TL_FIRST_WRITE))
       tables->trg_event_map= new_trg_event_map;
     tables= tables->next_local;
   }
@@ -4806,7 +4871,7 @@ bool st_select_lex::optimize_unflattened_subqueries(bool const_only)
 
     if (subquery_predicate)
     {
-      if (!subquery_predicate->fixed)
+      if (!subquery_predicate->fixed())
       {
         /*
          This subquery was excluded as part of some expression so it is
@@ -5040,6 +5105,7 @@ void st_select_lex::remap_tables(TABLE_LIST *derived, table_map map,
                                  uint tablenr, SELECT_LEX *parent_lex)
 {
   bool first_table= TRUE;
+  bool has_table_function= FALSE;
   TABLE_LIST *tl;
   table_map first_map;
   uint first_tablenr;
@@ -5081,6 +5147,19 @@ void st_select_lex::remap_tables(TABLE_LIST *derived, table_map map,
         emb && emb->select_lex == old_sl;
         emb= emb->embedding)
       emb->select_lex= parent_lex;
+
+    if (tl->table_function)
+      has_table_function= TRUE;
+  }
+
+  if (has_table_function)
+  {
+    ti.rewind();
+    while ((tl= ti++))
+    {
+      if (tl->table_function)
+        tl->table_function->fix_after_pullout(tl, parent_lex, true);
+    }
   }
 }
 
@@ -5251,6 +5330,9 @@ void SELECT_LEX::update_used_tables()
       Item *left_expr= tl->jtbm_subselect->left_exp();
       left_expr->walk(&Item::update_table_bitmaps_processor, FALSE, NULL);
     }
+
+    if (tl->table_function)
+      tl->table_function->update_used_tables();
 
     embedding= tl->embedding;
     while (embedding)
@@ -8713,21 +8795,21 @@ bool st_select_lex::collect_grouping_fields(THD *thd)
     condition over the grouping fields of this select. The method uses
     the call-back parameter checker to check whether a primary formula
     depends only on grouping fields.
-    The subformulas that are not usable are marked with the flag NO_EXTRACTION_FL.
+    The subformulas that are not usable are marked with the flag MARKER_NO_EXTRACTION.
     The subformulas that can be entierly extracted are marked with the flag 
-    FULL_EXTRACTION_FL.
+    MARKER_FULL_EXTRACTION.
   @note
     This method is called before any call of extract_cond_for_grouping_fields.
-    The flag NO_EXTRACTION_FL set in a subformula allows to avoid building clone
+    The flag MARKER_NO_EXTRACTION set in a subformula allows to avoid building clone
     for the subformula when extracting the pushable condition.
-    The flag FULL_EXTRACTION_FL allows to delete later all top level conjuncts
+    The flag MARKER_FULL_EXTRACTION allows to delete later all top level conjuncts
     from cond.
 */ 
 
 void 
 st_select_lex::check_cond_extraction_for_grouping_fields(THD *thd, Item *cond)
 {
-  if (cond->get_extraction_flag() == NO_EXTRACTION_FL)
+  if (cond->get_extraction_flag() == MARKER_NO_EXTRACTION)
     return;
   cond->clear_extraction_flag();
   if (cond->type() == Item::COND_ITEM)
@@ -8738,26 +8820,26 @@ st_select_lex::check_cond_extraction_for_grouping_fields(THD *thd, Item *cond)
 
     List<Item> *arg_list=  ((Item_cond*) cond)->argument_list();
     List_iterator<Item> li(*arg_list);
-    uint count= 0;         // to count items not containing NO_EXTRACTION_FL
-    uint count_full= 0;    // to count items with FULL_EXTRACTION_FL
+    uint count= 0;         // to count items not containing MARKER_NO_EXTRACTION
+    uint count_full= 0;    // to count items with MARKER_FULL_EXTRACTION
     Item *item;
     while ((item=li++))
     {
       check_cond_extraction_for_grouping_fields(thd, item);
-      if (item->get_extraction_flag() !=  NO_EXTRACTION_FL)
+      if (item->get_extraction_flag() !=  MARKER_NO_EXTRACTION)
       {
         count++;
-        if (item->get_extraction_flag() == FULL_EXTRACTION_FL)
+        if (item->get_extraction_flag() == MARKER_FULL_EXTRACTION)
           count_full++;
       }
       else if (!and_cond)
         break;
     }
     if ((and_cond && count == 0) || item)
-      cond->set_extraction_flag(NO_EXTRACTION_FL);
+      cond->set_extraction_flag(MARKER_NO_EXTRACTION);
     if (count_full == arg_list->elements)
     {
-      cond->set_extraction_flag(FULL_EXTRACTION_FL);
+      cond->set_extraction_flag(MARKER_FULL_EXTRACTION);
     }
     if (cond->get_extraction_flag() != 0)
     {
@@ -8769,7 +8851,7 @@ st_select_lex::check_cond_extraction_for_grouping_fields(THD *thd, Item *cond)
   else
   {
     int fl= cond->excl_dep_on_grouping_fields(this) && !cond->is_expensive() ?
-      FULL_EXTRACTION_FL : NO_EXTRACTION_FL;
+      MARKER_FULL_EXTRACTION : MARKER_NO_EXTRACTION;
     cond->set_extraction_flag(fl);
   }
 }
@@ -8789,7 +8871,7 @@ st_select_lex::check_cond_extraction_for_grouping_fields(THD *thd, Item *cond)
     For the given condition cond this method finds out what condition depended
     only on the grouping fields can be extracted from cond. If such condition C
     exists the method builds the item for it.
-    This method uses the flags NO_EXTRACTION_FL and FULL_EXTRACTION_FL set by the
+    This method uses the flags MARKER_NO_EXTRACTION and MARKER_FULL_EXTRACTION set by the
     preliminary call of st_select_lex::check_cond_extraction_for_grouping_fields
     to figure out whether a subformula depends only on these fields or not.
   @note
@@ -8809,7 +8891,7 @@ st_select_lex::check_cond_extraction_for_grouping_fields(THD *thd, Item *cond)
 Item *st_select_lex::build_cond_for_grouping_fields(THD *thd, Item *cond,
                                                     bool no_top_clones)
 {
-  if (cond->get_extraction_flag() == FULL_EXTRACTION_FL)
+  if (cond->get_extraction_flag() == MARKER_FULL_EXTRACTION)
   {
     if (no_top_clones)
       return cond;
@@ -8833,7 +8915,7 @@ Item *st_select_lex::build_cond_for_grouping_fields(THD *thd, Item *cond,
     Item *item;
     while ((item=li++))
     {
-      if (item->get_extraction_flag() == NO_EXTRACTION_FL)
+      if (item->get_extraction_flag() == MARKER_NO_EXTRACTION)
       {
         DBUG_ASSERT(cond_and);
         item->clear_extraction_flag();
@@ -9264,6 +9346,26 @@ Item *LEX::make_item_func_substr(THD *thd, Item *a, Item *b)
   return (thd->variables.sql_mode & MODE_ORACLE) ?
     new (thd->mem_root) Item_func_substr_oracle(thd, a, b) :
     new (thd->mem_root) Item_func_substr(thd, a, b);
+}
+
+
+Item *LEX::make_item_func_sysdate(THD *thd, uint fsp)
+{
+  /*
+    Unlike other time-related functions, SYSDATE() is
+    replication-unsafe because it is not affected by the
+    TIMESTAMP variable.  It is unsafe even if
+    sysdate_is_now=1, because the slave may have
+    sysdate_is_now=0.
+  */
+  set_stmt_unsafe(LEX::BINLOG_STMT_UNSAFE_SYSTEM_FUNCTION);
+  Item *item= global_system_variables.sysdate_is_now == 0 ?
+              (Item *) new (thd->mem_root) Item_func_sysdate_local(thd, fsp) :
+              (Item *) new (thd->mem_root) Item_func_now_local(thd, fsp);
+  if (unlikely(item == NULL))
+    return NULL;
+  safe_to_cache_query=0;
+  return item;
 }
 
 
@@ -9726,18 +9828,29 @@ void Lex_select_lock::set_to(SELECT_LEX *sel)
       sel->master_unit()->set_lock_to_the_last_select(*this);
     else
     {
+      thr_lock_type lock_type;
       sel->parent_lex->safe_to_cache_query= 0;
-      if (update_lock)
+      if (unlikely(skip_locked))
       {
-        sel->lock_type= TL_WRITE;
-        sel->set_lock_for_tables(TL_WRITE, false);
+        lock_type= update_lock ? TL_WRITE_SKIP_LOCKED : TL_READ_SKIP_LOCKED;
       }
       else
       {
-        sel->lock_type= TL_READ_WITH_SHARED_LOCKS;
-        sel->set_lock_for_tables(TL_READ_WITH_SHARED_LOCKS, false);
+        lock_type= update_lock ? TL_WRITE : TL_READ_WITH_SHARED_LOCKS;
       }
+      sel->lock_type= lock_type;
+      sel->select_lock= (update_lock ? st_select_lex::select_lock_type::FOR_UPDATE :
+                         st_select_lex::select_lock_type::IN_SHARE_MODE);
+      sel->set_lock_for_tables(lock_type, false, skip_locked);
     }
+  }
+  else
+  {
+    /*
+      select_lock can be FOR_UPDATE in case of
+      (SELECT x FROM t WINDOW w1 AS () FOR UPDATE) LIMIT 1
+    */
+    sel->select_lock= st_select_lex::select_lock_type::NONE;
   }
 }
 
@@ -9758,9 +9871,7 @@ bool Lex_order_limit_lock::set_to(SELECT_LEX *sel)
        return TRUE;
   }
   lock.set_to(sel);
-  sel->explicit_limit= limit.explicit_limit;
-  sel->select_limit= limit.select_limit;
-  sel->offset_limit= limit.offset_limit;
+  sel->limit_params= limit;
   if (order_list)
   {
     if (sel->get_linkage() != GLOBAL_OPTIONS_TYPE &&
@@ -10079,7 +10190,7 @@ LEX::add_tail_to_query_expression_body_ext_parens(SELECT_LEX_UNIT *unit,
   pop_select();
   if (sel->is_set_query_expr_tail)
   {
-    if (!l->order_list && !sel->explicit_limit)
+    if (!l->order_list && !sel->limit_params.explicit_limit)
       l->order_list= &sel->order_list;
     else
     {
@@ -10230,7 +10341,6 @@ bool LEX::parsed_create_view(SELECT_LEX_UNIT *unit, int check)
 bool LEX::select_finalize(st_select_lex_unit *expr)
 {
   sql_command= SQLCOM_SELECT;
-  selects_allow_into= TRUE;
   selects_allow_procedure= TRUE;
   if (set_main_unit(expr))
     return true;
@@ -10539,7 +10649,7 @@ void st_select_lex::pushdown_cond_into_where_clause(THD *thd, Item *cond,
     This will cause duplicate conditions in WHERE of dt.
 
     To avoid repeatable pushdown such OR conditions as or1 describen
-    above are marked with NO_EXTRACTION_FL.
+    above are marked with MARKER_NO_EXTRACTION.
 
   @note
     This method is called for pushdown into materialized
@@ -10557,12 +10667,12 @@ void mark_or_conds_to_avoid_pushdown(Item *cond)
     {
       if (item->type() == Item::COND_ITEM &&
           ((Item_cond*) item)->functype() == Item_func::COND_OR_FUNC)
-        item->set_extraction_flag(NO_EXTRACTION_FL);
+        item->set_extraction_flag(MARKER_NO_EXTRACTION);
     }
   }
   else if (cond->type() == Item::COND_ITEM &&
           ((Item_cond*) cond)->functype() == Item_func::COND_OR_FUNC)
-    cond->set_extraction_flag(NO_EXTRACTION_FL);
+    cond->set_extraction_flag(MARKER_NO_EXTRACTION);
 }
 
 /**
@@ -10576,16 +10686,16 @@ void mark_or_conds_to_avoid_pushdown(Item *cond)
     The method collects in attach_to_conds list conditions from cond
     that can be pushed from HAVING into WHERE.
 
-    Conditions that can be pushed were marked with FULL_EXTRACTION_FL in
+    Conditions that can be pushed were marked with MARKER_FULL_EXTRACTION in
     check_cond_extraction_for_grouping_fields() method.
-    Conditions that can't be pushed were marked with NO_EXTRACTION_FL.
+    Conditions that can't be pushed were marked with MARKER_NO_EXTRACTION.
     Conditions which parts can be pushed weren't marked.
 
     There are two types of conditions that can be pushed:
     1. Condition that can be simply moved from HAVING
-       (if cond is marked with FULL_EXTRACTION_FL or
+       (if cond is marked with MARKER_FULL_EXTRACTION or
            cond is an AND condition and some of its parts are marked with
-           FULL_EXTRACTION_FL)
+           MARKER_FULL_EXTRACTION)
        In this case condition is transformed and pushed into attach_to_conds
        list.
     2. Part of some other condition c1 that can't be entirely pushed
@@ -10624,14 +10734,14 @@ st_select_lex::build_pushable_cond_for_having_pushdown(THD *thd, Item *cond)
   List<Item> equalities;
 
   /* Condition can't be pushed */
-  if (cond->get_extraction_flag() == NO_EXTRACTION_FL)
+  if (cond->get_extraction_flag() == MARKER_NO_EXTRACTION)
     return false;
 
   /**
     Condition can be pushed entirely.
     Transform its multiple equalities and add to attach_to_conds list.
   */
-  if (cond->get_extraction_flag() == FULL_EXTRACTION_FL)
+  if (cond->get_extraction_flag() == MARKER_FULL_EXTRACTION)
   {
     Item *result= cond->transform(thd,
                                   &Item::multiple_equality_transformer,
@@ -10682,9 +10792,9 @@ st_select_lex::build_pushable_cond_for_having_pushdown(THD *thd, Item *cond)
     Item *item;
     while ((item=li++))
     {
-      if (item->get_extraction_flag() == NO_EXTRACTION_FL)
+      if (item->get_extraction_flag() == MARKER_NO_EXTRACTION)
         continue;
-      else if (item->get_extraction_flag() == FULL_EXTRACTION_FL)
+      else if (item->get_extraction_flag() == MARKER_FULL_EXTRACTION)
       {
         Item *result= item->transform(thd,
                                       &Item::multiple_equality_transformer,
@@ -10817,13 +10927,13 @@ bool st_select_lex::collect_fields_equal_to_grouping(THD *thd)
 Item *remove_pushed_top_conjuncts_for_having(THD *thd, Item *cond)
 {
   /* Nothing to extract */
-  if (cond->get_extraction_flag() == NO_EXTRACTION_FL)
+  if (cond->get_extraction_flag() == MARKER_NO_EXTRACTION)
   {
     cond->clear_extraction_flag();
     return cond;
   }
   /* cond can be pushed in WHERE entirely */
-  if (cond->get_extraction_flag() == FULL_EXTRACTION_FL)
+  if (cond->get_extraction_flag() == MARKER_FULL_EXTRACTION)
   {
     cond->clear_extraction_flag();
     return 0;
@@ -10837,13 +10947,13 @@ Item *remove_pushed_top_conjuncts_for_having(THD *thd, Item *cond)
     Item *item;
     while ((item=li++))
     {
-      if (item->get_extraction_flag() == NO_EXTRACTION_FL)
+      if (item->get_extraction_flag() == MARKER_NO_EXTRACTION)
         item->clear_extraction_flag();
-      else if (item->get_extraction_flag() == FULL_EXTRACTION_FL)
+      else if (item->get_extraction_flag() == MARKER_FULL_EXTRACTION)
       {
         if (item->type() == Item::FUNC_ITEM &&
             ((Item_func*) item)->functype() == Item_func::MULT_EQUAL_FUNC)
-          item->set_extraction_flag(DELETION_FL);
+          item->set_extraction_flag(MARKER_DELETION);
         else
         {
           item->clear_extraction_flag();
@@ -10912,7 +11022,7 @@ Item *remove_pushed_top_conjuncts_for_having(THD *thd, Item *cond)
        the condition is put into attach_to_conds as the only its element.
     4. Remove conditions from HAVING clause that can be entirely pushed
        into WHERE.
-       Multiple equalities are not removed but marked with DELETION_FL flag.
+       Multiple equalities are not removed but marked with MARKER_DELETION flag.
        They will be deleted later in substitite_for_best_equal_field() called
        for the HAVING condition.
     5. Unwrap fields wrapped in Item_ref wrappers contained in the condition
@@ -10966,7 +11076,7 @@ Item *st_select_lex::pushdown_from_having_into_where(THD *thd, Item *having)
   /*
     4. Remove conditions from HAVING clause that can be entirely pushed
        into WHERE.
-       Multiple equalities are not removed but marked with DELETION_FL flag.
+       Multiple equalities are not removed but marked with MARKER_DELETION flag.
        They will be deleted later in substitite_for_best_equal_field() called
        for the HAVING condition.
   */

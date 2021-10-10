@@ -211,8 +211,7 @@ bool
 Protocol::net_send_ok(THD *thd,
                       uint server_status, uint statement_warn_count,
                       ulonglong affected_rows, ulonglong id,
-                      const char *message, bool is_eof,
-                      bool skip_flush)
+                      const char *message, bool is_eof)
 {
   NET *net= &thd->net;
   StringBuffer<MYSQL_ERRMSG_SIZE + 10> store;
@@ -285,7 +284,7 @@ Protocol::net_send_ok(THD *thd,
   DBUG_ASSERT(store.length() <= MAX_PACKET_LENGTH);
 
   error= my_net_write(net, (const unsigned char*)store.ptr(), store.length());
-  if (likely(!error) && (!skip_flush || is_eof))
+  if (likely(!error))
     error= net_flush(net);
 
   thd->server_status&= ~SERVER_SESSION_STATE_CHANGED;
@@ -340,7 +339,7 @@ Protocol::net_send_eof(THD *thd, uint server_status, uint statement_warn_count)
       (thd->get_command() != COM_BINLOG_DUMP ))
   {
     error= net_send_ok(thd, server_status, statement_warn_count, 0, 0, NULL,
-                       true, false);
+                       true);
     DBUG_RETURN(error);
   }
 
@@ -608,16 +607,14 @@ void Protocol::end_statement()
                    thd->get_stmt_da()->statement_warn_count(),
                    thd->get_stmt_da()->affected_rows(),
                    thd->get_stmt_da()->last_insert_id(),
-                   thd->get_stmt_da()->message(),
-                   thd->get_stmt_da()->skip_flush());
+                   thd->get_stmt_da()->message());
     break;
   case Diagnostics_area::DA_DISABLED:
     break;
   case Diagnostics_area::DA_EMPTY:
   default:
     DBUG_ASSERT(0);
-    error= send_ok(thd->server_status, 0, 0, 0, NULL,
-                   thd->get_stmt_da()->skip_flush());
+    error= send_ok(thd->server_status, 0, 0, 0, NULL);
     break;
   }
   if (likely(!error))
@@ -636,12 +633,12 @@ void Protocol::end_statement()
 
 bool Protocol::send_ok(uint server_status, uint statement_warn_count,
                        ulonglong affected_rows, ulonglong last_insert_id,
-                       const char *message, bool skip_flush)
+                       const char *message)
 {
   DBUG_ENTER("Protocol::send_ok");
   const bool retval=
     net_send_ok(thd, server_status, statement_warn_count,
-                affected_rows, last_insert_id, message, false, skip_flush);
+                affected_rows, last_insert_id, message, false);
   DBUG_RETURN(retval);
 }
 
@@ -917,6 +914,242 @@ bool Protocol_text::store_field_metadata(const THD * thd,
 }
 
 
+/*
+  MARIADB_CLIENT_CACHE_METADATA  support.
+
+  Bulk of the code below is dedicated to detecting whether column metadata has
+  changed after prepare, or between executions of a prepared statement.
+
+  For some prepared statements, metadata can't change without going through
+  Prepared_Statement::reprepare(), which makes detecting changes easy.
+
+  Others, "SELECT ?" & Co, are more fragile, and sensitive to input parameters,
+  or user variables. Detecting metadata change for this class of PS is harder,
+  we calculate signature (hash value), and check whether this changes between
+  executions. This is a more expensive method.
+*/
+
+
+/**
+  Detect whether column info can be changed without
+  PS repreparing.
+
+  Such colum info is called fragile. The opposite of
+  fragile is.
+
+
+  @param  it - Item representing column info
+  @return true, if columninfo is "fragile", false if it is stable
+
+
+  @todo does not work due to MDEV-23913. Currently,
+  everything about prepared statements is fragile.
+*/
+
+static bool is_fragile_columnifo(Item *it)
+{
+#define MDEV_23913_FIXED 0
+#if MDEV_23913_FIXED
+  if (dynamic_cast<Item_param *>(it))
+    return true;
+
+  if (dynamic_cast<Item_func_user_var *>(it))
+    return true;
+
+  if (dynamic_cast <Item_sp_variable*>(it))
+    return true;
+
+  /* Check arguments of functions.*/
+  auto item_args= dynamic_cast<Item_args *>(it);
+  if (!item_args)
+    return false;
+  auto args= item_args->arguments();
+  auto arg_count= item_args->argument_count();
+  for (uint i= 0; i < arg_count; i++)
+  {
+    if (is_fragile_columnifo(args[i]))
+      return true;
+  }
+  return false;
+#else /* MDEV-23913 fixed*/
+  return true;
+#endif
+}
+
+
+#define INVALID_METADATA_CHECKSUM 0
+
+
+/**
+  Calculate signature for column info sent to the client as CRC32 over data, 
+  that goes into the column info packet.
+  We assume that if checksum does not change, then column info was not
+  modified.
+
+  @param thd THD
+  @param list column info
+
+  @return CRC32 of the metadata
+*/
+
+static uint32 calc_metadata_hash(THD *thd, List<Item> *list)
+{
+  List_iterator_fast<Item> it(*list);
+  Item *item;
+  uint32 crc32_c= 0;
+  while ((item= it++))
+  {
+    Send_field field(thd, item);
+    auto field_type= item->type_handler()->field_type();
+    auto charset= item->charset_for_protocol();
+    /*
+       The data below should contain everything that influences
+       content of the column info packet.
+    */
+    LEX_CSTRING data[]=
+    {
+      field.table_name,
+      field.org_table_name,
+      field.col_name,
+      field.org_col_name,
+      field.db_name,
+      field.attr(MARIADB_FIELD_ATTR_DATA_TYPE_NAME),
+      field.attr(MARIADB_FIELD_ATTR_FORMAT_NAME),
+      {(const char *) &field.length, sizeof(field.length)},
+      {(const char *) &field.flags, sizeof(field.flags)},
+      {(const char *) &field.decimals, sizeof(field.decimals)},
+      {(const char *) &charset, sizeof(charset)},
+      {(const char *) &field_type, sizeof(field_type)},
+    };
+    for (const auto &chunk : data)
+      crc32_c= my_crc32c(crc32_c, chunk.str, chunk.length);
+  }
+
+  if (crc32_c == INVALID_METADATA_CHECKSUM)
+     return 1;
+  return crc32_c;
+}
+
+
+
+/**
+  Check if metadata columns have changed since last call to this
+  function.
+
+  @param send_column_info_state  saved state, changed if the function
+         return true. 
+  @param thd THD
+  @param list columninfo Items
+  @return true,if metadata columns have changed since last call,
+          false otherwise 
+*/
+
+static bool metadata_columns_changed(send_column_info_state &state, THD *thd,
+                                     List<Item> &list)
+{
+  if (!state.initialized)
+  {
+    state.initialized= true;
+    state.immutable= true;
+    Item *item;
+    List_iterator_fast<Item> it(list);
+    while ((item= it++))
+    {
+      if (is_fragile_columnifo(item))
+      {
+        state.immutable= false;
+        state.checksum= calc_metadata_hash(thd, &list);
+        break;
+      }
+    }
+    state.last_charset= thd->variables.character_set_client;
+    return true;
+  }
+  
+  /*
+    Since column info can change under our feet, we use more expensive
+    checksumming to check if column metadata has not changed since last time.
+  */
+  if (!state.immutable)
+  {
+    uint32 checksum= calc_metadata_hash(thd, &list);
+    if (checksum != state.checksum)
+    {
+      state.checksum= checksum;
+      state.last_charset= thd->variables.character_set_client;
+      return true;
+    }
+  }
+
+  /*
+    Character_set_client influences result set metadata, thus resend metadata
+    whenever it changes.
+  */
+  if (state.last_charset != thd->variables.character_set_client)
+  {
+    state.last_charset= thd->variables.character_set_client;
+    return true;
+  }
+
+  return false;
+}
+
+
+/**
+  Determine whether column info must be sent to the client.
+  Skip column info, if client supports caching, and (prepared) statement
+  output fields have not changed.
+
+  @param thd THD
+  @param list column info
+  @param flags send flags. If Protocol::SEND_FORCE_COLUMN_INFO is set,
+         this function will return true
+  @return true, if column info must be sent to the client.
+          false otherwise
+*/
+
+static bool should_send_column_info(THD* thd, List<Item>* list, uint flags) 
+{
+  if (!(thd->client_capabilities & MARIADB_CLIENT_CACHE_METADATA))
+  {
+    /* Client does not support abbreviated metadata.*/
+    return true;
+  }
+
+  if (!thd->cur_stmt)
+  {
+    /* Neither COM_PREPARE nor COM_EXECUTE run.*/
+    return true;
+  }
+
+  if (thd->spcont)
+  {
+    /* Always sent full metadata from inside the stored procedure.*/
+    return true;
+  }
+
+  if (flags & Protocol::SEND_FORCE_COLUMN_INFO)
+    return true;
+
+  auto &column_info_state= thd->cur_stmt->column_info_state;
+#ifndef DBUG_OFF
+  auto cmd= thd->get_command();
+#endif
+
+  DBUG_ASSERT(cmd == COM_STMT_EXECUTE || cmd == COM_STMT_PREPARE
+              || cmd == COM_STMT_BULK_EXECUTE);
+  DBUG_ASSERT(cmd != COM_STMT_PREPARE || !column_info_state.initialized);
+
+  bool ret= metadata_columns_changed(column_info_state, thd, *list);
+
+  DBUG_ASSERT(cmd != COM_STMT_PREPARE || ret);
+  if (!ret)
+    thd->status_var.skip_metadata_count++;
+
+  return ret;
+}
+
+
 /**
   Send name and type of result to client.
 
@@ -937,35 +1170,49 @@ bool Protocol_text::store_field_metadata(const THD * thd,
 */
 bool Protocol::send_result_set_metadata(List<Item> *list, uint flags)
 {
-  List_iterator_fast<Item> it(*list);
-  Item *item;
-  Protocol_text prot(thd, thd->variables.net_buffer_length);
   DBUG_ENTER("Protocol::send_result_set_metadata");
 
+  bool send_column_info= should_send_column_info(thd, list, flags);
+
   if (flags & SEND_NUM_ROWS)
-  {				// Packet with number of elements
-    uchar buff[MAX_INT_WIDTH];
+  {
+    /*
+      Packet with number of columns.
+
+      Will also have a 1 byte column info indicator, in case
+      MARIADB_CLIENT_CACHE_METADATA client capability is set.
+    */
+    uchar buff[MAX_INT_WIDTH+1];
     uchar *pos= net_store_length(buff, list->elements);
+    if (thd->client_capabilities & MARIADB_CLIENT_CACHE_METADATA)
+      *pos++= (uchar)send_column_info;
+
     DBUG_ASSERT(pos <= buff + sizeof(buff));
     if (my_net_write(&thd->net, buff, (size_t) (pos-buff)))
       DBUG_RETURN(1);
   }
 
+  if (send_column_info)
+  {
+    List_iterator_fast<Item> it(*list);
+    Item *item;
+    Protocol_text prot(thd, thd->variables.net_buffer_length);
 #ifndef DBUG_OFF
-  field_handlers= (const Type_handler**) thd->alloc(sizeof(field_handlers[0]) *
-                                                    list->elements);
+    field_handlers= (const Type_handler **) thd->alloc(
+        sizeof(field_handlers[0]) * list->elements);
 #endif
 
-  for (uint pos= 0; (item=it++); pos++)
-  {
-    prot.prepare_for_resend();
-    if (prot.store_item_metadata(thd, item, pos))
-      goto err;
-    if (prot.write())
-      DBUG_RETURN(1);
+    for (uint pos= 0; (item= it++); pos++)
+    {
+      prot.prepare_for_resend();
+      if (prot.store_item_metadata(thd, item, pos))
+        goto err;
+      if (prot.write())
+        DBUG_RETURN(1);
 #ifndef DBUG_OFF
-    field_handlers[pos]= item->type_handler();
+      field_handlers[pos]= item->type_handler();
 #endif
+    }
   }
 
   if (flags & SEND_EOF)
@@ -1071,18 +1318,12 @@ bool Protocol_text::store_field_metadata_for_list_fields(const THD *thd,
 bool Protocol::send_result_set_row(List<Item> *row_items)
 {
   List_iterator_fast<Item> it(*row_items);
-
+  ValueBuffer<MAX_FIELD_WIDTH> value_buffer;
   DBUG_ENTER("Protocol::send_result_set_row");
 
   for (Item *item= it++; item; item= it++)
   {
-    /*
-      ValueBuffer::m_string can be altered during Item::send().
-      It's important to declare value_buffer inside the loop,
-      to have ValueBuffer::m_string point to ValueBuffer::buffer
-      on every iteration.
-    */
-    ValueBuffer<MAX_FIELD_WIDTH> value_buffer;
+    value_buffer.reset_buffer();
     if (item->send(this, &value_buffer))
     {
       // If we're out of memory, reclaim some, to help us recover.
@@ -1099,9 +1340,9 @@ bool Protocol::send_result_set_row(List<Item> *row_items)
 
 
 /**
-  Send \\0 end terminated string.
+  Send \\0 end terminated string or NULL
 
-  @param from	NullS or \\0 terminated string
+  @param from    NullS or \\0 terminated string
 
   @note
     In most cases one should use store(from, length) instead of this function
@@ -1112,12 +1353,11 @@ bool Protocol::send_result_set_row(List<Item> *row_items)
     1		error
 */
 
-bool Protocol::store(const char *from, CHARSET_INFO *cs)
+bool Protocol::store_string_or_null(const char *from, CHARSET_INFO *cs)
 {
   if (!from)
     return store_null();
-  size_t length= strlen(from);
-  return store(from, length, cs);
+  return store(from, strlen(from), cs);
 }
 
 
@@ -1136,7 +1376,7 @@ bool Protocol::store(I_List<i_string>* str_list)
   tmp.length(0);
   while ((s=it++))
   {
-    tmp.append(s->ptr);
+    tmp.append(s->ptr, strlen(s->ptr));
     tmp.append(',');
   }
   if ((len= tmp.length()))
@@ -1351,7 +1591,7 @@ bool Protocol_text::store(Field *field)
 }
 
 
-bool Protocol_text::store(MYSQL_TIME *tm, int decimals)
+bool Protocol_text::store_datetime(MYSQL_TIME *tm, int decimals)
 {
 #ifndef DBUG_OFF
   DBUG_ASSERT(valid_handler(field_pos, PROTOCOL_SEND_DATETIME));
@@ -1569,7 +1809,7 @@ bool Protocol_binary::store(Field *field)
 }
 
 
-bool Protocol_binary::store(MYSQL_TIME *tm, int decimals)
+bool Protocol_binary::store_datetime(MYSQL_TIME *tm, int decimals)
 {
   char buff[12],*pos;
   uint length;
@@ -1603,7 +1843,7 @@ bool Protocol_binary::store_date(MYSQL_TIME *tm)
 {
   tm->hour= tm->minute= tm->second=0;
   tm->second_part= 0;
-  return Protocol_binary::store(tm, 0);
+  return Protocol_binary::store_datetime(tm, 0);
 }
 
 
@@ -1689,7 +1929,8 @@ bool Protocol_binary::send_out_parameters(List<Item_param> *sp_params)
   thd->server_status|= SERVER_PS_OUT_PARAMS | SERVER_MORE_RESULTS_EXISTS;
 
   /* Send meta-data. */
-  if (send_result_set_metadata(&out_param_lst, SEND_NUM_ROWS | SEND_EOF))
+  if (send_result_set_metadata(&out_param_lst,
+        SEND_NUM_ROWS | SEND_EOF | SEND_FORCE_COLUMN_INFO))
     return TRUE;
 
   /* Send data. */

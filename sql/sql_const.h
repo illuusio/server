@@ -49,7 +49,7 @@
 #else
 #define MAX_REFLENGTH 4				/* Max length for record ref */
 #endif
-#define MAX_HOSTNAME  61			/* len+1 in mysql.user */
+#define MAX_HOSTNAME  (HOSTNAME_LENGTH + 1)	/* len+1 in mysql.user */
 #define MAX_CONNECTION_NAME NAME_LEN
 
 #define MAX_MBWIDTH		3		/* Max multibyte sequence */
@@ -296,19 +296,6 @@
   char(64) in db). mysqlbinlog needs it.
 */
 #define MAX_TIME_ZONE_NAME_LENGTH       (NAME_LEN + 1)
-
-#if defined(__WIN__)
-
-#define INTERRUPT_PRIOR -2
-#define CONNECT_PRIOR	-1
-#define WAIT_PRIOR	0
-#define QUERY_PRIOR	2
-#else
-#define INTERRUPT_PRIOR 10
-#define CONNECT_PRIOR	9
-#define WAIT_PRIOR	8
-#define QUERY_PRIOR	6
-#endif /* __WIN92__ */
 
 #define SP_PSI_STATEMENT_INFO_COUNT 19
 

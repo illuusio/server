@@ -25,7 +25,6 @@ Created 11/5/1995 Heikki Tuuri
 *******************************************************/
 
 #include "buf0lru.h"
-#include "sync0rw.h"
 #include "fil0fil.h"
 #include "btr0btr.h"
 #include "buf0buddy.h"
@@ -38,6 +37,7 @@ Created 11/5/1995 Heikki Tuuri
 #include "log0recv.h"
 #include "srv0srv.h"
 #include "srv0mon.h"
+#include "my_cpu.h"
 
 /** Flush this many pages in buf_LRU_get_free_block() */
 size_t innodb_lru_flush_size;

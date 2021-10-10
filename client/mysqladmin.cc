@@ -54,6 +54,8 @@ static bool sql_log_bin_off= false;
 static uint opt_protocol=0;
 static myf error_flags; /* flags to pass to my_printf_error, like ME_BELL */
 
+static uint protocol_to_force= MYSQL_PROTOCOL_DEFAULT;
+
 /*
   When using extended-status relatively, ex_val_max_len is the estimated
   maximum length for any relative value printed by extended-status. The
@@ -109,7 +111,7 @@ enum commands {
   ADMIN_FLUSH_TABLE_STATISTICS, ADMIN_FLUSH_INDEX_STATISTICS,
   ADMIN_FLUSH_USER_STATISTICS, ADMIN_FLUSH_CLIENT_STATISTICS,
   ADMIN_FLUSH_USER_RESOURCES,
-  ADMIN_FLUSH_ALL_STATUS, ADMIN_FLUSH_ALL_STATISTICS
+  ADMIN_FLUSH_ALL_STATUS, ADMIN_FLUSH_ALL_STATISTICS, ADMIN_FLUSH_SSL
 };
 static const char *command_names[]= {
   "create",               "drop",                "shutdown",
@@ -124,7 +126,7 @@ static const char *command_names[]= {
   "flush-error-log", "flush-general-log", "flush-relay-log", "flush-slow-log",
   "flush-table-statistics", "flush-index-statistics",
   "flush-user-statistics", "flush-client-statistics", "flush-user-resources",
-  "flush-all-status", "flush-all-statistics",
+  "flush-all-status", "flush-all-statistics", "flush-ssl",
   NullS
 };
 
@@ -173,7 +175,7 @@ static struct my_option my_long_options[] =
   {"password", 'p',
    "Password to use when connecting to server. If password is not given it's asked from the tty.",
    0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
-#ifdef __WIN__
+#ifdef _WIN32
   {"pipe", 'W', "Use named pipes to connect to server.", 0, 0, 0, GET_NO_ARG,
    NO_ARG, 0, 0, 0, 0, 0, 0},
 #endif
@@ -241,8 +243,12 @@ static const char *load_default_groups[]=
   0 };
 
 my_bool
-get_one_option(const struct my_option *opt, const char *argument, const char *)
+get_one_option(const struct my_option *opt, const char *argument, const char *filename)
 {
+
+  /* Track when protocol is set via CLI to not force overrides */
+  static my_bool ignore_protocol_override = FALSE;
+
   switch(opt->id) {
   case 'c':
     opt_count_iterations= 1;
@@ -272,8 +278,15 @@ get_one_option(const struct my_option *opt, const char *argument, const char *)
     option_silent++;
     break;
   case 'W':
-#ifdef __WIN__
+#ifdef _WIN32
     opt_protocol = MYSQL_PROTOCOL_PIPE;
+
+    /* Prioritize pipe if explicit via command line */
+    if (filename[0] == '\0')
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
 #endif
     break;
   case '#':
@@ -309,6 +322,46 @@ get_one_option(const struct my_option *opt, const char *argument, const char *)
       sf_leaking_memory= 1; /* no memory leak reports here */
       exit(1);
     }
+
+    /* Specification of protocol via CLI trumps implicit overrides */
+    if (filename[0] == '\0')
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    break;
+  case 'P':
+    /* If port and socket are set, fall back to default behavior */
+    if (protocol_to_force == SOCKET_PROTOCOL_TO_FORCE)
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    /* If port is set via CLI, try to force protocol to TCP */
+    if (filename[0] == '\0' &&
+        !ignore_protocol_override &&
+        protocol_to_force == MYSQL_PROTOCOL_DEFAULT)
+    {
+      protocol_to_force = MYSQL_PROTOCOL_TCP;
+    }
+    break;
+  case 'S':
+    /* If port and socket are set, fall back to default behavior */
+    if (protocol_to_force == MYSQL_PROTOCOL_TCP)
+    {
+      ignore_protocol_override = TRUE;
+      protocol_to_force = MYSQL_PROTOCOL_DEFAULT;
+    }
+
+    /* Prioritize socket if set via command line */
+    if (filename[0] == '\0' &&
+        !ignore_protocol_override &&
+        protocol_to_force == MYSQL_PROTOCOL_DEFAULT)
+    {
+      protocol_to_force = SOCKET_PROTOCOL_TO_FORCE;
+    }
     break;
   }
   return 0;
@@ -323,6 +376,10 @@ int main(int argc,char *argv[])
 
   MY_INIT(argv[0]);
   sf_leaking_memory=1; /* don't report memory leaks on early exits */
+
+  /* We need to know if protocol-related options originate from CLI args */
+  my_defaults_mark_files = TRUE;
+
   load_defaults_or_exit("my", load_default_groups, &argc, &argv);
   save_argv = argv;				/* Save for free_defaults */
 
@@ -330,6 +387,13 @@ int main(int argc,char *argv[])
     goto err2;
   temp_argv= mask_password(argc, &argv);
   temp_argc= argc;
+
+  /* Command line options override configured protocol */
+  if (protocol_to_force > MYSQL_PROTOCOL_DEFAULT
+      && protocol_to_force != opt_protocol)
+  {
+    warn_protocol_override(host, &opt_protocol, protocol_to_force);
+  }
 
   if (debug_info_flag)
     my_end_arg= MY_CHECK_ERROR | MY_GIVE_INFO;
@@ -552,13 +616,13 @@ static my_bool sql_connect(MYSQL *mysql, uint wait)
 	if (mysql_errno(mysql) == CR_CONNECTION_ERROR)
 	{
 	  fprintf(stderr,
-		  "Check that mysqld is running and that the socket: '%s' exists!\n",
+		  "Check that mariadbd is running and that the socket: '%s' exists!\n",
 		  unix_port ? unix_port : mysql_unix_port);
 	}
 	else if (mysql_errno(mysql) == CR_CONN_HOST_ERROR ||
 		 mysql_errno(mysql) == CR_UNKNOWN_HOST)
 	{
-	  fprintf(stderr,"Check that mysqld is running on %s",host);
+	  fprintf(stderr,"Check that mariadbd is running on %s",host);
 	  fprintf(stderr," and that the port is %d.\n",
 		  tcp_port ? tcp_port: mysql_port);
 	  fprintf(stderr,"You can check this by doing 'telnet %s %d'\n",
@@ -623,7 +687,14 @@ int flush(MYSQL *mysql, const char *what)
   char buf[FN_REFLEN];
   my_snprintf(buf, sizeof(buf), "flush %s%s",
               (opt_local && !sql_log_bin_off ? "local " : ""), what);
-  return mysql_query(mysql, buf);
+
+  if (mysql_query(mysql, buf))
+  {
+    my_printf_error(0, "flush %s failed; error: '%s'", error_flags, what,
+                    mysql_error(mysql));
+    return -1;
+  }
+  return 0;
 }
 
 
@@ -739,11 +810,7 @@ static int execute_commands(MYSQL *mysql,int argc, char **argv)
     case ADMIN_FLUSH_PRIVILEGES:
     case ADMIN_RELOAD:
       if (flush(mysql, "privileges"))
-      {
-	my_printf_error(0, "reload failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     case ADMIN_REFRESH:
       if (mysql_refresh(mysql,
@@ -943,173 +1010,111 @@ static int execute_commands(MYSQL *mysql,int argc, char **argv)
     case ADMIN_FLUSH_LOGS:
     {
       if (flush(mysql, "logs"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_BINARY_LOG:
     {
       if (flush(mysql, "binary logs"))
-      {
-        my_printf_error(0, "flush failed; error: '%s'", error_flags,
-                        mysql_error(mysql));
         return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_ENGINE_LOG:
     {
       if (flush(mysql, "engine logs"))
-      {
-        my_printf_error(0, "flush failed; error: '%s'", error_flags,
-                        mysql_error(mysql));
         return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_ERROR_LOG:
     {
       if (flush(mysql, "error logs"))
-      {
-        my_printf_error(0, "flush failed; error: '%s'", error_flags,
-                        mysql_error(mysql));
         return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_GENERAL_LOG:
     {
       if (flush(mysql, "general logs"))
-      {
-        my_printf_error(0, "flush failed; error: '%s'", error_flags,
-                        mysql_error(mysql));
         return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_RELAY_LOG:
     {
       if (flush(mysql, "relay logs"))
-      {
-        my_printf_error(0, "flush failed; error: '%s'", error_flags,
-                        mysql_error(mysql));
         return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_SLOW_LOG:
     {
       if (flush(mysql, "slow logs"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_HOSTS:
     {
       if (flush(mysql, "hosts"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_TABLES:
     {
       if (flush(mysql, "tables"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_STATUS:
     {
       if (flush(mysql, "status"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_TABLE_STATISTICS:
     {
       if (flush(mysql, "table_statistics"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_INDEX_STATISTICS:
     {
       if (flush(mysql, "index_statistics"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
+      break;
+    }
+    case ADMIN_FLUSH_SSL:
+    {
+      if (flush(mysql, "ssl"))
+	return -1;
       break;
     }
     case ADMIN_FLUSH_USER_STATISTICS:
     {
       if (flush(mysql, "user_statistics"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_USER_RESOURCES:
     {
       if (flush(mysql, "user_resources"))
-      {
-        my_printf_error(0, "flush failed; error: '%s'", error_flags,
-                        mysql_error(mysql));
         return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_CLIENT_STATISTICS:
     {
       if (flush(mysql, "client_statistics"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_ALL_STATISTICS:
     {
       if (flush(mysql, "table_statistics,index_statistics,"
                        "user_statistics,client_statistics"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     }
     case ADMIN_FLUSH_ALL_STATUS:
     {
       if (flush(mysql, "status,table_statistics,index_statistics,"
                        "user_statistics,client_statistics"))
-      {
-	my_printf_error(0, "flush failed; error: '%s'", error_flags,
-			mysql_error(mysql));
 	return -1;
-      }
       break;
     }
     case ADMIN_OLD_PASSWORD:
@@ -1148,7 +1153,7 @@ static int execute_commands(MYSQL *mysql,int argc, char **argv)
       {
         bool old= (find_type(argv[0], &command_typelib, FIND_TYPE_BASIC) ==
                    ADMIN_OLD_PASSWORD);
-#ifdef __WIN__
+#ifdef _WIN32
         size_t pw_len= strlen(typed_password);
         if (pw_len > 1 && typed_password[0] == '\'' &&
             typed_password[pw_len-1] == '\'')
@@ -1220,7 +1225,7 @@ static int execute_commands(MYSQL *mysql,int argc, char **argv)
 	    because we can't perfectly find out the host
 	   */
 	  my_printf_error(0,"\n"
-			  "You cannot use 'password' command as mysqld runs\n"
+			  "You cannot use 'password' command as mariadbd runs\n"
 			  " with grant tables disabled (was started with"
 			  " --skip-grant-tables).\n"
 			  "Use: \"mysqladmin flush-privileges password '*'\""
@@ -1321,7 +1326,7 @@ password_done:
 	}
 	else
 	{
-	  my_printf_error(0,"mysqld doesn't answer to ping, error: '%s'",
+	  my_printf_error(0,"mariadbd doesn't answer to ping, error: '%s'",
 			  error_flags, mysql_error(mysql));
 	  return -1;
 	}
@@ -1418,6 +1423,7 @@ static void usage(void)
   flush-general-log       Flush general log\n\
   flush-relay-log         Flush relay log\n\
   flush-slow-log          Flush slow query log\n\
+  flush-ssl               Flush SSL certificates\n\
   flush-status            Clear status variables\n\
   flush-table-statistics  Clear table statistics\n\
   flush-tables            Flush all tables\n\

@@ -28,7 +28,7 @@
 #include "sql_priv.h"
 #include "unireg.h"                             // SPECIAL_NO_HOST_CACHE
 #include "hostname.h"
-#ifndef __WIN__
+#ifndef _WIN32
 #include <netdb.h>        // getservbyname, servent
 #endif
 #include "hash_filo.h"
@@ -40,12 +40,12 @@
 #ifdef	__cplusplus
 extern "C" {					// Because of SCO 3.2V4.2
 #endif
-#if !defined( __WIN__)
+#if !defined( _WIN32)
 #ifdef HAVE_SYS_UN_H
 #include <sys/un.h>
 #endif
 #include <sys/utsname.h>
-#endif // __WIN__
+#endif // _WIN32
 #ifdef	__cplusplus
 }
 #endif
@@ -550,6 +550,13 @@ int ip_to_hostname(struct sockaddr_storage *ip_storage,
   DBUG_EXECUTE_IF("getnameinfo_format_ipv6",
                   {
                     strcpy(hostname_buffer, "12:DEAD:BEEF:0");
+                    err_code= 0;
+                  }
+                  );
+
+  DBUG_EXECUTE_IF("getnameinfo_fake_long_host",
+                  {
+                    strcpy(hostname_buffer, "host5678901_345678902_345678903_345678904_345678905_345678906_345678907_345678908_345678909_345678910_345678911_345678912_345678913_345678914_345678915_345678916_345678917_345678918_345678919_345678920_345678921_345678922_345678923_345678924_345678925_345");
                     err_code= 0;
                   }
                   );

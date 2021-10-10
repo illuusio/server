@@ -601,8 +601,8 @@ from information_schema.statistics where table_name = 't1';
 table_schema	table_name	non_unique	index_schema	index_name	seq_in_index	column_name
 test	t1	0	test	PRIMARY	1	id
 show index from t1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
-t1	0	PRIMARY	1	id	#	#	#	#	#	#		
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
+t1	0	PRIMARY	1	id	#	#	#	#	#	#			NO
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (

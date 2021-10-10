@@ -610,7 +610,7 @@ insert into t1 values(5,'Hello, world of views');
 create view v1 as select * from t1;
 create view v2 as select * from v1;
 update v2 set col2='Hello, view world';
-select is_updatable from information_schema.views;
+select is_updatable from information_schema.views where table_schema <> 'sys';
 is_updatable
 YES
 YES
@@ -2907,10 +2907,10 @@ DROP VIEW IF EXISTS v2;
 CREATE TABLE t1(a INT, b INT);
 CREATE DEFINER=longer_than_80_456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789@localhost
 VIEW v1 AS SELECT a FROM t1;
-ERROR HY000: String 'longer_than_80_4567890123456789012345678901234567890123456789012345...' is too long for user name (should be no longer than 80)
-CREATE DEFINER=some_user_name@1234567890abcdefghij1234567890abcdefghij1234567890abcdefghijQWERTY
+ERROR HY000: String 'longer_than_80_4567890123456789012345678901234567890123456789012345...' is too long for user name (should be no longer than 128)
+CREATE DEFINER=some_user_name@1234567890abcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYsome_user_name@1234567890abcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYabcdefghij1234567890abcdefghij1234567890abcdefghijQWERTY
 VIEW v2 AS SELECT b FROM t1;
-ERROR HY000: String '1234567890abcdefghij1234567890abcdefghij1234567890abcdefghijQWERTY' is too long for host name (should be no longer than 60)
+ERROR HY000: String '1234567890abcdefghij1234567890abcdefghij1234567890abcdefghijQWERTYa...' is too long for host name (should be no longer than 255)
 DROP TABLE t1;
 DROP FUNCTION IF EXISTS f1;
 DROP FUNCTION IF EXISTS f2;
@@ -3678,7 +3678,7 @@ c1	c2
 2	2
 CREATE VIEW v1 AS SELECT c1, c2 FROM t1;
 SHOW INDEX FROM v1;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
 SELECT * FROM v1 USE INDEX (PRIMARY) WHERE c1=2;
 ERROR 42000: Key 'PRIMARY' doesn't exist in table 'v1'
 SELECT * FROM v1 FORCE INDEX (PRIMARY) WHERE c1=2;
@@ -6842,4 +6842,34 @@ ERROR 42S22: Unknown column 't1.x' in 'on clause'
 CREATE TABLE t4 AS SELECT * FROM t1 JOIN t2 ON t1.x > t2.b;
 ERROR 42S22: Unknown column 't1.x' in 'on clause'
 DROP TABLE t1,t2,t3;
+#
 # End of 10.4 tests
+#
+#
+# MDEV-13115: SELECT .. SKIP LOCKED - ensure SHOW CREATE VIEW is correct
+#
+CREATE TABLE t1 (id int, foo int);
+CREATE VIEW v1 AS  SELECT id, IFNULL(foo,'') AS foo FROM t1 LOCK IN SHARE MODE;
+CREATE VIEW v2 AS  SELECT id, IFNULL(foo,'') AS foo FROM t1 FOR UPDATE;
+CREATE VIEW v3 AS  SELECT id, IFNULL(foo,'') AS foo FROM t1 LOCK IN SHARE MODE SKIP LOCKED;
+CREATE VIEW v4 AS  SELECT id, IFNULL(foo,'') AS foo FROM t1 FOR UPDATE SKIP LOCKED;
+SHOW CREATE VIEW v1;
+View	Create View	character_set_client	collation_connection
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `t1`.`id` AS `id`,ifnull(`t1`.`foo`,'') AS `foo` from `t1` lock in share mode	latin1	latin1_swedish_ci
+SHOW CREATE VIEW v2;
+View	Create View	character_set_client	collation_connection
+v2	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v2` AS select `t1`.`id` AS `id`,ifnull(`t1`.`foo`,'') AS `foo` from `t1` for update	latin1	latin1_swedish_ci
+SHOW CREATE VIEW v3;
+View	Create View	character_set_client	collation_connection
+v3	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v3` AS select `t1`.`id` AS `id`,ifnull(`t1`.`foo`,'') AS `foo` from `t1` lock in share mode skip locked	latin1	latin1_swedish_ci
+SHOW CREATE VIEW v4;
+View	Create View	character_set_client	collation_connection
+v4	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v4` AS select `t1`.`id` AS `id`,ifnull(`t1`.`foo`,'') AS `foo` from `t1` for update skip locked	latin1	latin1_swedish_ci
+Drop View v1;
+Drop View v2;
+Drop View v3;
+Drop View v4;
+Drop table t1;
+#
+# End of 10.6 tests
+#

@@ -4,6 +4,8 @@ if("NO" STREQUAL "${PLUGIN_COLUMNSTORE}")
   return()
 endif()
 
+add_definitions(-DBOOST_BIND_GLOBAL_PLACEHOLDERS)
+
 # this does everything, gets the var from the correct scope, appends new
 # values, sets in the correct scope
 macro(APPEND_FOR_CPACK V)
@@ -12,7 +14,8 @@ macro(APPEND_FOR_CPACK V)
 endmacro()
 
 IF(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64" OR
-CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64")
+CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64" OR
+CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
     add_subdirectory(columnstore)
 
     IF(TARGET columnstore)

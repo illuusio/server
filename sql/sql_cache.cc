@@ -2291,7 +2291,7 @@ void Query_cache::invalidate_locked_for_write(THD *thd,
   for (; tables_used; tables_used= tables_used->next_local)
   {
     THD_STAGE_INFO(thd, stage_invalidating_query_cache_entries_table);
-    if (tables_used->lock_type >= TL_WRITE_ALLOW_WRITE &&
+    if (tables_used->lock_type >= TL_FIRST_WRITE &&
         tables_used->table)
     {
       invalidate_table(thd, tables_used->table);
@@ -3388,9 +3388,10 @@ Query_cache::register_tables_from_list(THD *thd, TABLE_LIST *tables_used,
        tables_used;
        tables_used= tables_used->next_global, n++, (*block_table)++)
   {
-    if (tables_used->is_anonymous_derived_table())
+    if (tables_used->is_anonymous_derived_table() ||
+        tables_used->table_function)
     {
-      DBUG_PRINT("qcache", ("derived table skipped"));
+      DBUG_PRINT("qcache", ("derived table or table function skipped"));
       n--;
       (*block_table)--;
       continue;
@@ -4093,11 +4094,13 @@ Query_cache::process_and_count_tables(THD *thd, TABLE_LIST *tables_used,
       *tables_type|= HA_CACHE_TBL_NONTRANSACT;
       continue;
     }
-    if (tables_used->derived)
+    if (tables_used->derived || tables_used->table_function)
     {
       DBUG_PRINT("qcache", ("table: %s", tables_used->alias.str));
       table_count--;
-      DBUG_PRINT("qcache", ("derived table skipped"));
+      DBUG_PRINT("qcache", (tables_used->table_function ?
+                              "table function skipped" :
+                              "derived table skipped"));
       continue;
     }
 

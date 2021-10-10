@@ -247,9 +247,11 @@ void opt_trace_disable_if_no_tables_access(THD *thd, TABLE_LIST *tbl)
   {
     /*
       Anonymous derived tables (as in
-      "SELECT ... FROM (SELECT ...)") don't have their grant.privilege set.
+      "SELECT ... FROM (SELECT ...)") and table functions
+      don't have their grant.privilege set.
     */
-    if (!t->is_anonymous_derived_table())
+    if (!t->is_anonymous_derived_table() &&
+        !t->table_function)
     {
       const GRANT_INFO backup_grant_info= t->grant;
       Security_context *const backup_table_sctx= t->security_ctx;
@@ -592,6 +594,18 @@ void Json_writer::add_table_name(const JOIN_TAB *tab)
 void Json_writer::add_table_name(const TABLE *table)
 {
   add_str(table->pos_in_table_list->alias.str);
+}
+
+
+void trace_condition(THD * thd, const char *name, const char *transform_type,
+                    Item *item, const char *table_name)
+{
+  Json_writer_object trace_wrapper(thd);
+  Json_writer_object trace_cond(thd, transform_type);
+  trace_cond.add("condition", name);
+  if (table_name)
+    trace_cond.add("attached_to", table_name);
+  trace_cond.add("resulting_condition", item);
 }
 
 

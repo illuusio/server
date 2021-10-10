@@ -82,7 +82,7 @@ SET(CPACK_RPM_SPEC_MORE_DEFINE "
 %filter_provides_in \\\\.\\\\(test\\\\|result\\\\|h\\\\|cc\\\\|c\\\\|inc\\\\|opt\\\\|ic\\\\|cnf\\\\|rdiff\\\\|cpp\\\\)$
 %filter_requires_in \\\\.\\\\(test\\\\|result\\\\|h\\\\|cc\\\\|c\\\\|inc\\\\|opt\\\\|ic\\\\|cnf\\\\|rdiff\\\\|cpp\\\\)$
 %filter_from_provides /perl(\\\\(mtr\\\\|My::\\\\)/d
-%filter_from_requires /\\\\(lib\\\\(ft\\\\|lzma\\\\|tokuportability\\\\)\\\\)\\\\|\\\\(perl(\\\\(.*mtr\\\\|My::\\\\|.*HandlerSocket\\\\|Mysql\\\\)\\\\)/d
+%filter_from_requires /\\\\(liblzma\\\\)\\\\|\\\\(perl(\\\\(.*mtr\\\\|My::\\\\|.*HandlerSocket\\\\|Mysql\\\\)\\\\)/d
 %filter_setup
 }
 ")
@@ -154,6 +154,11 @@ SETA(CPACK_RPM_client_PACKAGE_OBSOLETES
 SETA(CPACK_RPM_client_PACKAGE_PROVIDES
   "MySQL-client"
   "mysql-client")
+SETA(CPACK_RPM_client_PACKAGE_CONFLICTS
+  "MariaDB-server < 10.6.0")
+
+SETA(CPACK_RPM_common_PACKAGE_CONFLICTS
+  "MariaDB-server < 10.6.1")
 
 SETA(CPACK_RPM_devel_PACKAGE_OBSOLETES
   "MySQL-devel")
@@ -179,7 +184,7 @@ SETA(CPACK_RPM_test_PACKAGE_PROVIDES
   "MySQL-test")
 
 SETA(CPACK_RPM_server_PACKAGE_REQUIRES
-  "${CPACK_RPM_PACKAGE_REQUIRES}"
+  "MariaDB-common >= 10.6.1"
   "MariaDB-client")
 
 IF(WITH_WSREP)

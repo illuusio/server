@@ -195,19 +195,21 @@ bool fill_record(THD *thd, TABLE *table, Field **field, List<Item> &values,
 Field *
 find_field_in_tables(THD *thd, Item_ident *item,
                      TABLE_LIST *first_table, TABLE_LIST *last_table,
+                     ignored_tables_list_t ignored_tables,
                      Item **ref, find_item_error_report_type report_error,
                      bool check_privileges, bool register_tree_change);
 Field *
 find_field_in_table_ref(THD *thd, TABLE_LIST *table_list,
                         const char *name, size_t length,
                         const char *item_name, const char *db_name,
-                        const char *table_name, Item **ref,
-                        bool check_privileges, bool allow_rowid,
-                        uint *cached_field_index_ptr,
+                        const char *table_name,
+                        ignored_tables_list_t ignored_tables,
+                        Item **ref, bool check_privileges, bool allow_rowid,
+                        field_index_t *cached_field_index_ptr,
                         bool register_tree_change, TABLE_LIST **actual_table);
 Field *
 find_field_in_table(THD *thd, TABLE *table, const char *name, size_t length,
-                    bool allow_rowid, uint *cached_field_index_ptr);
+                    bool allow_rowid, field_index_t *cached_field_index_ptr);
 Field *
 find_field_in_table_sef(TABLE *table, const char *name);
 Item ** find_item_in_list(Item *item, List<Item> &items, uint *counter,
@@ -515,8 +517,6 @@ bool restart_trans_for_tables(THD *thd, TABLE_LIST *table);
 bool extend_table_list(THD *thd, TABLE_LIST *tables,
                        Prelocking_strategy *prelocking_strategy,
                        bool has_prelocking_list);
-
-void promote_select_describe_flag_if_needed(LEX *lex);
 
 /**
   A context of open_tables() function, used to recover

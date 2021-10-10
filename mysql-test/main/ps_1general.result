@@ -264,6 +264,7 @@ information_schema
 mtr
 mysql
 performance_schema
+sys
 test
 prepare stmt4 from ' show tables from test like ''t2%'' ';
 execute stmt4;
@@ -291,9 +292,9 @@ a	int(11)	NO	PRI	NULL
 create index t2_idx on t2(b);
 prepare stmt4 from ' show index from t2 from test ';
 execute stmt4;
-Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment
-t2	0	PRIMARY	1	a	A	0	NULL	NULL		BTREE		
-t2	1	t2_idx	1	b	A	NULL	NULL	NULL	YES	BTREE		
+Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Ignored
+t2	0	PRIMARY	1	a	A	0	NULL	NULL		BTREE			NO
+t2	1	t2_idx	1	b	A	NULL	NULL	NULL	YES	BTREE			NO
 prepare stmt4 from ' show table status from test like ''t2%'' ';
 execute stmt4;
 Name	Engine	Version	Row_format	Rows	Avg_row_length	Data_length	Max_data_length	Index_length	Data_free	Auto_increment	Create_time	Update_time	Check_time	Collation	Checksum	Create_options	Comment	Max_index_length	Temporary
@@ -386,9 +387,7 @@ ERROR HY000: This command is not supported in the prepared statement protocol ye
 prepare stmt1 from ' deallocate prepare never_prepared ' ;
 ERROR HY000: This command is not supported in the prepared statement protocol yet
 prepare stmt1 from 'alter view v1 as select 2';
-ERROR HY000: This command is not supported in the prepared statement protocol yet
 prepare stmt4 from ' use test ' ;
-ERROR HY000: This command is not supported in the prepared statement protocol yet
 prepare stmt3 from ' create database mysqltest ';
 create database mysqltest ;
 prepare stmt3 from ' drop database mysqltest ';
@@ -402,12 +401,9 @@ drop table t2 ;
 execute stmt3;
 ERROR 42S02: Table 'test.t2' doesn't exist
 prepare stmt3 from ' lock tables t1 read ' ;
-ERROR HY000: This command is not supported in the prepared statement protocol yet
 prepare stmt3 from ' unlock tables ' ;
-ERROR HY000: This command is not supported in the prepared statement protocol yet
 prepare stmt1 from ' load data infile ''<MYSQLTEST_VARDIR>/tmp/data.txt''
      into table t1 fields terminated by ''\t'' ';
-ERROR HY000: This command is not supported in the prepared statement protocol yet
 prepare stmt1 from ' select * into outfile ''<MYSQLTEST_VARDIR>/tmp/data.txt'' from t1 ';
 execute stmt1 ;
 prepare stmt1 from ' optimize table t1 ' ;
@@ -415,7 +411,6 @@ prepare stmt1 from ' analyze table t1 ' ;
 prepare stmt1 from ' checksum table t1 ' ;
 prepare stmt1 from ' repair table t1 ' ;
 prepare stmt1 from ' handler t1 open ';
-ERROR HY000: This command is not supported in the prepared statement protocol yet
 prepare stmt3 from ' commit ' ;
 prepare stmt3 from ' rollback ' ;
 prepare stmt4 from ' SET sql_mode=ansi ';

@@ -29,7 +29,6 @@ Created 2011/12/19
 #include "buf0checksum.h"
 #include "srv0start.h"
 #include "srv0srv.h"
-#include "sync0sync.h"
 #include "page0zip.h"
 #include "trx0sys.h"
 #include "fil0crypt.h"
@@ -43,10 +42,8 @@ buf_dblwr_t buf_dblwr;
 /** @return the TRX_SYS page */
 inline buf_block_t *buf_dblwr_trx_sys_get(mtr_t *mtr)
 {
-  buf_block_t *block= buf_page_get(page_id_t(TRX_SYS_SPACE, TRX_SYS_PAGE_NO),
-                                   0, RW_X_LATCH, mtr);
-  buf_block_dbg_add_level(block, SYNC_NO_ORDER_CHECK);
-  return block;
+  return buf_page_get(page_id_t(TRX_SYS_SPACE, TRX_SYS_PAGE_NO),
+                      0, RW_X_LATCH, mtr);
 }
 
 /** Initialize the doublewrite buffer data structure.
@@ -121,10 +118,6 @@ too_small:
     the InnoDB system tablespace file in the first place.
     It could be located in separate optional file(s) in a
     user-specified location. */
-
-    /* fseg_create acquires a second latch on the page,
-    therefore we must declare it: */
-    buf_block_dbg_add_level(b, SYNC_NO_ORDER_CHECK);
   }
 
   byte *fseg_header= TRX_SYS_DOUBLEWRITE + TRX_SYS_DOUBLEWRITE_FSEG +
@@ -156,7 +149,7 @@ too_small:
     tablespace, then the page has not been written to in
     doublewrite. */
 
-    ut_ad(rw_lock_get_x_lock_count(&new_block->lock) == 1);
+    ut_ad(new_block->lock.not_recursive());
     const page_id_t id= new_block->page.id();
     /* We only do this in the debug build, to ensure that the check in
     buf_flush_init_for_writing() will see a valid page type. The
@@ -307,7 +300,7 @@ func_exit:
     for (ulint i= 0; i < size * 2; i++, page += srv_page_size)
     {
       memset(page + FIL_PAGE_SPACE_ID, 0, 4);
-      /* For innodb_checksum_algorithm=innodb, we do not need to
+      /* For pre-MySQL-4.1 innodb_checksum_algorithm=innodb, we do not need to
       calculate new checksums for the pages because the field
       .._SPACE_ID does not affect them. Write the page back to where
       we read it from. */
@@ -381,7 +374,7 @@ void buf_dblwr_t::recover()
       if (!srv_is_undo_tablespace(space_id))
         ib::warn() << "A copy of page " << page_no
                    << " in the doublewrite buffer slot " << page_no_dblwr
-                   << " is beyond the end of tablespace " << space->name
+                   << " is beyond the end of " << space->chain.start->name
                    << " (" << space->size << " pages)";
 next_page:
       space->release();
@@ -402,7 +395,7 @@ next_page:
 
     if (UNIV_UNLIKELY(fio.err != DB_SUCCESS))
        ib::warn() << "Double write buffer recovery: " << page_id
-                  << " (tablespace '" << space->name
+                  << " ('" << space->chain.start->name
                   << "') read failed with error: " << fio.err;
 
     if (buf_is_zeroes(span<const byte>(read_buf, physical_size)))
@@ -718,6 +711,7 @@ void buf_dblwr_t::add_to_batch(const IORequest &request, size_t size)
   ut_ad(request.bpage);
   ut_ad(request.bpage->in_file());
   ut_ad(request.node);
+  ut_ad(request.node->space->purpose == FIL_TYPE_TABLESPACE);
   ut_ad(request.node->space->id == request.bpage->id().space());
   ut_ad(request.node->space->referenced());
   ut_ad(!srv_read_only_mode);

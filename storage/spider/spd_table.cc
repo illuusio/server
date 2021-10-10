@@ -810,6 +810,28 @@ int spider_free_share_alloc(
     }
     spider_free(spider_current_trx, share->tgt_dsns, MYF(0));
   }
+  if (share->tgt_filedsns)
+  {
+    for (roop_count = 0; roop_count < (int) share->tgt_filedsns_length;
+      roop_count++)
+    {
+      if (share->tgt_filedsns[roop_count])
+        spider_free(spider_current_trx, share->tgt_filedsns[roop_count],
+          MYF(0));
+    }
+    spider_free(spider_current_trx, share->tgt_filedsns, MYF(0));
+  }
+  if (share->tgt_drivers)
+  {
+    for (roop_count = 0; roop_count < (int) share->tgt_drivers_length;
+      roop_count++)
+    {
+      if (share->tgt_drivers[roop_count])
+        spider_free(spider_current_trx, share->tgt_drivers[roop_count],
+          MYF(0));
+    }
+    spider_free(spider_current_trx, share->tgt_drivers, MYF(0));
+  }
   if (share->tgt_pk_names)
   {
     for (roop_count = 0; roop_count < (int) share->tgt_pk_names_length;
@@ -1019,6 +1041,16 @@ void spider_free_tmp_share_alloc(
   {
     spider_free(spider_current_trx, share->tgt_dsns[0], MYF(0));
     share->tgt_dsns[0] = NULL;
+  }
+  if (share->tgt_filedsns && share->tgt_filedsns[0])
+  {
+    spider_free(spider_current_trx, share->tgt_filedsns[0], MYF(0));
+    share->tgt_filedsns[0] = NULL;
+  }
+  if (share->tgt_drivers && share->tgt_drivers[0])
+  {
+    spider_free(spider_current_trx, share->tgt_drivers[0], MYF(0));
+    share->tgt_drivers[0] = NULL;
   }
   if (share->tgt_pk_names && share->tgt_pk_names[0])
   {
@@ -2322,6 +2354,7 @@ int spider_parse_connect_info(
           SPIDER_PARAM_STR_LIST("dff", tgt_default_files);
           SPIDER_PARAM_STR_LIST("dfg", tgt_default_groups);
           SPIDER_PARAM_LONGLONG("dol", direct_order_limit, 0);
+          SPIDER_PARAM_STR_LIST("drv", tgt_drivers);
           SPIDER_PARAM_STR_LIST("dsn", tgt_dsns);
           SPIDER_PARAM_INT_WITH_MAX("erm", error_read_mode, 0, 1);
           SPIDER_PARAM_INT_WITH_MAX("ewm", error_write_mode, 0, 1);
@@ -2331,6 +2364,7 @@ int spider_parse_connect_info(
 #ifdef HA_CAN_FORCE_BULK_UPDATE
           SPIDER_PARAM_INT_WITH_MAX("fbu", force_bulk_update, 0, 1);
 #endif
+          SPIDER_PARAM_STR_LIST("fds", tgt_filedsns);
           SPIDER_PARAM_LONGLONG("frd", first_read, 0);
 #if defined(HS_HAS_SQLCOM) && defined(HAVE_HANDLERSOCKET)
           SPIDER_PARAM_LONGLONG("hrf", hs_result_free_size, 0);
@@ -2439,6 +2473,7 @@ int spider_parse_connect_info(
           error_num = connect_string_parse.print_param_error();
           goto error;
         case 6:
+          SPIDER_PARAM_STR_LIST("driver", tgt_drivers);
           SPIDER_PARAM_STR_LIST("server", server_names);
           SPIDER_PARAM_STR_LIST("socket", tgt_sockets);
           SPIDER_PARAM_HINT("idx", key_hint, 3, (int) table_share->keys,
@@ -2449,6 +2484,7 @@ int spider_parse_connect_info(
           error_num = connect_string_parse.print_param_error();
           goto error;
         case 7:
+          SPIDER_PARAM_STR_LIST("filedsn", tgt_filedsns);
           SPIDER_PARAM_STR_LIST("wrapper", tgt_wrappers);
           SPIDER_PARAM_STR_LIST("ssl_key", tgt_ssl_keys);
           SPIDER_PARAM_STR_LIST("pk_name", tgt_pk_names);
@@ -2742,6 +2778,10 @@ int spider_parse_connect_info(
     share->all_link_count = share->tgt_default_groups_length;
   if (share->all_link_count < share->tgt_dsns_length)
     share->all_link_count = share->tgt_dsns_length;
+  if (share->all_link_count < share->tgt_filedsns_length)
+    share->all_link_count = share->tgt_filedsns_length;
+  if (share->all_link_count < share->tgt_drivers_length)
+    share->all_link_count = share->tgt_drivers_length;
   if (share->all_link_count < share->tgt_pk_names_length)
     share->all_link_count = share->tgt_pk_names_length;
   if (share->all_link_count < share->tgt_sequence_names_length)
@@ -2912,6 +2952,20 @@ int spider_parse_connect_info(
     &share->tgt_dsns_lengths,
     &share->tgt_dsns_length,
     &share->tgt_dsns_charlen,
+    share->all_link_count)))
+    goto error;
+  if ((error_num = spider_increase_string_list(
+    &share->tgt_filedsns,
+    &share->tgt_filedsns_lengths,
+    &share->tgt_filedsns_length,
+    &share->tgt_filedsns_charlen,
+    share->all_link_count)))
+    goto error;
+  if ((error_num = spider_increase_string_list(
+    &share->tgt_drivers,
+    &share->tgt_drivers_lengths,
+    &share->tgt_drivers_length,
+    &share->tgt_drivers_charlen,
     share->all_link_count)))
     goto error;
   if ((error_num = spider_increase_string_list(
@@ -3108,6 +3162,10 @@ int spider_parse_connect_info(
       (uint) (sizeof(char *) * share->all_link_count),
       &share_alter->tmp_tgt_dsns,
       (uint) (sizeof(char *) * share->all_link_count),
+      &share_alter->tmp_tgt_filedsns,
+      (uint) (sizeof(char *) * share->all_link_count),
+      &share_alter->tmp_tgt_drivers,
+      (uint) (sizeof(char *) * share->all_link_count),
       &share_alter->tmp_static_link_ids,
       (uint) (sizeof(char *) * share->all_link_count),
       &share_alter->tmp_server_names_lengths,
@@ -3141,6 +3199,10 @@ int spider_parse_connect_info(
       &share_alter->tmp_tgt_default_groups_lengths,
       (uint) (sizeof(uint *) * share->all_link_count),
       &share_alter->tmp_tgt_dsns_lengths,
+      (uint) (sizeof(uint *) * share->all_link_count),
+      &share_alter->tmp_tgt_filedsns_lengths,
+      (uint) (sizeof(uint *) * share->all_link_count),
+      &share_alter->tmp_tgt_drivers_lengths,
       (uint) (sizeof(uint *) * share->all_link_count),
       &share_alter->tmp_static_link_ids_lengths,
       (uint) (sizeof(uint *) * share->all_link_count),
@@ -3190,6 +3252,10 @@ int spider_parse_connect_info(
   memcpy(share_alter->tmp_tgt_default_groups, share->tgt_default_groups,
     sizeof(char *) * share->all_link_count);
   memcpy(share_alter->tmp_tgt_dsns, share->tgt_dsns,
+    sizeof(char *) * share->all_link_count);
+  memcpy(share_alter->tmp_tgt_filedsns, share->tgt_filedsns,
+    sizeof(char *) * share->all_link_count);
+  memcpy(share_alter->tmp_tgt_drivers, share->tgt_drivers,
     sizeof(char *) * share->all_link_count);
   memcpy(share_alter->tmp_static_link_ids, share->static_link_ids,
     sizeof(char *) * share->all_link_count);
@@ -3249,6 +3315,12 @@ int spider_parse_connect_info(
   memcpy(share_alter->tmp_tgt_dsns_lengths,
     share->tgt_dsns_lengths,
     sizeof(uint) * share->all_link_count);
+  memcpy(share_alter->tmp_tgt_filedsns_lengths,
+    share->tgt_filedsns_lengths,
+    sizeof(uint) * share->all_link_count);
+  memcpy(share_alter->tmp_tgt_drivers_lengths,
+    share->tgt_drivers_lengths,
+    sizeof(uint) * share->all_link_count);
   memcpy(share_alter->tmp_static_link_ids_lengths,
     share->static_link_ids_lengths,
     sizeof(uint) * share->all_link_count);
@@ -3272,6 +3344,10 @@ int spider_parse_connect_info(
     share->tgt_default_groups_charlen;
   share_alter->tmp_tgt_dsns_charlen =
     share->tgt_dsns_charlen;
+  share_alter->tmp_tgt_filedsns_charlen =
+    share->tgt_filedsns_charlen;
+  share_alter->tmp_tgt_drivers_charlen =
+    share->tgt_drivers_charlen;
   share_alter->tmp_static_link_ids_charlen =
     share->static_link_ids_charlen;
 
@@ -3293,6 +3369,10 @@ int spider_parse_connect_info(
     share->tgt_default_groups_length;
   share_alter->tmp_tgt_dsns_length =
     share->tgt_dsns_length;
+  share_alter->tmp_tgt_filedsns_length =
+    share->tgt_filedsns_length;
+  share_alter->tmp_tgt_drivers_length =
+    share->tgt_drivers_length;
   share_alter->tmp_static_link_ids_length =
     share->static_link_ids_length;
   share_alter->tmp_tgt_ports_length = share->tgt_ports_length;
@@ -3523,7 +3603,31 @@ int spider_parse_connect_info(
       {
         error_num = ER_SPIDER_INVALID_CONNECT_INFO_TOO_LONG_NUM;
         my_printf_error(error_num, ER_SPIDER_INVALID_CONNECT_INFO_TOO_LONG_STR,
-          MYF(0), share->tgt_dsns[roop_count], "default_group");
+          MYF(0), share->tgt_dsns[roop_count], "dsn");
+        goto error;
+      }
+
+      DBUG_PRINT("info",
+        ("spider tgt_filedsns_lengths[%d] = %u", roop_count,
+        share->tgt_filedsns_lengths[roop_count]));
+      if (share->tgt_filedsns_lengths[roop_count] >
+        SPIDER_CONNECT_INFO_PATH_MAX_LEN)
+      {
+        error_num = ER_SPIDER_INVALID_CONNECT_INFO_TOO_LONG_NUM;
+        my_printf_error(error_num, ER_SPIDER_INVALID_CONNECT_INFO_TOO_LONG_STR,
+          MYF(0), share->tgt_filedsns[roop_count], "filedsn");
+        goto error;
+      }
+
+      DBUG_PRINT("info",
+        ("spider tgt_drivers_lengths[%d] = %u", roop_count,
+        share->tgt_drivers_lengths[roop_count]));
+      if (share->tgt_drivers_lengths[roop_count] >
+        SPIDER_CONNECT_INFO_MAX_LEN)
+      {
+        error_num = ER_SPIDER_INVALID_CONNECT_INFO_TOO_LONG_NUM;
+        my_printf_error(error_num, ER_SPIDER_INVALID_CONNECT_INFO_TOO_LONG_STR,
+          MYF(0), share->tgt_drivers[roop_count], "driver");
         goto error;
       }
 
@@ -3625,8 +3729,14 @@ int spider_set_connect_info_default(
 ) {
   bool check_socket;
   bool check_database;
+  bool check_default_file;
+  bool check_host;
+  bool check_port;
   bool socket_has_default_value;
   bool database_has_default_value;
+  bool default_file_has_default_value;
+  bool host_has_default_value;
+  bool port_has_default_value;
   int error_num, roop_count, roop_count2;
   DBUG_ENTER("spider_set_connect_info_default");
   for (roop_count = 0; roop_count < (int) share->all_link_count; roop_count++)
@@ -3654,10 +3764,35 @@ int spider_set_connect_info_default(
     } else {
       check_database = FALSE;
     }
-    if (check_socket || check_database)
+    if (
+      !share->tgt_default_files[roop_count] &&
+      share->tgt_default_groups[roop_count] &&
+      (*spd_defaults_file || *spd_defaults_extra_file)
+    ) {
+      check_default_file = TRUE;
+    } else {
+      check_default_file = FALSE;
+    }
+    if (!share->tgt_hosts[roop_count])
+    {
+      check_host = TRUE;
+    } else {
+      check_host = FALSE;
+    }
+    if (share->tgt_ports[roop_count] == -1)
+    {
+      check_port = TRUE;
+    } else {
+      check_port = FALSE;
+    }
+    if (check_socket || check_database || check_default_file || check_host ||
+      check_port)
     {
       socket_has_default_value = check_socket;
       database_has_default_value = check_database;
+      default_file_has_default_value = check_default_file;
+      host_has_default_value = check_host;
+      port_has_default_value = check_port;
       if (share->tgt_wrappers[roop_count])
       {
         for (roop_count2 = 0; roop_count2 < SPIDER_DBTON_SIZE; roop_count2++)
@@ -3685,6 +3820,21 @@ int spider_set_connect_info_default(
                 database_has_default_value = spider_dbton[roop_count2].
                   db_util->database_has_default_value();
               }
+              if (check_default_file)
+              {
+                default_file_has_default_value = spider_dbton[roop_count2].
+                  db_util->default_file_has_default_value();
+              }
+              if (check_host)
+              {
+                host_has_default_value = spider_dbton[roop_count2].
+                  db_util->host_has_default_value();
+              }
+              if (check_port)
+              {
+                port_has_default_value = spider_dbton[roop_count2].
+                  db_util->port_has_default_value();
+              }
               break;
             }
           }
@@ -3693,6 +3843,9 @@ int spider_set_connect_info_default(
     } else {
       socket_has_default_value = FALSE;
       database_has_default_value = FALSE;
+      default_file_has_default_value = FALSE;
+      host_has_default_value = FALSE;
+      port_has_default_value = FALSE;
     }
 
     if (!share->tgt_wrappers[roop_count])
@@ -3708,7 +3861,7 @@ int spider_set_connect_info_default(
       }
     }
 
-    if (!share->tgt_hosts[roop_count])
+    if (host_has_default_value)
     {
       DBUG_PRINT("info",("spider create default tgt_hosts"));
       share->tgt_hosts_lengths[roop_count] = strlen(my_localhost);
@@ -3755,11 +3908,8 @@ int spider_set_connect_info_default(
       }
     }
 
-    if (
-      !share->tgt_default_files[roop_count] &&
-      share->tgt_default_groups[roop_count] &&
-      (*spd_defaults_file || *spd_defaults_extra_file)
-    ) {
+    if (default_file_has_default_value)
+    {
       DBUG_PRINT("info",("spider create default tgt_default_files"));
       if (*spd_defaults_extra_file)
       {
@@ -3830,7 +3980,7 @@ int spider_set_connect_info_default(
     }
 */
 
-    if (share->tgt_ports[roop_count] == -1)
+    if (port_has_default_value)
     {
       share->tgt_ports[roop_count] = MYSQL_PORT;
     } else if (share->tgt_ports[roop_count] < 0)
@@ -4367,7 +4517,9 @@ int spider_create_conn_keys(
       + 1 + 1
       + share->tgt_default_files_lengths[roop_count] + 1
       + share->tgt_default_groups_lengths[roop_count] + 1
-      + share->tgt_dsns_lengths[roop_count];
+      + share->tgt_dsns_lengths[roop_count] + 1
+      + share->tgt_filedsns_lengths[roop_count] + 1
+      + share->tgt_drivers_lengths[roop_count];
     share->conn_keys_charlen += conn_keys_lengths[roop_count] + 2;
 #if defined(HS_HAS_SQLCOM) && defined(HAVE_HANDLERSOCKET)
     hs_r_conn_keys_lengths[roop_count]
@@ -4456,9 +4608,14 @@ int spider_create_conn_keys(
     DBUG_PRINT("info",("spider tgt_wrappers[%d]=%s", roop_count,
       share->tgt_wrappers[roop_count]));
     tmp_name = strmov(tmp_name + 1, share->tgt_wrappers[roop_count]);
-    DBUG_PRINT("info",("spider tgt_hosts[%d]=%s", roop_count,
-      share->tgt_hosts[roop_count]));
-    tmp_name = strmov(tmp_name + 1, share->tgt_hosts[roop_count]);
+    if (share->tgt_hosts[roop_count])
+    {
+      DBUG_PRINT("info",("spider tgt_hosts[%d]=%s", roop_count,
+        share->tgt_hosts[roop_count]));
+      tmp_name = strmov(tmp_name + 1, share->tgt_hosts[roop_count]);
+    } else {
+      tmp_name++;
+    }
     my_sprintf(port_str, (port_str, "%05ld", share->tgt_ports[roop_count]));
     DBUG_PRINT("info",("spider port_str=%s", port_str));
     tmp_name = strmov(tmp_name + 1, port_str);
@@ -4549,6 +4706,20 @@ int spider_create_conn_keys(
       DBUG_PRINT("info",("spider tgt_dsns[%d]=%s", roop_count,
         share->tgt_dsns[roop_count]));
       tmp_name = strmov(tmp_name + 1, share->tgt_dsns[roop_count]);
+    } else
+      tmp_name++;
+    if (share->tgt_filedsns[roop_count])
+    {
+      DBUG_PRINT("info",("spider tgt_filedsns[%d]=%s", roop_count,
+        share->tgt_filedsns[roop_count]));
+      tmp_name = strmov(tmp_name + 1, share->tgt_filedsns[roop_count]);
+    } else
+      tmp_name++;
+    if (share->tgt_drivers[roop_count])
+    {
+      DBUG_PRINT("info",("spider tgt_drivers[%d]=%s", roop_count,
+        share->tgt_drivers[roop_count]));
+      tmp_name = strmov(tmp_name + 1, share->tgt_drivers[roop_count]);
     } else
       tmp_name++;
     tmp_name++;
@@ -6149,6 +6320,7 @@ int spider_free_share(
 #endif
     if (
       share->sts_init &&
+      share->table_share->tmp_table == NO_TMP_TABLE &&
       spider_param_store_last_sts(share->store_last_sts)
     ) {
       if (!thd)
@@ -6169,6 +6341,7 @@ int spider_free_share(
     }
     if (
       share->crd_init &&
+      share->table_share->tmp_table == NO_TMP_TABLE &&
       spider_param_store_last_crd(share->store_last_crd)
     ) {
       if (!thd)
@@ -8000,6 +8173,7 @@ int spider_get_sts(
 #endif
   if (
     !share->sts_init &&
+    share->table_share->tmp_table == NO_TMP_TABLE &&
     spider_param_load_sts_at_startup(share->load_sts_at_startup) &&
     (!share->init || share->init_error)
   ) {
@@ -8150,6 +8324,7 @@ int spider_get_crd(
 #endif
   if (
     !share->crd_init &&
+    share->table_share->tmp_table == NO_TMP_TABLE &&
     spider_param_load_sts_at_startup(share->load_crd_at_startup)
   ) {
     error_num = spider_sys_get_table_crd(
@@ -8479,7 +8654,7 @@ bool spider_check_hs_pk_update(
           field->type() == MYSQL_TYPE_GEOMETRY
         ) {
           var_len = uint2korr(ptr);
-          tmp_str.set_quick((char *) ptr + HA_KEY_BLOB_LENGTH, var_len,
+          tmp_str.set((char *) ptr + HA_KEY_BLOB_LENGTH, var_len,
             &my_charset_bin);
           str = tmp_str.get_str();
         } else {
@@ -8538,12 +8713,14 @@ void spider_set_tmp_share_pointer(
   tmp_share->tgt_default_files = &tmp_connect_info[13];
   tmp_share->tgt_default_groups = &tmp_connect_info[14];
   tmp_share->tgt_dsns = &tmp_connect_info[15];
-  tmp_share->tgt_pk_names = &tmp_connect_info[16];
-  tmp_share->tgt_sequence_names = &tmp_connect_info[17];
-  tmp_share->static_link_ids = &tmp_connect_info[18];
+  tmp_share->tgt_filedsns = &tmp_connect_info[16];
+  tmp_share->tgt_drivers = &tmp_connect_info[17];
+  tmp_share->tgt_pk_names = &tmp_connect_info[18];
+  tmp_share->tgt_sequence_names = &tmp_connect_info[19];
+  tmp_share->static_link_ids = &tmp_connect_info[20];
 #if defined(HS_HAS_SQLCOM) && defined(HAVE_HANDLERSOCKET)
-  tmp_share->hs_read_socks = &tmp_connect_info[19];
-  tmp_share->hs_write_socks = &tmp_connect_info[20];
+  tmp_share->hs_read_socks = &tmp_connect_info[21];
+  tmp_share->hs_write_socks = &tmp_connect_info[22];
 #endif
   tmp_share->tgt_ports = &tmp_long[0];
   tmp_share->tgt_ssl_vscs = &tmp_long[1];
@@ -8593,12 +8770,14 @@ void spider_set_tmp_share_pointer(
   tmp_share->tgt_default_files_lengths = &tmp_connect_info_length[13];
   tmp_share->tgt_default_groups_lengths = &tmp_connect_info_length[14];
   tmp_share->tgt_dsns_lengths = &tmp_connect_info_length[15];
-  tmp_share->tgt_pk_names_lengths = &tmp_connect_info_length[16];
-  tmp_share->tgt_sequence_names_lengths = &tmp_connect_info_length[17];
-  tmp_share->static_link_ids_lengths = &tmp_connect_info_length[18];
+  tmp_share->tgt_filedsns_lengths = &tmp_connect_info_length[16];
+  tmp_share->tgt_drivers_lengths = &tmp_connect_info_length[17];
+  tmp_share->tgt_pk_names_lengths = &tmp_connect_info_length[18];
+  tmp_share->tgt_sequence_names_lengths = &tmp_connect_info_length[19];
+  tmp_share->static_link_ids_lengths = &tmp_connect_info_length[20];
 #if defined(HS_HAS_SQLCOM) && defined(HAVE_HANDLERSOCKET)
-  tmp_share->hs_read_socks_lengths = &tmp_connect_info_length[19];
-  tmp_share->hs_write_socks_lengths = &tmp_connect_info_length[20];
+  tmp_share->hs_read_socks_lengths = &tmp_connect_info_length[21];
+  tmp_share->hs_write_socks_lengths = &tmp_connect_info_length[22];
 #endif
   tmp_share->server_names_length = 1;
   tmp_share->tgt_table_names_length = 1;
@@ -8616,6 +8795,8 @@ void spider_set_tmp_share_pointer(
   tmp_share->tgt_default_files_length = 1;
   tmp_share->tgt_default_groups_length = 1;
   tmp_share->tgt_dsns_length = 1;
+  tmp_share->tgt_filedsns_length = 1;
+  tmp_share->tgt_drivers_length = 1;
   tmp_share->tgt_pk_names_length = 1;
   tmp_share->tgt_sequence_names_length = 1;
   tmp_share->static_link_ids_length = 1;
@@ -8781,12 +8962,12 @@ void spider_get_select_limit_from_select_lex(
   DBUG_ENTER("spider_get_select_limit_from_select_lex");
   *select_limit = 9223372036854775807LL;
   *offset_limit = 0;
-  if (select_lex && select_lex->explicit_limit)
+  if (select_lex && select_lex->limit_params.explicit_limit)
   {
-    *select_limit = select_lex->select_limit ?
-      select_lex->select_limit->val_int() : 0;
-    *offset_limit = select_lex->offset_limit ?
-      select_lex->offset_limit->val_int() : 0;
+    *select_limit = select_lex->limit_params.select_limit ?
+      select_lex->limit_params.select_limit->val_int() : 0;
+    *offset_limit = select_lex->limit_params.offset_limit ?
+      select_lex->limit_params.offset_limit->val_int() : 0;
   }
   DBUG_VOID_RETURN;
 }
@@ -8978,13 +9159,13 @@ longlong spider_split_read_param(
     result_list->set_split_read = TRUE;
   }
   DBUG_PRINT("info",("spider result_list->semi_split_read=%f", result_list->semi_split_read));
-  DBUG_PRINT("info",("spider select_lex->explicit_limit=%d", select_lex ? select_lex->explicit_limit : 0));
+  DBUG_PRINT("info",("spider select_lex->explicit_limit=%d", select_lex ? select_lex->limit_params.explicit_limit : 0));
   DBUG_PRINT("info",("spider OPTION_FOUND_ROWS=%s", select_lex && (select_lex->options & OPTION_FOUND_ROWS) ? "TRUE" : "FALSE"));
   DBUG_PRINT("info",("spider select_lex->group_list.elements=%u", select_lex ? select_lex->group_list.elements : 0));
   DBUG_PRINT("info",("spider select_lex->with_sum_func=%s", select_lex && select_lex->with_sum_func ? "TRUE" : "FALSE"));
   if (
     result_list->semi_split_read > 0 &&
-    select_lex && select_lex->explicit_limit &&
+    select_lex && select_lex->limit_params.explicit_limit &&
     !(select_lex->options & OPTION_FOUND_ROWS) &&
     !select_lex->group_list.elements &&
     !select_lex->with_sum_func
@@ -9214,7 +9395,7 @@ bool spider_check_direct_order_limit(
         select_lex ? select_lex->order_list.elements : 0));
       if (
         !first_check ||
-        !select_lex->explicit_limit ||
+        !select_lex->limit_params.explicit_limit ||
         (select_lex->options & OPTION_FOUND_ROWS) ||
         (
 #ifdef HANDLER_HAS_DIRECT_AGGREGATE
@@ -9411,10 +9592,10 @@ int spider_set_direct_limit_offset(
     DBUG_RETURN(FALSE);
 
   // ignore condition like 1=1
-#ifdef SPIDER_has_Item_with_subquery
-  if (select_lex->where && select_lex->where->with_subquery())
+#ifdef SPIDER_has_Item_has_subquery
+  if (select_lex->where && select_lex->where->has_subquery())
 #else
-  if (select_lex->where && select_lex->where->with_subselect)
+    if (select_lex->where && select_lex->where->with_subquery())
 #endif
     DBUG_RETURN(FALSE);
 
@@ -9869,8 +10050,8 @@ int spider_discover_table_structure(
   } else {
     table_charset = system_charset_info;
   }
-  uint csnamelen = strlen(table_charset->csname);
-  uint collatelen = strlen(table_charset->name);
+  uint csnamelen = table_charset->cs_name.length;
+  uint collatelen = table_charset->coll_name.length;
   if (str.reserve(SPIDER_SQL_CLOSE_PAREN_LEN + SPIDER_SQL_DEFAULT_CHARSET_LEN +
     csnamelen + SPIDER_SQL_COLLATE_LEN + collatelen +
     SPIDER_SQL_CONNECTION_LEN + SPIDER_SQL_VALUE_QUOTE_LEN +
@@ -9880,9 +10061,9 @@ int spider_discover_table_structure(
   }
   str.q_append(SPIDER_SQL_CLOSE_PAREN_STR, SPIDER_SQL_CLOSE_PAREN_LEN);
   str.q_append(SPIDER_SQL_DEFAULT_CHARSET_STR, SPIDER_SQL_DEFAULT_CHARSET_LEN);
-  str.q_append(table_charset->csname, csnamelen);
+  str.q_append(table_charset->cs_name.str, csnamelen);
   str.q_append(SPIDER_SQL_COLLATE_STR, SPIDER_SQL_COLLATE_LEN);
-  str.q_append(table_charset->name, collatelen);
+  str.q_append(table_charset->coll_name.str, collatelen);
   str.q_append(SPIDER_SQL_COMMENT_STR, SPIDER_SQL_COMMENT_LEN);
   str.q_append(SPIDER_SQL_VALUE_QUOTE_STR, SPIDER_SQL_VALUE_QUOTE_LEN);
   str.append_escape_string(share->comment.str, share->comment.length);
@@ -10342,7 +10523,7 @@ void *spider_table_bg_sts_action(
     while (spider_init_queries[i].length && !thd->killed && !thread->killed)
     {
       dispatch_command(COM_QUERY, thd, spider_init_queries[i].str,
-        (uint) spider_init_queries[i].length, FALSE, FALSE);
+        (uint) spider_init_queries[i].length);
       if (unlikely(thd->is_error()))
       {
         fprintf(stderr, "[ERROR] %s\n", spider_stmt_da_message(thd));

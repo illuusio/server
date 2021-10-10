@@ -90,6 +90,9 @@ mysql-test/lib/My/SafeProcess/my_safe_process
 mysql-test/lib/My/SafeProcess/wsrep_check_version
 mysql-test/mtr
 mysql-test/mysql-test-run
+mysql-test/mariadb-test-run
+mysql-test/mysql-stress-test.pl
+mysql-test/mysql-test-run.pl
 mysql-test/var*
 mysql-test-gcov.err
 mysql-test-gcov.msg
@@ -138,6 +141,7 @@ scripts/maria_add_gis_sp_bootstrap.sql
 scripts/galera_new_cluster
 scripts/galera_recovery
 scripts/mysql_convert_table_format.pl
+scripts/mysql_sys_schema.sql
 scripts/mysqld_multi.pl
 scripts/mysqldumpslow.pl
 scripts/mysqlhotcopy.pl
@@ -232,34 +236,6 @@ storage/rocksdb/mysql_ldb
 storage/rocksdb/myrocks_hotbackup
 storage/rocksdb/rdb_source_revision.h
 storage/rocksdb/sst_dump
-storage/tokudb/PerconaFT/buildheader/db.h
-storage/tokudb/PerconaFT/buildheader/make_tdb
-storage/tokudb/PerconaFT/buildheader/runcat.sh
-storage/tokudb/PerconaFT/ft/log_code.cc
-storage/tokudb/PerconaFT/ft/log_header.h
-storage/tokudb/PerconaFT/ft/log_print.cc
-storage/tokudb/PerconaFT/ft/logformat
-storage/tokudb/PerconaFT/ft/ftverify
-storage/tokudb/PerconaFT/ft/tdb-recover
-storage/tokudb/PerconaFT/ft/tokuftdump
-storage/tokudb/PerconaFT/portability/merge_archives_tokuportability_static.cmake
-storage/tokudb/PerconaFT/portability/toku_config.h
-storage/tokudb/PerconaFT/portability/tokuportability_static_depends.cc
-storage/tokudb/PerconaFT/snappy/
-storage/tokudb/PerconaFT/src/merge_archives_tokufractaltree_static.cmake
-storage/tokudb/PerconaFT/src/tokufractaltree_static_depends.cc
-storage/tokudb/PerconaFT/toku_include/toku_config.h
-storage/tokudb/PerconaFT/tools/ba_replay
-storage/tokudb/PerconaFT/tools/ftverify
-storage/tokudb/PerconaFT/tools/tdb-recover
-storage/tokudb/PerconaFT/tools/tokudb_dump
-storage/tokudb/PerconaFT/tools/tokudb_gen
-storage/tokudb/PerconaFT/tools/tokudb_load
-storage/tokudb/PerconaFT/tools/tokuftdump
-storage/tokudb/PerconaFT/tools/tokuft_logprint
-storage/tokudb/PerconaFT/xz/
-storage/tokudb/tokudb.cnf
-storage/tokudb/tokudb.conf
 strings/conf_to_src
 support-files/MySQL-shared-compat.spec
 support-files/binary-configure
@@ -269,7 +245,11 @@ support-files/config.small.ini
 support-files/mariadb.pc
 support-files/mariadb.pp
 support-files/mariadb.service
+support-files/mariadb.socket
+support-files/mariadb-extra.socket
 support-files/mariadb@.service
+support-files/mariadb@.socket
+support-files/mariadb-extra@.socket
 support-files/my-huge.cnf
 support-files/my-innodb-heavy-4G.cnf
 support-files/my-large.cnf
@@ -528,6 +508,7 @@ _UpgradeReport_Files/
 Backup*/
 UpgradeLog*.XML
 UpgradeLog*.htm
+*.stackdump
 
 # SQL Server files
 *.mdf

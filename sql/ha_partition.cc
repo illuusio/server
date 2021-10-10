@@ -59,6 +59,7 @@
 #include "sql_show.h"                        // append_identifier
 #include "sql_admin.h"                       // SQL_ADMIN_MSG_TEXT_SIZE
 #include "sql_select.h"
+#include "ddl_log.h"
 
 #include "debug_sync.h"
 
@@ -303,8 +304,10 @@ ha_partition::ha_partition(handlerton *hton, TABLE_SHARE *share)
 
 void ha_partition::ha_partition_init()
 {
+  DBUG_ENTER("ha_partition::ha_partition_init");
   init_alloc_root(PSI_INSTRUMENT_ME, &m_mem_root, 512, 512, MYF(0));
   init_handler_variables();
+  DBUG_VOID_RETURN;
 }
 
 /*
@@ -456,13 +459,11 @@ void ha_partition::init_handler_variables()
 #endif
 }
 
-
-const char *ha_partition::table_type() const
+const char *ha_partition::real_table_type() const
 {
   // we can do this since we only support a single engine type
   return m_file[0]->table_type();
 }
-
 
 /*
   Destructor method
@@ -920,7 +921,7 @@ int ha_partition::drop_partitions(const char *path)
           DBUG_PRINT("info", ("Drop subpartition %s", part_name_buff));
           if (unlikely((ret_error= file->delete_table(part_name_buff))))
             error= ret_error;
-          if (unlikely(deactivate_ddl_log_entry(sub_elem->log_entry->
+          if (unlikely(ddl_log_increment_phase(sub_elem->log_entry->
                                                 entry_pos)))
             error= 1;
         } while (++j < num_subparts);
@@ -937,7 +938,7 @@ int ha_partition::drop_partitions(const char *path)
           DBUG_PRINT("info", ("Drop partition %s", part_name_buff));
           if (unlikely((ret_error= file->delete_table(part_name_buff))))
             error= ret_error;
-          if (unlikely(deactivate_ddl_log_entry(part_elem->log_entry->
+          if (unlikely(ddl_log_increment_phase(part_elem->log_entry->
                                                 entry_pos)))
             error= 1;
         }
@@ -948,7 +949,7 @@ int ha_partition::drop_partitions(const char *path)
         part_elem->part_state= PART_IS_DROPPED;
     }
   } while (++i < num_parts);
-  (void) sync_ddl_log();
+  (void) ddl_log_sync();
   DBUG_RETURN(error);
 }
 
@@ -1029,7 +1030,7 @@ int ha_partition::rename_partitions(const char *path)
           DBUG_PRINT("info", ("Delete subpartition %s", norm_name_buff));
           if (unlikely((ret_error= file->delete_table(norm_name_buff))))
             error= ret_error;
-          else if (unlikely(deactivate_ddl_log_entry(sub_elem->log_entry->
+          else if (unlikely(ddl_log_increment_phase(sub_elem->log_entry->
                                                      entry_pos)))
             error= 1;
           else
@@ -1050,7 +1051,7 @@ int ha_partition::rename_partitions(const char *path)
           DBUG_PRINT("info", ("Delete partition %s", norm_name_buff));
           if (unlikely((ret_error= file->delete_table(norm_name_buff))))
             error= ret_error;
-          else if (unlikely(deactivate_ddl_log_entry(part_elem->log_entry->
+          else if (unlikely(ddl_log_increment_phase(part_elem->log_entry->
                                                      entry_pos)))
             error= 1;
           else
@@ -1058,7 +1059,7 @@ int ha_partition::rename_partitions(const char *path)
         }
       }
     } while (++i < temp_partitions);
-    (void) sync_ddl_log();
+    (void) ddl_log_sync();
   }
   i= 0;
   do
@@ -1111,10 +1112,10 @@ int ha_partition::rename_partitions(const char *path)
             DBUG_PRINT("info", ("Delete subpartition %s", norm_name_buff));
             if (unlikely((ret_error= file->delete_table(norm_name_buff))))
               error= ret_error;
-            else if (unlikely(deactivate_ddl_log_entry(sub_elem->log_entry->
+            else if (unlikely(ddl_log_increment_phase(sub_elem->log_entry->
                                                        entry_pos)))
               error= 1;
-            (void) sync_ddl_log();
+            (void) ddl_log_sync();
           }
           file= m_new_file[part];
           if (unlikely((ret_error=
@@ -1129,7 +1130,7 @@ int ha_partition::rename_partitions(const char *path)
           if (unlikely((ret_error= file->ha_rename_table(part_name_buff,
                                                          norm_name_buff))))
             error= ret_error;
-          else if (unlikely(deactivate_ddl_log_entry(sub_elem->log_entry->
+          else if (unlikely(ddl_log_increment_phase(sub_elem->log_entry->
                                                      entry_pos)))
             error= 1;
           else
@@ -1158,10 +1159,10 @@ int ha_partition::rename_partitions(const char *path)
             DBUG_PRINT("info", ("Delete partition %s", norm_name_buff));
             if (unlikely((ret_error= file->delete_table(norm_name_buff))))
               error= ret_error;
-            else if (unlikely(deactivate_ddl_log_entry(part_elem->log_entry->
+            else if (unlikely(ddl_log_increment_phase(part_elem->log_entry->
                                                        entry_pos)))
               error= 1;
-            (void) sync_ddl_log();
+            (void) ddl_log_sync();
           }
           file= m_new_file[i];
           DBUG_PRINT("info", ("Rename partition from %s to %s",
@@ -1169,7 +1170,7 @@ int ha_partition::rename_partitions(const char *path)
           if (unlikely((ret_error= file->ha_rename_table(part_name_buff,
                                                          norm_name_buff))))
             error= ret_error;
-          else if (unlikely(deactivate_ddl_log_entry(part_elem->log_entry->
+          else if (unlikely(ddl_log_increment_phase(part_elem->log_entry->
                                                      entry_pos)))
             error= 1;
           else
@@ -1178,7 +1179,7 @@ int ha_partition::rename_partitions(const char *path)
       }
     }
   } while (++i < num_parts);
-  (void) sync_ddl_log();
+  (void) ddl_log_sync();
   DBUG_RETURN(error);
 }
 
@@ -1190,9 +1191,22 @@ int ha_partition::rename_partitions(const char *path)
 #define ASSIGN_KEYCACHE_PARTS 5
 #define PRELOAD_KEYS_PARTS 6
 
-static const char *opt_op_name[]= {NULL,
-                                   "optimize", "analyze", "check", "repair",
-                                   "assign_to_keycache", "preload_keys"};
+static const LEX_CSTRING opt_op_name[]=
+{
+  { NULL, 0},
+  { STRING_WITH_LEN("optimize") },
+  { STRING_WITH_LEN("analyze") },
+  { STRING_WITH_LEN("check") },
+  { STRING_WITH_LEN("repair") },
+  { STRING_WITH_LEN("assign_to_keycache") },
+  { STRING_WITH_LEN("preload_keys") }
+};
+
+
+static const LEX_CSTRING msg_note= { STRING_WITH_LEN("note") };
+static const LEX_CSTRING msg_warning= { STRING_WITH_LEN("warning") };
+#define msg_error error_clex_str
+
 
 /*
   Optimize table
@@ -1396,14 +1410,14 @@ int ha_partition::handle_opt_part(THD *thd, HA_CHECK_OPT *check_opt,
    TODO: move this into the handler, or rewrite mysql_admin_table.
 */
 bool print_admin_msg(THD* thd, uint len,
-                            const char* msg_type,
-                            const char* db_name, String &table_name,
-                            const char* op_name, const char *fmt, ...)
+                     const LEX_CSTRING *msg_type,
+                     const char* db_name, String &table_name,
+                     const LEX_CSTRING *op_name, const char *fmt, ...)
   ATTRIBUTE_FORMAT(printf, 7, 8);
 bool print_admin_msg(THD* thd, uint len,
-                            const char* msg_type,
-                            const char* db_name, String &table_name,
-                            const char* op_name, const char *fmt, ...)
+                     const LEX_CSTRING *msg_type,
+                     const char* db_name, String &table_name,
+                     const LEX_CSTRING *op_name, const char *fmt, ...)
 {
   va_list args;
   Protocol *protocol= thd->protocol;
@@ -1511,9 +1525,9 @@ int ha_partition::handle_opt_partitions(THD *thd, HA_CHECK_OPT *check_opt,
                 error != HA_ADMIN_ALREADY_DONE &&
                 error != HA_ADMIN_TRY_ALTER)
             {
-	      print_admin_msg(thd, MYSQL_ERRMSG_SIZE, "error",
+	      print_admin_msg(thd, MYSQL_ERRMSG_SIZE, &msg_error,
                               table_share->db.str, table->alias,
-                              opt_op_name[flag],
+                              &opt_op_name[flag],
                               "Subpartition %s returned error",
                               sub_elem->partition_name);
             }
@@ -1538,9 +1552,9 @@ int ha_partition::handle_opt_partitions(THD *thd, HA_CHECK_OPT *check_opt,
               error != HA_ADMIN_ALREADY_DONE &&
               error != HA_ADMIN_TRY_ALTER)
           {
-	    print_admin_msg(thd, MYSQL_ERRMSG_SIZE, "error",
+	    print_admin_msg(thd, MYSQL_ERRMSG_SIZE, &msg_error,
                             table_share->db.str, table->alias,
-                            opt_op_name[flag], "Partition %s returned error",
+                            &opt_op_name[flag], "Partition %s returned error",
                             part_elem->partition_name);
           }
           /* reset part_state for the remaining partitions */
@@ -3744,6 +3758,15 @@ int ha_partition::open(const char *name, int mode, uint test_if_locked)
   */
   clear_handler_file();
 
+  DBUG_ASSERT(part_share);
+  lock_shared_ha_data();
+  /* Protect against cloned file, for which we don't need engine name */
+  if (m_file[0])
+    part_share->partition_engine_name= real_table_type();
+  else
+    part_share->partition_engine_name= 0;       // Checked in ha_table_exists()
+  unlock_shared_ha_data();
+
   /*
     Some handlers update statistics as part of the open call. This will in
     some cases corrupt the statistics of the partition handler and thus
@@ -4225,15 +4248,8 @@ int ha_partition::start_stmt(THD *thd, thr_lock_type lock_type)
     /* Add partition to be called in reset(). */
     bitmap_set_bit(&m_partitions_to_reset, i);
   }
-  switch (lock_type)
+  if (lock_type >= TL_FIRST_WRITE)
   {
-  case TL_WRITE_ALLOW_WRITE:
-  case TL_WRITE_CONCURRENT_INSERT:
-  case TL_WRITE_DELAYED:
-  case TL_WRITE_DEFAULT:
-  case TL_WRITE_LOW_PRIORITY:
-  case TL_WRITE:
-  case TL_WRITE_ONLY:
     if (m_part_info->part_expr)
       m_part_info->part_expr->walk(&Item::register_field_in_read_map, 1, 0);
     if (m_part_info->part_type == VERSIONING_PARTITION &&
@@ -4241,7 +4257,6 @@ int ha_partition::start_stmt(THD *thd, thr_lock_type lock_type)
       thd->lex->sql_command != SQLCOM_SELECT &&
       thd->lex->sql_command != SQLCOM_INSERT_SELECT)
       m_part_info->vers_set_hist_part(thd);
-  default:;
   }
   DBUG_RETURN(error);
 }
@@ -4401,7 +4416,7 @@ int ha_partition::write_row(const uchar * buf)
   bool have_auto_increment= table->next_number_field && buf == table->record[0];
   MY_BITMAP *old_map;
   THD *thd= ha_thd();
-  Sql_mode_save sms(thd);
+  sql_mode_t org_sql_mode= thd->variables.sql_mode;
   bool saved_auto_inc_field_not_null= table->auto_increment_field_not_null;
   DBUG_ENTER("ha_partition::write_row");
   DBUG_PRINT("enter", ("partition this: %p", this));
@@ -4467,6 +4482,7 @@ int ha_partition::write_row(const uchar * buf)
 
 exit:
   table->auto_increment_field_not_null= saved_auto_inc_field_not_null;
+  thd->variables.sql_mode= org_sql_mode;
   DBUG_RETURN(error);
 }
 
@@ -7243,7 +7259,7 @@ bool ha_partition::check_parallel_search()
   DBUG_PRINT("info",("partition select_lex: %p", select_lex));
   if (!select_lex)
     goto not_parallel;
-  if (!select_lex->explicit_limit)
+  if (!select_lex->limit_params.explicit_limit)
   {
     DBUG_PRINT("info",("partition not using explicit_limit"));
     goto parallel;
@@ -9163,6 +9179,7 @@ int ha_partition::extra(enum ha_extra_function operation)
   case HA_EXTRA_STARTING_ORDERED_INDEX_SCAN:
   case HA_EXTRA_BEGIN_ALTER_COPY:
   case HA_EXTRA_END_ALTER_COPY:
+  case HA_EXTRA_IGNORE_INSERT:
     DBUG_RETURN(loop_partitions(extra_cb, &operation));
   default:
   {
@@ -9941,9 +9958,9 @@ void ha_partition::append_row_to_str(String &str)
     for (; key_part != key_part_end; key_part++)
     {
       Field *field= key_part->field;
-      str.append(" ");
+      str.append(' ');
       str.append(&field->field_name);
-      str.append(":");
+      str.append(':');
       field_unpack(&str, field, rec, 0, false);
     }
     if (!is_rec0)
@@ -9961,9 +9978,9 @@ void ha_partition::append_row_to_str(String &str)
          field_ptr++)
     {
       Field *field= *field_ptr;
-      str.append(" ");
+      str.append(' ');
       str.append(&field->field_name);
-      str.append(":");
+      str.append(':');
       field_unpack(&str, field, rec, 0, false);
     }
     if (!is_rec0)
@@ -10001,14 +10018,14 @@ void ha_partition::print_error(int error, myf errflag)
       String str(buf,sizeof(buf),system_charset_info);
       uint32 part_id;
       str.length(0);
-      str.append("(");
+      str.append('(');
       str.append_ulonglong(m_last_part);
-      str.append(" != ");
+      str.append(STRING_WITH_LEN(" != "));
       if (get_part_for_buf(m_err_rec, m_rec0, m_part_info, &part_id))
-        str.append("?");
+        str.append('?');
       else
         str.append_ulonglong(part_id);
-      str.append(")");
+      str.append(')');
       append_row_to_str(str);
 
       /* Log this error, so the DBA can notice it and fix it! */
@@ -10961,9 +10978,9 @@ int ha_partition::check_misplaced_rows(uint read_part_id, bool do_repair)
       read_part_id != m_part_info->vers_info->now_part->id &&
       !m_part_info->vers_info->interval.is_set())
   {
-    print_admin_msg(ha_thd(), MYSQL_ERRMSG_SIZE, "note",
+    print_admin_msg(ha_thd(), MYSQL_ERRMSG_SIZE, &msg_note,
                     table_share->db.str, table->alias,
-                    opt_op_name[CHECK_PARTS],
+                    &opt_op_name[CHECK_PARTS],
                     "Not supported for non-INTERVAL history partitions");
     DBUG_RETURN(HA_ADMIN_NOT_IMPLEMENTED);
   }
@@ -10992,9 +11009,9 @@ int ha_partition::check_misplaced_rows(uint read_part_id, bool do_repair)
 
       if (num_misplaced_rows > 0)
       {
-	print_admin_msg(ha_thd(), MYSQL_ERRMSG_SIZE, "warning",
+	print_admin_msg(ha_thd(), MYSQL_ERRMSG_SIZE, &msg_warning,
                         table_share->db.str, table->alias,
-                        opt_op_name[REPAIR_PARTS],
+                        &opt_op_name[REPAIR_PARTS],
                         "Moved %lld misplaced rows",
                         num_misplaced_rows);
       }
@@ -11014,9 +11031,9 @@ int ha_partition::check_misplaced_rows(uint read_part_id, bool do_repair)
       if (!do_repair)
       {
         /* Check. */
-	print_admin_msg(ha_thd(), MYSQL_ERRMSG_SIZE, "error",
+	print_admin_msg(ha_thd(), MYSQL_ERRMSG_SIZE, &msg_error,
                         table_share->db.str, table->alias,
-                        opt_op_name[CHECK_PARTS],
+                        &opt_op_name[CHECK_PARTS],
                         "Found a misplaced row");
         /* Break on first misplaced row! */
         result= HA_ADMIN_NEEDS_UPGRADE;
@@ -11041,8 +11058,9 @@ int ha_partition::check_misplaced_rows(uint read_part_id, bool do_repair)
           str.length(0);
           if (result == HA_ERR_FOUND_DUPP_KEY)
           {
-            str.append("Duplicate key found, "
-                       "please update or delete the record:\n");
+            str.append(STRING_WITH_LEN("Duplicate key found, "
+                                       "please update or delete the "
+                                       "record:\n"));
             result= HA_ADMIN_CORRUPT;
           }
           m_err_rec= NULL;
@@ -11062,9 +11080,9 @@ int ha_partition::check_misplaced_rows(uint read_part_id, bool do_repair)
                             (uint) correct_part_id,
                             str.c_ptr_safe());
           }
-	  print_admin_msg(ha_thd(), MYSQL_ERRMSG_SIZE, "error",
+	  print_admin_msg(ha_thd(), MYSQL_ERRMSG_SIZE, &msg_error,
                           table_share->db.str, table->alias,
-                          opt_op_name[REPAIR_PARTS],
+                          &opt_op_name[REPAIR_PARTS],
                           "Failed to move/insert a row"
                           " from part %u into part %u:\n%s",
                           (uint) read_part_id,
@@ -11189,19 +11207,19 @@ int ha_partition::check_for_upgrade(HA_CHECK_OPT *check_opt)
               !(part_buf= generate_partition_syntax_for_frm(thd, m_part_info,
                                                             &part_buf_len,
                                                             NULL, NULL)) ||
-	      print_admin_msg(thd, SQL_ADMIN_MSG_TEXT_SIZE + 1, "error",
+	      print_admin_msg(thd, SQL_ADMIN_MSG_TEXT_SIZE + 1, &msg_error,
 	                      table_share->db.str,
 	                      table->alias,
-                              opt_op_name[CHECK_PARTS],
+                              &opt_op_name[CHECK_PARTS],
                               KEY_PARTITIONING_CHANGED_STR,
                               db_name.c_ptr_safe(),
                               table_name.c_ptr_safe(),
                               part_buf))
 	  {
 	    /* Error creating admin message (too long string?). */
-	    print_admin_msg(thd, MYSQL_ERRMSG_SIZE, "error",
+	    print_admin_msg(thd, MYSQL_ERRMSG_SIZE, &msg_error,
                             table_share->db.str, table->alias,
-                            opt_op_name[CHECK_PARTS],
+                            &opt_op_name[CHECK_PARTS],
                             KEY_PARTITIONING_CHANGED_STR,
                             db_name.c_ptr_safe(), table_name.c_ptr_safe(),
                             "<old partition clause>, but add ALGORITHM = 1"
@@ -11538,13 +11556,13 @@ int ha_partition::direct_update_rows_init(List<Item> *update_fields)
       table_list= table_list->parent_l;
     st_select_lex *select_lex= table_list->select_lex;
     DBUG_PRINT("info", ("partition select_lex: %p", select_lex));
-    if (select_lex && select_lex->explicit_limit)
+    if (select_lex && select_lex->limit_params.explicit_limit)
     {
       DBUG_PRINT("info", ("partition explicit_limit=TRUE"));
       DBUG_PRINT("info", ("partition offset_limit: %p",
-                          select_lex->offset_limit));
+                          select_lex->limit_params.offset_limit));
       DBUG_PRINT("info", ("partition select_limit: %p",
-                          select_lex->select_limit));
+                          select_lex->limit_params.select_limit));
       DBUG_PRINT("info", ("partition FALSE by select_lex"));
       DBUG_RETURN(HA_ERR_WRONG_COMMAND);
     }
@@ -11730,13 +11748,13 @@ int ha_partition::direct_delete_rows_init()
       table_list= table_list->parent_l;
     st_select_lex *select_lex= table_list->select_lex;
     DBUG_PRINT("info", ("partition select_lex: %p", select_lex));
-    if (select_lex && select_lex->explicit_limit)
+    if (select_lex && select_lex->limit_params.explicit_limit)
     {
       DBUG_PRINT("info", ("partition explicit_limit: TRUE"));
       DBUG_PRINT("info", ("partition offset_limit: %p",
-                          select_lex->offset_limit));
+                          select_lex->limit_params.offset_limit));
       DBUG_PRINT("info", ("partition select_limit: %p",
-                          select_lex->select_limit));
+                          select_lex->limit_params.select_limit));
       DBUG_PRINT("info", ("partition FALSE by select_lex"));
       DBUG_RETURN(HA_ERR_WRONG_COMMAND);
     }

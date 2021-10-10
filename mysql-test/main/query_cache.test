@@ -432,10 +432,12 @@ drop table t1;
 create table t1 (a int);
 insert into t1 values (1),(2),(3);
 show status like "Qcache_queries_in_cache";
+--enable_prepare_warnings
 select * from t1 into outfile "query_cache.out.file";
 --error ER_FILE_EXISTS_ERROR
 select * from t1 into outfile "query_cache.out.file";
 select * from t1 limit 1 into dumpfile "query_cache.dump.file";
+--disable_prepare_warnings
 show status like "Qcache_queries_in_cache";
 drop table t1;
 let $datadir=`select @@datadir`;
@@ -810,22 +812,24 @@ open c1;
 select * from t1;
 end//
 call p1()//
-drop procedure p1;
+drop procedure p1//
 
+--enable_prepare_warnings
 create function f1() returns int
 begin
 Declare var1 int;
 select max(a) from t1 into var1;
 return var1;
 end//
+--disable_prepare_warnings
 create procedure `p1`()
 begin
  select a, f1() from t1;
 end//
-SET @old_log_bin_trust_function_creators= @@global.log_bin_trust_function_creators;
-SET GLOBAL log_bin_trust_function_creators = 1;
+SET @old_log_bin_trust_function_creators= @@global.log_bin_trust_function_creators//
+SET GLOBAL log_bin_trust_function_creators = 1//
 call p1()//
-SET GLOBAL log_bin_trust_function_creators = @old_log_bin_trust_function_creators;
+SET GLOBAL log_bin_trust_function_creators = @old_log_bin_trust_function_creators//
 drop procedure p1//
 drop function f1//
 
@@ -1804,8 +1808,28 @@ drop table t1;
 --echo # MDEV-24858 SIGABRT in DbugExit from my_malloc in Query_cache::init_cache Regression
 --echo #
 --disable_warnings
+SET @qc= @@query_cache_size;
 set global Query_cache_size=18446744073709547520;
+SET GLOBAL query_cache_size= @qc;
 --enable_warnings
+
+--echo #
+--echo # MDEV-22301 JSON_TABLE: Queries are not inserted into query cache.
+--echo #
+create table t1 (a text);
+insert into t1 values ('{"a":"foo"}');
+flush status;
+SHOW STATUS LIKE 'Qcache_inserts';
+select * from t1, json_table(t1.a, '$' columns (f varchar(20) path '$.a')) as jt;
+SHOW STATUS LIKE 'Qcache_inserts';
+drop table t1;
+
+--echo #
+--echo # MDEV-25228 JSON_TABLE: Server crashes in Query_cache::unlink_table.
+--echo #
+CREATE TABLE t (a INT);
+SELECT * FROM t JOIN JSON_TABLE('{}' , '$' COLUMNS(b FOR ORDINALITY)) AS jt;
+DROP TABLE t;
 
 --echo restore defaults
 SET GLOBAL query_cache_type= default;

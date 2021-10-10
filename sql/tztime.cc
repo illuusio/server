@@ -1769,7 +1769,8 @@ end_with_setting_default_tz:
   /* If we have default time zone try to load it */
   if (default_tzname)
   {
-    String tmp_tzname2(default_tzname, &my_charset_latin1);
+    String tmp_tzname2(default_tzname, strlen(default_tzname),
+                       &my_charset_latin1);
     /*
       Time zone tables may be open here, and my_tz_find() may open
       most of them once more, but this is OK for system tables open
@@ -2417,7 +2418,7 @@ print_tz_as_sql(const char* tz_name, const TIME_ZONE_INFO *sp)
   }
 
   printf("INSERT INTO time_zone_transition_type \
-(Time_zone_id, Transition_type_id, Offset, Is_DST, Abbreviation) VALUES\n");
+(Time_zone_id, Transition_type_id, `Offset`, Is_DST, Abbreviation) VALUES\n");
 
   for (i= 0; i < sp->typecnt; i++)
     printf("%s(@time_zone_id, %u, %ld, %d, '%s')\n", (i == 0 ? " " : ","), i,

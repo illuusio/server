@@ -58,6 +58,11 @@ Street, Fifth Floor, Boston, MA 02110-1335 USA
 #include "backup_mysql.h"
 #include <btr0btr.h>
 
+#ifdef _WIN32
+#include <aclapi.h>
+#endif
+
+
 #define ROCKSDB_BACKUP_DIR "#rocksdb"
 
 /* list of files to sync for --rsync mode */
@@ -124,7 +129,6 @@ struct datadir_thread_ctxt_t {
 	uint			n_thread;
 	uint			*count;
 	pthread_mutex_t*	count_mutex;
-	os_thread_id_t		id;
 	bool			ret;
 };
 
@@ -267,7 +271,6 @@ datadir_iter_next_database(datadir_iter_t *it)
 		}
 		snprintf(it->dbpath, it->dbpath_len, "%s/%s",
 			 it->datadir_path, it->dbinfo.name);
-		os_normalize_path(it->dbpath);
 
 		if (it->dbinfo.type == OS_FILE_TYPE_FILE) {
 			it->is_file = true;
@@ -939,7 +942,7 @@ backup_file_printf(const char *filename, const char *fmt, ...)
 
 static
 bool
-run_data_threads(datadir_iter_t *it, os_thread_func_t func, uint n)
+run_data_threads(datadir_iter_t *it, void (*func)(datadir_thread_ctxt_t *ctxt), uint n)
 {
 	datadir_thread_ctxt_t	*data_threads;
 	uint			i, count;
@@ -957,12 +960,12 @@ run_data_threads(datadir_iter_t *it, os_thread_func_t func, uint n)
 		data_threads[i].n_thread = i + 1;
 		data_threads[i].count = &count;
 		data_threads[i].count_mutex = &count_mutex;
-		data_threads[i].id = os_thread_create(func, data_threads + i);
+		std::thread(func, data_threads + i).detach();
 	}
 
 	/* Wait for threads to exit */
 	while (1) {
-		os_thread_sleep(100000);
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		pthread_mutex_lock(&count_mutex);
 		if (count == 0) {
 			pthread_mutex_unlock(&count_mutex);
@@ -985,64 +988,6 @@ run_data_threads(datadir_iter_t *it, os_thread_func_t func, uint n)
 
 	return(ret);
 }
-
-#ifdef _WIN32
-#include <windows.h>
-#include <accctrl.h>
-#include <aclapi.h>
-/*
-  On Windows, fix permission of the file after "copyback"
-  We assume that after copyback, mysqld will run as service as NetworkService
-  user, thus well give full permission on given file to that user.
-*/
-
-static int fix_win_file_permissions(const char *file)
-{
-	struct {
-		TOKEN_USER tokenUser;
-		BYTE buffer[SECURITY_MAX_SID_SIZE];
-	} tokenInfoBuffer;
-	HANDLE hFile = CreateFile(file, READ_CONTROL | WRITE_DAC, 0, NULL, OPEN_EXISTING,
-		FILE_FLAG_BACKUP_SEMANTICS, NULL);
-	if (hFile == INVALID_HANDLE_VALUE)
-		return -1;
-	ACL* pOldDACL;
-	SECURITY_DESCRIPTOR* pSD = NULL;
-	EXPLICIT_ACCESS ea = { 0 };
-	PSID pSid = NULL;
-
-	GetSecurityInfo(hFile, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL,
-		&pOldDACL, NULL, (void**)&pSD);
-	DWORD size = SECURITY_MAX_SID_SIZE;
-	pSid = (PSID)tokenInfoBuffer.buffer;
-	if (!CreateWellKnownSid(WinNetworkServiceSid, NULL, pSid,
-		&size))
-	{
-		return 1;
-	}
-	ea.Trustee.TrusteeForm = TRUSTEE_IS_SID;
-	ea.Trustee.ptstrName = (LPTSTR)pSid;
-
-	ea.grfAccessMode = GRANT_ACCESS;
-	ea.grfAccessPermissions = GENERIC_ALL;
-	ea.grfInheritance = CONTAINER_INHERIT_ACE | OBJECT_INHERIT_ACE;
-	ea.Trustee.TrusteeType = TRUSTEE_IS_UNKNOWN;
-	ACL* pNewDACL = 0;
-	DWORD err = SetEntriesInAcl(1, &ea, pOldDACL, &pNewDACL);
-	if (!err)
-	{
-		DBUG_ASSERT(pNewDACL);
-		SetSecurityInfo(hFile, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL,
-			pNewDACL, NULL);
-		LocalFree((HLOCAL)pNewDACL);
-	}
-	if (pSD != NULL)
-		LocalFree((HLOCAL)pSD);
-	CloseHandle(hFile);
-	return 0;
-}
-
-#endif
 
 
 /************************************************************************
@@ -1094,10 +1039,6 @@ copy_file(ds_ctxt_t *datasink,
 	/* close */
 	msg(thread_n,"        ...done");
 	datafile_close(&cursor);
-#ifdef _WIN32
-	if (xtrabackup_copy_back || xtrabackup_move_back)
-		ut_a(!fix_win_file_permissions(dstfile->path));
-#endif
 	if (ds_close(dstfile)) {
 		goto error_close;
 	}
@@ -1170,10 +1111,6 @@ move_file(ds_ctxt_t *datasink,
 			errbuf);
 		return(false);
 	}
-#ifdef _WIN32
-	if (xtrabackup_copy_back || xtrabackup_move_back)
-		ut_a(!fix_win_file_permissions(dst_file_path_abs));
-#endif
 	msg(thread_n,"        ...done");
 
 	return(true);
@@ -1196,13 +1133,12 @@ read_link_file(const char *ibd_filepath, const char *link_filepath)
 		os_file_read_string(file, filepath, OS_FILE_MAX_PATH);
 		fclose(file);
 
-		if (strlen(filepath)) {
+		if (size_t len = strlen(filepath)) {
 			/* Trim whitespace from end of filepath */
-			ulint lastch = strlen(filepath) - 1;
+			ulint lastch = len - 1;
 			while (lastch > 4 && filepath[lastch] <= 0x20) {
 				filepath[lastch--] = 0x00;
 			}
-			os_normalize_path(filepath);
 		}
 
 		tablespace_locations[ibd_filepath] = filepath;
@@ -1783,6 +1719,7 @@ apply_log_finish()
 	return(true);
 }
 
+
 bool
 copy_back()
 {
@@ -1803,6 +1740,19 @@ copy_back()
 			return(false);
 		}
 	}
+
+#ifdef _WIN32
+	/* Initialize security descriptor for the new directories
+	to be the same as for datadir */
+	DWORD res = GetNamedSecurityInfoA(mysql_data_home,
+		SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+		NULL, NULL, NULL, NULL,
+		&my_dir_security_attributes.lpSecurityDescriptor);
+	if (res != ERROR_SUCCESS) {
+		msg("Unable to read security descriptor of %s",mysql_data_home);
+	}
+#endif
+
 	if (srv_undo_dir && *srv_undo_dir
 		&& !directory_exists(srv_undo_dir, true)) {
 			return(false);
@@ -1837,7 +1787,6 @@ copy_back()
 	}
 
 	srv_max_n_threads = 1000;
-	sync_check_init();
 
 	/* copy undo tablespaces */
 
@@ -1902,9 +1851,8 @@ copy_back()
 	     end(srv_sys_space.end());
 	     iter != end;
 	     ++iter) {
-		const char *filename = base_name(iter->name());
-
-		if (!(ret = copy_or_move_file(filename, iter->name(),
+		const char *filepath = iter->filepath();
+		if (!(ret = copy_or_move_file(base_name(filepath), filepath,
 					      dst_dir, 1))) {
 			goto cleanup;
 		}
@@ -1927,7 +1875,6 @@ copy_back()
 		const char *filename;
 		char c_tmp;
 		int i_tmp;
-		bool is_ibdata_file;
 
 		if (strstr(node.filepath,"/" ROCKSDB_BACKUP_DIR "/")
 #ifdef _WIN32
@@ -1982,23 +1929,19 @@ copy_back()
 		}
 
 		/* skip innodb data files */
-		is_ibdata_file = false;
 		for (Tablespace::const_iterator iter(srv_sys_space.begin()),
 		       end(srv_sys_space.end()); iter != end; ++iter) {
-			const char *ibfile = base_name(iter->name());
-			if (strcmp(ibfile, filename) == 0) {
-				is_ibdata_file = true;
-				break;
+			if (!strcmp(base_name(iter->filepath()), filename)) {
+				goto next_file;
 			}
-		}
-		if (is_ibdata_file) {
-			continue;
 		}
 
 		if (!(ret = copy_or_move_file(node.filepath, node.filepath_rel,
 					      mysql_data_home, 1))) {
 			goto cleanup;
 		}
+	next_file:
+		continue;
 	}
 
 	/* copy buffer pool dump */
@@ -2038,7 +1981,6 @@ cleanup:
 
 	ds_data = NULL;
 
-	sync_check_close();
 	return(ret);
 }
 
@@ -2086,13 +2028,10 @@ decrypt_decompress_file(const char *filepath, uint thread_n)
  	return(true);
 }
 
-static
-os_thread_ret_t STDCALL
-decrypt_decompress_thread_func(void *arg)
+static void decrypt_decompress_thread_func(datadir_thread_ctxt_t *ctxt)
 {
 	bool ret = true;
 	datadir_node_t node;
-	datadir_thread_ctxt_t *ctxt = (datadir_thread_ctxt_t *)(arg);
 
 	datadir_node_init(&node);
 
@@ -2122,9 +2061,6 @@ cleanup:
 	pthread_mutex_unlock(ctxt->count_mutex);
 
 	ctxt->ret = ret;
-
-	os_thread_exit();
-	OS_THREAD_DUMMY_RETURN;
 }
 
 bool
@@ -2134,7 +2070,6 @@ decrypt_decompress()
 	datadir_iter_t *it = NULL;
 
 	srv_max_n_threads = 1000;
-	sync_check_init();
 
 	/* cd to backup directory */
 	if (my_setwd(xtrabackup_target_dir, MYF(MY_WME)))
@@ -2163,8 +2098,6 @@ decrypt_decompress()
 
 	ds_data = NULL;
 
-	sync_check_close();
-
 	return(ret);
 }
 
@@ -2185,7 +2118,14 @@ static bool backup_files_from_datadir(const char *dir_path)
 		if (info.type != OS_FILE_TYPE_FILE)
 			continue;
 
-		const char *pname = strrchr(info.name, OS_PATH_SEPARATOR);
+		const char *pname = strrchr(info.name, '/');
+#ifdef _WIN32
+		if (const char *last = strrchr(info.name, '\\')) {
+			if (!pname || last >pname) {
+				pname = last;
+			}
+		}
+#endif
 		if (!pname)
 			pname = info.name;
 
@@ -2202,7 +2142,7 @@ static bool backup_files_from_datadir(const char *dir_path)
 			unlink(info.name);
 
 		std::string full_path(dir_path);
-		full_path.append(1, OS_PATH_SEPARATOR).append(info.name);
+		full_path.append(1, '/').append(info.name);
 		if (!(ret = copy_file(ds_data, full_path.c_str() , info.name, 1)))
 			break;
 	}

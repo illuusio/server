@@ -1,5 +1,5 @@
 /* Copyright (c) 2002, 2014, Oracle and/or its affiliates.
-   Copyright (c) 2008, 2020, MariaDB
+   Copyright (c) 2008, 2021, MariaDB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -7177,7 +7177,7 @@ static void test_embedded_start_stop()
   if (mysql_server_init(embedded_server_arg_count,
                         embedded_server_args,
                         (char**) embedded_server_groups))
-    DIE("Can't initialize MySQL server");
+    DIE("Can't initialize MariaDB server");
 
   /* connect to server with no flags, default protocol, auto reconnect true */
   mysql= client_connect(0, MYSQL_PROTOCOL_DEFAULT, 1);
@@ -14328,8 +14328,8 @@ static void test_client_character_set()
   DIE_UNLESS(rc == 0);
 
   mysql_get_character_set_info(mysql, &cs);
-  DIE_UNLESS(!strcmp(cs.csname, "utf8"));
-  DIE_UNLESS(!strcmp(cs.name, "utf8_general_ci"));
+  DIE_UNLESS(!strcmp(cs.csname, "utf8mb3"));
+  DIE_UNLESS(!strcmp(cs.name, "utf8mb3_general_ci"));
   /* Restore the default character set */
   rc= mysql_set_character_set(mysql, csdefault);
   myquery(rc);
@@ -15959,7 +15959,7 @@ static void test_bug15752()
                            opt_unix_socket,
                            CLIENT_MULTI_STATEMENTS))
   {
-    printf("Unable connect to MySQL server: %s\n", mysql_error(&mysql_local));
+    printf("Unable connect to MariaDB server: %s\n", mysql_error(&mysql_local));
     DIE_UNLESS(0);
   }
   rc= mysql_real_query(&mysql_local, query, strlen(query));
@@ -17110,10 +17110,10 @@ static void test_bug30472()
 
   /* Check that we have UTF8 on the server and on the client. */
 
-  DIE_UNLESS(strcmp(character_set_name_4, "utf8") == 0);
-  DIE_UNLESS(strcmp(character_set_client_4, "utf8") == 0);
-  DIE_UNLESS(strcmp(character_set_results_4, "utf8") == 0);
-  DIE_UNLESS(strcmp(collation_connnection_4, "utf8_general_ci") == 0);
+  DIE_UNLESS(strcmp(character_set_name_4, "utf8mb3") == 0);
+  DIE_UNLESS(strcmp(character_set_client_4, "utf8mb3") == 0);
+  DIE_UNLESS(strcmp(character_set_results_4, "utf8mb3") == 0);
+  DIE_UNLESS(strcmp(collation_connnection_4, "utf8mb3_general_ci") == 0);
 
   /* That's it. Cleanup. */
 
@@ -21374,6 +21374,135 @@ static void test_mdev20261()
 }
 
 
+static void test_execute_direct()
+{
+#ifndef EMBEDDED_LIBRARY
+  MYSQL_STMT* stmt= mysql_stmt_init(mysql);
+  int rc= mariadb_stmt_execute_direct(stmt,"do 1",-1);
+  myquery(rc);
+  mysql_stmt_close(stmt);
+#endif
+}
+
+
+static void assert_metadata_skipped_count_equals(MYSQL *mysql, int val)
+{
+  MYSQL_ROW row;
+  MYSQL_RES *result;
+  int rc= mysql_query(mysql, "SELECT VARIABLE_VALUE FROM INFORMATION_SCHEMA.SESSION_STATUS WHERE "
+                         "VARIABLE_NAME='Resultset_metadata_skipped'");
+  myquery(rc);
+  result= mysql_use_result(mysql);
+  mytest(result);
+  row= mysql_fetch_row(result);
+  DIE_UNLESS(atoi(row[0]) == val);
+  mysql_free_result(result);
+}
+
+
+static void flush_session_status(MYSQL* mysql)
+{
+  int rc= mysql_query(mysql, "flush status");
+  myquery(rc);
+}
+
+
+static void exec_stmt(MYSQL_STMT* stmt)
+{
+  int rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+  rc= mysql_stmt_store_result(stmt);
+  check_execute(stmt, rc);
+}
+
+
+
+static void test_cache_metadata()
+{
+  char char_val[]= "blah";
+  int int_val = 1;
+  int rc;
+  MYSQL_BIND param= {0};
+  my_bool is_null= FALSE;
+
+
+  MYSQL_STMT* stmt= mysql_stmt_init(mysql);
+  check_stmt(stmt);
+  rc= mysql_stmt_prepare(stmt, "SELECT ?", -1);
+  myquery(rc);
+
+  param.buffer= char_val;
+  param.buffer_type= MYSQL_TYPE_STRING;
+  param.is_null= &is_null;
+  param.buffer_length = 4;
+
+  rc= mysql_stmt_bind_param(stmt,&param);
+  exec_stmt(stmt);
+
+  flush_session_status(mysql);
+  /* Execute the statement again, check that metadata is skipped*/
+  exec_stmt(stmt);
+  assert_metadata_skipped_count_equals(mysql, 1);
+
+  flush_session_status(mysql);
+  /*
+    Execute the statement again, such that metadata changes,
+    (using LONG parameter in bind for "SELECT ?", instead of string.
+    Check that metadata is NOT skipped.
+  */
+  param.buffer= &int_val;
+  param.buffer_type= MYSQL_TYPE_LONG;
+  param.is_null= &is_null;
+  rc= mysql_stmt_bind_param(stmt, &param);
+  exec_stmt(stmt);
+  assert_metadata_skipped_count_equals(mysql, 0);
+  mysql_stmt_close(stmt);
+
+
+  /*
+    Test with real table, and DDL which causes column info to be
+    changed.
+  */
+  stmt= mysql_stmt_init(mysql);
+
+  rc= mysql_query(
+      mysql, "CREATE OR REPLACE TABLE t1 (a int, b bigint) engine=memory");
+  myquery(rc);
+
+  flush_session_status(mysql);
+  check_stmt(stmt);
+  rc= mysql_stmt_prepare(stmt, "SELECT * from t1", -1);
+  myquery(rc);
+
+  exec_stmt(stmt);
+  /* Metadata skipped, since already sent with COM_STMT_PREPARE result.*/
+  assert_metadata_skipped_count_equals(mysql, 1);
+
+  flush_session_status(mysql);
+  exec_stmt(stmt);
+  /* Metadata skipped again*/
+  assert_metadata_skipped_count_equals(mysql, 1);
+
+  rc= mysql_query(mysql, "ALTER TABLE t1 MODIFY b CHAR(10)");
+  myquery(rc);
+
+  /* Column metadata WILL change for the next execution due to DDL*/
+  flush_session_status(mysql);
+  exec_stmt(stmt);
+  assert_metadata_skipped_count_equals(mysql, 0);
+
+  /* On reexecution, PS column metadata will NOT change. */
+  flush_session_status(mysql);
+  exec_stmt(stmt);
+  assert_metadata_skipped_count_equals(mysql, 1);
+
+  rc= mysql_query(mysql, "DROP TABLE t1");
+  myquery(rc);
+
+  mysql_stmt_close(stmt);
+}
+
+
 static struct my_tests_st my_tests[]= {
   { "test_mdev_26145", test_mdev_26145 },
   { "disable_query_logs", disable_query_logs },
@@ -21675,6 +21804,8 @@ static struct my_tests_st my_tests[]= {
 #endif
   { "test_mdev18408", test_mdev18408 },
   { "test_mdev20261", test_mdev20261 },
+  { "test_execute_direct", test_execute_direct },
+  { "test_cache_metadata", test_cache_metadata},
   { 0, 0 }
 };
 

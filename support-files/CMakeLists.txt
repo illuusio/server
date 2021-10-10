@@ -1,5 +1,5 @@
 # Copyright (c) 2006, 2016, Oracle and/or its affiliates.
-# Copyright (c) 2012, 2017, MariaDB
+# Copyright (c) 2012, 2021, MariaDB
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -41,14 +41,14 @@ ELSE()
   SET(inst_location ${INSTALL_SUPPORTFILESDIR})
 ENDIF()
 
-IF(WITH_WSREP)
+IF(WITH_WSREP AND NOT WITHOUT_SERVER)
   CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/wsrep.cnf.sh
                  ${CMAKE_CURRENT_BINARY_DIR}/wsrep.${ini_file_extension} @ONLY)
   INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/wsrep.${ini_file_extension}
           DESTINATION ${inst_location} COMPONENT IniFiles)
 ENDIF()
 
-IF(UNIX)
+IF(UNIX AND NOT WITHOUT_SERVER)
   SET(prefix ${CMAKE_INSTALL_PREFIX})
   FOREACH(script mysqld_multi.server mysql-log-rotate binary-configure wsrep_notify)
     CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/${script}.sh 
@@ -120,6 +120,10 @@ IF(UNIX)
   IF(HAVE_SYSTEMD)
     CONFIGURE_FILE(mariadb.service.in
                    ${CMAKE_CURRENT_BINARY_DIR}/mariadb.service @ONLY)
+    CONFIGURE_FILE(mariadb.socket.in
+                   ${CMAKE_CURRENT_BINARY_DIR}/mariadb.socket @ONLY)
+    CONFIGURE_FILE(mariadb-extra.socket.in
+                   ${CMAKE_CURRENT_BINARY_DIR}/mariadb-extra.socket @ONLY)
     EXECUTE_PROCESS(
     COMMAND ${CMAKE_COMMAND} -E create_symlink ./mariadb.service mysql.service
     COMMAND ${CMAKE_COMMAND} -E create_symlink ./mariadb.service mysqld.service
@@ -136,13 +140,24 @@ IF(UNIX)
     IF(NOT CMAKE_VERSION VERSION_LESS 3.3.0 OR NOT RPM)
       CONFIGURE_FILE(mariadb@.service.in
                      ${CMAKE_CURRENT_BINARY_DIR}/mariadb@.service @ONLY)
-      INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/mariadb@.service
+      CONFIGURE_FILE(mariadb@.socket.in
+                     ${CMAKE_CURRENT_BINARY_DIR}/mariadb@.socket @ONLY)
+      CONFIGURE_FILE(mariadb-extra@.socket.in
+                     ${CMAKE_CURRENT_BINARY_DIR}/mariadb-extra@.socket @ONLY)
+      INSTALL(FILES
+              ${CMAKE_CURRENT_BINARY_DIR}/mariadb@.service
+              ${CMAKE_CURRENT_BINARY_DIR}/mariadb@.socket
+              ${CMAKE_CURRENT_BINARY_DIR}/mariadb-extra@.socket
+              ${CMAKE_CURRENT_BINARY_DIR}/mysql.service
+              ${CMAKE_CURRENT_BINARY_DIR}/mysqld.service
               DESTINATION ${inst_location}/systemd COMPONENT SupportFiles)
     ENDIF()
 
     IF(INSTALL_SYSTEMD_UNITDIR)
       INSTALL(FILES
               ${CMAKE_CURRENT_BINARY_DIR}/mariadb.service
+              ${CMAKE_CURRENT_BINARY_DIR}/mariadb.socket
+              ${CMAKE_CURRENT_BINARY_DIR}/mariadb-extra.socket
               ${CMAKE_CURRENT_BINARY_DIR}/mysql.service
               ${CMAKE_CURRENT_BINARY_DIR}/mysqld.service
               DESTINATION ${INSTALL_SYSTEMD_UNITDIR} COMPONENT Server)
@@ -154,6 +169,8 @@ IF(UNIX)
                 "${INSTALL_SYSTEMD_UNITDIR}/mariadb@bootstrap.service.d"
                 COMPONENT Server)
         INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/mariadb@.service
+                ${CMAKE_CURRENT_BINARY_DIR}/mariadb@.socket
+                ${CMAKE_CURRENT_BINARY_DIR}/mariadb-extra@.socket
                 DESTINATION ${INSTALL_SYSTEMD_UNITDIR} COMPONENT Server)
       ENDIF()
 

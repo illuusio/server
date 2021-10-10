@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1996, 2015, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2013, 2019, MariaDB Corporation.
+Copyright (c) 2013, 2021, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -27,8 +27,11 @@ Created 1/8/1996 Heikki Tuuri
 #ifndef dict0types_h
 #define dict0types_h
 
-#include <ut0mutex.h>
+#include "univ.i"
+#include "span.h"
 #include <rem0types.h>
+
+using st_::span;
 
 struct dict_col_t;
 struct dict_field_t;
@@ -90,17 +93,8 @@ enum ib_quiesce_t {
 	QUIESCE_COMPLETE		/*!< All done */
 };
 
-#ifndef UNIV_INNOCHECKSUM
-typedef ib_mutex_t DictSysMutex;
-#endif /* !UNIV_INNOCHECKSUM */
-
-/** Prefix for tmp tables, adopted from sql/table.h */
-#define TEMP_FILE_PREFIX		"#sql"
-#define TEMP_FILE_PREFIX_LENGTH		4
+/** Prefix for InnoDB internal tables, adopted from sql/table.h */
 #define TEMP_FILE_PREFIX_INNODB		"#sql-ib"
-
-#define TEMP_TABLE_PREFIX                "#sql"
-#define TEMP_TABLE_PATH_PREFIX           "/" TEMP_TABLE_PREFIX
 
 /** Table name wrapper for pretty-printing */
 struct table_name_t
@@ -173,5 +167,8 @@ enum spatial_status_t {
 	/** Only used in spatial index. */
 	SPATIAL_ONLY	= 3
 };
+
+#define TABLE_STATS_NAME "mysql/innodb_table_stats"
+#define INDEX_STATS_NAME "mysql/innodb_index_stats"
 
 #endif
