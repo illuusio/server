@@ -17,6 +17,18 @@ set -e
 # building the deb packages here.
 export DEB_BUILD_OPTIONS="nocheck $DEB_BUILD_OPTIONS"
 
+# Take the files and part of control from MCS directory
+if [[ -d storage/columnstore/columnstore/debian ]]
+then
+  cp -v storage/columnstore/columnstore/debian/mariadb-plugin-columnstore.* debian/
+  echo >> debian/control
+  cat storage/columnstore/columnstore/debian/control >> debian/control
+
+  # ColumnStore is explicitly disabled in the native build, so allow it now
+  # when build it when triggered by autobake-deb.sh
+  sed '/-DPLUGIN_COLUMNSTORE=NO/d' -i debian/rules
+fi
+
 # General CI optimizations to keep build output smaller
 if [[ $TRAVIS ]] || [[ $GITLAB_CI ]]
 then
@@ -26,7 +38,7 @@ then
 
   # MCOL-4149: ColumnStore builds are so slow and big that they must be skipped on
   # both Travis-CI and Gitlab-CI
-  sed 's|-DPLUGIN_COLUMNSTORE=YES|-DPLUGIN_COLUMNSTORE=NO|' -i debian/rules
+  sed 's|$(CMAKEFLAGS)|$(CMAKEFLAGS) -DPLUGIN_COLUMNSTORE=NO|' -i debian/rules
   sed "/Package: mariadb-plugin-columnstore/,/^$/d" -i debian/control
 fi
 
@@ -45,14 +57,9 @@ then
   sed "/Package: mariadb-plugin-rocksdb/,/^$/d" -i debian/control
   sed "/Package: mariadb-plugin-spider/,/^$/d" -i debian/control
   sed "/Package: mariadb-plugin-oqgraph/,/^$/d" -i debian/control
-  sed "/ha_sphinx.so/d" -i debian/mariadb-server-10.5.install
+  sed "/ha_sphinx.so/d" -i debian/mariadb-server-10.6.install
   sed "/Package: libmariadbd19/,/^$/d" -i debian/control
   sed "/Package: libmariadbd-dev/,/^$/d" -i debian/control
-fi
-
-if [[ $(arch) =~ i[346]86 ]]
-then
-  sed "/Package: mariadb-plugin-rocksdb/,/^$/d" -i debian/control
 fi
 
 # If rocksdb-tools is not available (before Debian Buster and Ubuntu Disco)
@@ -65,10 +72,27 @@ then
   echo "usr/bin/sst_dump" >> debian/mariadb-plugin-rocksdb.install
 fi
 
-# From Debian Buster/Ubuntu Bionic, libcurl4 replaces libcurl3.
+# If libcurl4 is not available (before Debian Buster and Ubuntu Bionic)
+# use older libcurl3 instead
 if ! apt-cache madison libcurl4 | grep 'libcurl4' >/dev/null 2>&1
 then
   sed 's/libcurl4/libcurl3/g' -i debian/control
+fi
+
+# From Debian Bullseye/Ubuntu Groovy, liburing replaces libaio
+if ! apt-cache madison liburing-dev | grep 'liburing-dev' >/dev/null 2>&1
+then
+  sed 's/liburing-dev/libaio-dev/g' -i debian/control
+  sed '/-DIGNORE_AIO_CHECK=YES/d' -i debian/rules
+  sed '/-DWITH_URING=yes/d' -i debian/rules
+fi
+
+# From Debian Buster/Ubuntu Focal onwards libpmem-dev is available
+# Don't reference it when built in distro releases that lack it
+if ! apt-cache madison libpmem-dev | grep 'libpmem-dev' >/dev/null 2>&1
+then
+  sed '/libpmem-dev/d' -i debian/control
+  sed '/-DWITH_PMEM=yes/d' -i debian/rules
 fi
 
 # Adjust changelog, add new version
@@ -81,10 +105,11 @@ PATCHLEVEL="+maria"
 LOGSTRING="MariaDB build"
 CODENAME="$(lsb_release -sc)"
 EPOCH="1:"
+VERSION="${EPOCH}${UPSTREAM}${PATCHLEVEL}~${CODENAME}"
 
-dch -b -D "${CODENAME}" -v "${EPOCH}${UPSTREAM}${PATCHLEVEL}~${CODENAME}" "Automatic build with ${LOGSTRING}."
+dch -b -D "${CODENAME}" -v "${VERSION}" "Automatic build with ${LOGSTRING}." --controlmaint
 
-echo "Creating package version ${EPOCH}${UPSTREAM}${PATCHLEVEL}~${CODENAME} ... "
+echo "Creating package version ${VERSION} ... "
 
 # On Travis CI and Gitlab-CI, use -b to build binary only packages as there is
 # no need to waste time on generating the source package.

@@ -95,7 +95,6 @@ repeated-path-segment rocksdb usr/share/mysql/mysql-test/plugin/rocksdb/rocksdb/
 repeated-path-segment sequence usr/share/mysql/mysql-test/plugin/sequence/sequence/
 repeated-path-segment sphinx usr/share/mysql/mysql-test/plugin/sphinx/sphinx/
 repeated-path-segment spider usr/share/mysql/mysql-test/plugin/spider/spider/
-repeated-path-segment tokudb usr/share/mysql/mysql-test/plugin/tokudb/tokudb/
 repeated-path-segment type_inet usr/share/mysql/mysql-test/plugin/type_inet/type_inet/
 repeated-path-segment type_test usr/share/mysql/mysql-test/plugin/type_test/type_test/
 repeated-path-segment user_variables usr/share/mysql/mysql-test/plugin/user_variables/user_variables/

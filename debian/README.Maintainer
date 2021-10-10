@@ -64,8 +64,11 @@ https://mariadb.com/kb/en/mariadb/development/release-notes/
 
 Download new source package:
 
-    cd pkg-mariadb-10.5
-    gbp import-orig --uscan --no-interactive --verbose
+    git checkout 10.6
+    git pull --tags upstream 10.6
+    git tag -v mariadb-10.6.5
+    git checkout debian/latest
+    git merge -v mariadb-10.6.5
 
 Refresh patches:
 
@@ -114,7 +117,7 @@ Then proceed to make a source only build:
 Test more with upload to Launchpad:
 
     COMMIT_ID=`git log -n 1 --oneline | cut -d ' ' -f 1`
-    PKG=mariadb-10.5
+    PKG=mariadb-10.6
     backportpackage --yes -u ppa:mysql-ubuntu/$PKG -d groovy -S ~`date '+%s'`.$COMMIT_ID $PKG*.dsc
 
 When done, push to Salsa:
@@ -133,8 +136,8 @@ Once you are sure there are no regressions, finally upload to Debian:
     dput ftp-master *.changes
 
 After the upload, check that everything is OK at
-* https://tracker.debian.org/mariadb-10.5 (Debian)
-* https://launchpad.net/ubuntu/+source/mariadb-10.5 (Ubuntu)
+* https://tracker.debian.org/mariadb-10.6 (Debian)
+* https://launchpad.net/ubuntu/+source/mariadb-10.6 (Ubuntu)
 
 ## Maintaining translations
 
@@ -149,13 +152,20 @@ needs to be tested on the Ubuntu release which most closely matches the Debian
 release in question. The following matrix maps what package should be tested
 where:
 
-- 10.5 for sid on Launchpad impish
+- 10.6 for sid on Launchpad impish
+- 10.5 for hirsute on Launchpad hirsute
 - 10.5 for groovy on Launchpad groovy
+- 10.5 for bullseye on Launchpad hirsute
 - 10.3 for groovy on Launchpad groovy
 - 10.3 for focal on Launchpad focal
 - 10.3 for buster on Launchpad disco (not available anymore)
 - 10.1 for bionic on Launchpad bionic
 - 10.1 for stretch on Launchpad xenial (not available anymore)
+
+NOTE! As long as Launchpad builders are running an older kernel, the MariaDB
+10.6 built with liburing will fail to start on them. See
+- https://jira.mariadb.org/browse/MDEV-26569
+- https://bugs.launchpad.net/launchpad/+bug/1943292
 
 ## Uploading security releases to Debian
 
@@ -173,8 +183,12 @@ See example with documented procedure:
 Do the security uploads in this order for having the best chance of catching
 regressions before they spread out to too many users.
 
-Upload priority for 10.5
+Upload priority for 10.6
 - debian sid
+
+Upload priority for 10.5
+- debian bullseye
+- ubuntu-21.10
 - ubuntu-21.04
 
 Upload priority for 10.3

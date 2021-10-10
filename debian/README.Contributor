@@ -22,21 +22,21 @@ The official Debian package source is hosted on the Debian Gitlab server under
 the MariaDB/MySQL packaging team at https://salsa.debian.org/mariadb-team/. You
 are welcome to fork it and make merge requests.
 
-To get the latest official Debian packaging source of mariadb-10.5, clone the
-source repository with all relevant branches (master, upstream, pristine-tar) to
+To get the latest official Debian packaging source of mariadb-10.6, clone the
+source repository with all relevant branches (main branch `debian/latest`) to
 your local environment using _git-buildpackage_:
 
-    gbp clone --pristine-tar https://salsa.debian.org/mariadb-team/mariadb-10.5.git
+    gbp clone https://salsa.debian.org/mariadb-team/mariadb-server.git
 
 If you have your own fork and SSH keys set up on Salsa, you can run:
 
-    gbp clone --pristine-tar git@salsa.debian.org:<username>/mariadb-10.5.git
+    gbp clone git@salsa.debian.org:<username>/mariadb-server.git
 
 
 The clone needs to be run only once. On later runs you can refresh your clone with
 relevant branches using:
 
-    gbp pull --pristine-tar --force
+    gbp pull --force
 
 
 ## Building the packages
@@ -99,18 +99,11 @@ If you prefer sbuild, you can build with something like:
 
 ## Creating a feature or bugfix branch
 
-The repository has the following branch layout:
-  * upstream - contains the upstream source releases without modifications
-  * pristine-tar - contains extra delta needed to re-create the original
-    tarballs with the exactly same SHA-1 hash as the original tarballs by upstream
-  * master - packaging for Debian Sid (unstable)
-  * stretch - release branch for Debian 9 (stretch)
-  * buster - release branch for Debian 10 (buster)
-  * ubuntu-20.14 - release branch for Ubuntu 20.04 (focal)
-  * ubuntu-18.04 - release branch for Ubuntu 18.04 (bionic)
+The repository layout follows the DEP-14 standard:
+https://dep-team.pages.debian.net/deps/dep14/
 
-All new features and also bug fixes are done only in the master branch. The
-release branches for Debian and Ubuntu are only used for security updates.
+All new features and also bug fixes are done only in the `debian/latest` branch.
+The release branches for Debian and Ubuntu are only used for security updates.
 
 To prepare the Salsa pull request, create a bugfix branch from master with:
 
@@ -141,7 +134,8 @@ Do not bundle in your commit any changes to `debian/changelog`. The correct
 changelog entries will be created later by the maintainer using `git-dch` in an
 automated fashion.
 
-For an example of a patch adding commit see https://github.com/ottok/mariadb-10.0/commit/8d2a7c909
+For an example of a patch adding commit see
+https://salsa.debian.org/mariadb-team/mariadb-server/-/commit/7972a38e
 
 
 # Quality assurance tips

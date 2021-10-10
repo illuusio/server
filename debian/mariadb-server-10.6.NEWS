@@ -1,3 +1,62 @@
+mariadb-10.6 (1:10.6.4-1) unstable; urgency=medium
+
+  Import new upstream release MariaDB 10.6.4
+  - 10.6 introduces one new status variable:
+    * Innodb_buffer_pool_pages_lru_freed
+      (https://mariadb.com/kb/en/status-variables-added-in-mariadb-106/)
+    * Resultset_metadata_skipped
+      (undocumented upstream https://mariadb.com/docs/reference/mdb/status-variables/Resultset_metadata_skipped/)
+
+    Read more at https://mariadb.com/kb/en/status-variables-added-in-mariadb-106/
+
+  - 10.6 introduces several new server variables:
+    * binlog_expire_logs_seconds
+    * innodb_deadlock_report
+    * innodb_read_only_compressed
+
+    Read more at https://mariadb.com/kb/en/system-variables-added-in-mariadb-106/
+
+  - 10.6 removes several server variables:
+    * innodb_adaptive_max_sleep_delay
+    * innodb_background_scrub_data_*
+    * innodb_buffer_pool_instances
+    * innodb_commit_concurrency
+    * innodb_concurrency_tickets
+    * innodb_file_format
+    * innodb_large_prefix
+    * innodb_lock_schedule_algorithm
+    * innodb_log_checksums
+    * innodb_log_compressed_pages
+    * innodb_log_files_in_group
+    * innodb_log_optimize_ddl
+    * innodb_page_cleaners
+    * innodb_replication_delay (*not* related to https://mariadb.com/kb/en/delayed-replication/)
+    * innodb_scrub_*
+    * innodb_sync_array_size
+    * innodb_thread_*
+    * innodb_undo_logs
+
+    Read more at https://mariadb.com/kb/en/upgrading-from-mariadb-105-to-mariadb-106/#options-that-have-been-removed-or-renamed
+
+  - 10.6 introduces new default server variable values:
+    * character sets utf8 -> utf8mb3
+    * innodb_flush_method fsync -> O_DIRECT
+    * innodb_use_native_aio ON -> OFF
+    * old_mode (none) -> UTF8_IS_UTF8MB3
+
+  - 10.6 introduces new 'sys' database and several 'sys' procedures
+
+    Read more at https://mariadb.com/kb/en/sys-schema/
+
+  - Read more about above changes at
+    https://mariadb.com/kb/en/upgrading-from-mariadb-105-to-mariadb-106/
+    https://mariadb.com/kb/en/changes-improvements-in-mariadb-106/
+
+  - Update libmariadb folder to match the one in MariaDB 10.6.4
+    (MariaDB Connector C 10.6.4)
+
+ -- Otto Kekäläinen <otto@debian.org>  Mon, 06 Sep 2021 22:55:39 -0700
+
 mariadb-10.5 (1:10.5.5-1) unstable; urgency=medium
 
    The latest version 10.5 of the MariaDB Server came out in June 2020 and is
