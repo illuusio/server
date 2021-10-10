@@ -1,8 +1,18 @@
-mariadb-10.5 (1:10.5.12-2) UNRELEASED; urgency=medium
+mariadb-10.6 (1:10.6.4-1) UNRELEASED; urgency=medium
 
-  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  [ Otto Kekäläinen ]
+  * Add new overrides to be clean on Lintian v2.105.0
+  * Salsa-CI: Add workarounds for Stretch->Bookworm upgrade bugs
+  * Salsa-CI: Add testing for Bullseye upgrades and backports
+  * Extend README.Contributor to include more QA and debugging tips
+  * Make RocksDB plugin depend on python3:any to be Lintian clean
+  * Adopt DEP-14 for the git repository layout
+  * Import new upstream major release MariaDB 10.6.4
 
- -- Otto Kekäläinen <otto@debian.org>  Tue, 14 Sep 2021 21:32:28 -0700
+  [ Bas Couwenberg ]
+  * Don't require debian.cnf to be executable in logrotate (Closes: #994284)
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 10 Oct 2021 11:49:24 -0700
 
 mariadb-10.5 (1:10.5.12-1) unstable; urgency=medium
 

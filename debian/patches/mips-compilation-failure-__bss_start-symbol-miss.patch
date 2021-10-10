@@ -21,7 +21,7 @@ and will correctly detect if __bss_start will be available or not.
 
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -363,6 +363,8 @@ ELSE()
+@@ -362,6 +362,8 @@ ELSE()
    SET(DEFAULT_TMPDIR "\"${TMPDIR}\"")
  ENDIF()
  
@@ -30,15 +30,14 @@ and will correctly detect if __bss_start will be available or not.
  # Run platform tests
  INCLUDE(configure.cmake)
  
-@@ -394,8 +396,6 @@ SET(MALLOC_LIBRARY "system")
+@@ -394,7 +396,6 @@ SET(MALLOC_LIBRARY "system")
  
  CHECK_PCRE()
- 
+ ADD_SUBDIRECTORY(tpool)
 -CHECK_SYSTEMD()
--
+ 
  IF(CMAKE_CROSSCOMPILING AND NOT DEFINED CMAKE_CROSSCOMPILING_EMULATOR)
    SET(IMPORT_EXECUTABLES "IMPORTFILE-NOTFOUND" CACHE FILEPATH "Path to import_executables.cmake from a native build")
-   INCLUDE(${IMPORT_EXECUTABLES})
 --- a/cmake/systemd.cmake
 +++ b/cmake/systemd.cmake
 @@ -17,6 +17,9 @@ MACRO(CHECK_SYSTEMD)

@@ -23,16 +23,16 @@ Subject: Fix perl path in scripts
  # -*- cperl -*-
  
  # Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
---- a/mysql-test/mysql-stress-test.pl
-+++ b/mysql-test/mysql-stress-test.pl
+--- a/mysql-test/mariadb-stress-test.pl
++++ b/mysql-test/mariadb-stress-test.pl
 @@ -1,4 +1,4 @@
 -#!/usr/bin/env perl
 +#!/usr/bin/perl
  
  # Copyright (c) 2005, 2011, Oracle and/or its affiliates. All rights reserved.
  #
---- a/mysql-test/mysql-test-run.pl
-+++ b/mysql-test/mysql-test-run.pl
+--- a/mysql-test/mariadb-test-run.pl
++++ b/mysql-test/mariadb-test-run.pl
 @@ -1,4 +1,4 @@
 -#!/usr/bin/env perl
 +#!/usr/bin/perl

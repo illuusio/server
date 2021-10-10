@@ -62,7 +62,7 @@ Date:   Fri Dec 21 19:14:04 2018 +0200
  ENDIF(HAVE_BFD_H)
 --- a/sql/CMakeLists.txt
 +++ b/sql/CMakeLists.txt
-@@ -320,6 +320,10 @@ IF(WITH_MYSQLD_LDFLAGS)
+@@ -324,6 +324,10 @@ IF(WITH_MYSQLD_LDFLAGS)
       "${MYSQLD_LINK_FLAGS} ${WITH_MYSQLD_LDFLAGS}")
  ENDIF()
  
