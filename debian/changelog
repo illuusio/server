@@ -12,7 +12,14 @@ mariadb-10.6 (1:10.6.4-1) UNRELEASED; urgency=medium
   [ Bas Couwenberg ]
   * Don't require debian.cnf to be executable in logrotate (Closes: #994284)
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 10 Oct 2021 11:49:24 -0700
+  [ Otto Kekäläinen ]
+  * Update Debian packaging for MariaDB 10.6 series
+  * Clean up d/copyright and remove obsolete licence-reconcile config
+  * Extend Breaks/Replaces to cover all known MySQL variants
+  * Skip upstream tests that are permanently broken
+  * Make d/watch to use Github tags (and their signatures) for mariadb/server
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 10 Oct 2021 22:53:20 -0700
 
 mariadb-10.5 (1:10.5.12-1) unstable; urgency=medium
 
