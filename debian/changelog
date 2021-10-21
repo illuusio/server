@@ -1,4 +1,7 @@
-mariadb-10.6 (1:10.6.4-1) UNRELEASED; urgency=medium
+mariadb-10.6 (1:10.6.4-1) unstable; urgency=medium
+
+  [ Bas Couwenberg ]
+  * Don't require debian.cnf to be executable in logrotate (Closes: #994284)
 
   [ Otto Kekäläinen ]
   * Add new overrides to be clean on Lintian v2.105.0
@@ -8,18 +11,12 @@ mariadb-10.6 (1:10.6.4-1) UNRELEASED; urgency=medium
   * Make RocksDB plugin depend on python3:any to be Lintian clean
   * Adopt DEP-14 for the git repository layout
   * Import new upstream major release MariaDB 10.6.4
-
-  [ Bas Couwenberg ]
-  * Don't require debian.cnf to be executable in logrotate (Closes: #994284)
-
-  [ Otto Kekäläinen ]
   * Update Debian packaging for MariaDB 10.6 series
   * Clean up d/copyright and remove obsolete licence-reconcile config
   * Extend Breaks/Replaces to cover all known MySQL variants
   * Skip upstream tests that are permanently broken
-  * Make d/watch to use Github tags (and their signatures) for mariadb/server
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 10 Oct 2021 22:53:20 -0700
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 21 Oct 2021 11:02:17 +0300
 
 mariadb-10.5 (1:10.5.12-1) unstable; urgency=medium
 
