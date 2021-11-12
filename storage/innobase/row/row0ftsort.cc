@@ -1634,10 +1634,9 @@ row_fts_merge_insert(
 
 	/* Get aux index */
 	fts_get_table_name(&fts_table, aux_table_name);
-	aux_table = dict_table_open_on_name(aux_table_name, FALSE, FALSE,
+	aux_table = dict_table_open_on_name(aux_table_name, false,
 					    DICT_ERR_IGNORE_NONE);
 	ut_ad(aux_table != NULL);
-	dict_table_close(aux_table, FALSE, FALSE);
 	aux_index = dict_table_get_first_index(aux_table);
 
 	ut_ad(!aux_index->is_instant());
@@ -1770,6 +1769,8 @@ exit:
 
 	error = ins_ctx.btr_bulk->finish(error);
 	UT_DELETE(ins_ctx.btr_bulk);
+
+	aux_table->release();
 
 	trx->free();
 

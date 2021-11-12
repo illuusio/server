@@ -2187,7 +2187,7 @@ int ha_rollback_trans(THD *thd, bool all)
   if (thd->is_error())
   {
     WSREP_DEBUG("ha_rollback_trans(%lld, %s) rolled back: %s: %s; is_real %d",
-                thd->thread_id, all?"TRUE":"FALSE", WSREP_QUERY(thd),
+                thd->thread_id, all?"TRUE":"FALSE", wsrep_thd_query(thd),
                 thd->get_stmt_da()->message(), is_real_trans);
   }
   (void) wsrep_after_rollback(thd, all);
@@ -4532,6 +4532,9 @@ void handler::print_error(int error, myf errflag)
   case HA_ERR_UNDO_REC_TOO_BIG:
     textno= ER_UNDO_RECORD_TOO_BIG;
     break;
+  case HA_ERR_COMMIT_ERROR:
+    textno= ER_ERROR_DURING_COMMIT;
+    break;
   default:
     {
       /* The error was "unknown" to this function.
@@ -6201,7 +6204,9 @@ bool ha_table_exists(THD *thd, const LEX_CSTRING *db,
     DBUG_RETURN(TRUE);
   }
 
-retry_from_frm: __attribute__((unused));
+#ifdef WITH_PARTITION_STORAGE_ENGINE
+retry_from_frm:
+#endif
   char path[FN_REFLEN + 1];
   size_t path_len = build_table_filename(path, sizeof(path) - 1,
                                          db->str, table_name->str, "", 0);
@@ -8195,11 +8200,11 @@ bool Vers_parse_info::is_end(const char *name) const
 }
 bool Vers_parse_info::is_start(const Create_field &f) const
 {
-  return f.flags & VERS_SYS_START_FLAG;
+  return f.flags & VERS_ROW_START;
 }
 bool Vers_parse_info::is_end(const Create_field &f) const
 {
-  return f.flags & VERS_SYS_END_FLAG;
+  return f.flags & VERS_ROW_END;
 }
 
 static Create_field *vers_init_sys_field(THD *thd, const char *field_name, int flags, bool integer)
@@ -8259,8 +8264,8 @@ bool Vers_parse_info::fix_implicit(THD *thd, Alter_info *alter_info)
   period= start_end_t(default_start, default_end);
   as_row= period;
 
-  if (vers_create_sys_field(thd, default_start, alter_info, VERS_SYS_START_FLAG) ||
-      vers_create_sys_field(thd, default_end, alter_info, VERS_SYS_END_FLAG))
+  if (vers_create_sys_field(thd, default_start, alter_info, VERS_ROW_START) ||
+      vers_create_sys_field(thd, default_end, alter_info, VERS_ROW_END))
   {
     return true;
   }
@@ -8415,7 +8420,7 @@ bool Vers_parse_info::fix_alter_info(THD *thd, Alter_info *alter_info,
           return true;
         }
         my_error(ER_VERS_DUPLICATE_ROW_START_END, MYF(0),
-                 f->flags & VERS_SYS_START_FLAG ? "START" : "END", f->field_name.str);
+                 f->flags & VERS_ROW_START ? "START" : "END", f->field_name.str);
         return true;
       }
     }
@@ -8529,13 +8534,13 @@ Vers_parse_info::fix_create_like(Alter_info &alter_info, HA_CREATE_INFO &create_
 
   while ((f= it++))
   {
-    if (f->flags & VERS_SYS_START_FLAG)
+    if (f->flags & VERS_ROW_START)
     {
       f_start= f;
       if (f_end)
         break;
     }
-    else if (f->flags & VERS_SYS_END_FLAG)
+    else if (f->flags & VERS_ROW_END)
     {
       f_end= f;
       if (f_start)
@@ -8681,6 +8686,7 @@ bool Vers_type_trx::check_sys_fields(const LEX_CSTRING &table_name,
   return false;
 }
 
+
 bool Vers_parse_info::check_sys_fields(const Lex_table_name &table_name,
                                        const Lex_table_name &db,
                                        Alter_info *alter_info) const
@@ -8689,18 +8695,21 @@ bool Vers_parse_info::check_sys_fields(const Lex_table_name &table_name,
     return true;
 
   List_iterator<Create_field> it(alter_info->create_list);
-  const Create_field *row_start= NULL;
-  const Create_field *row_end= NULL;
+  const Create_field *row_start= nullptr;
+  const Create_field *row_end= nullptr;
   while (const Create_field *f= it++)
   {
-    if (f->flags & VERS_SYS_START_FLAG && !row_start)
+    if (f->flags & VERS_ROW_START && !row_start)
       row_start= f;
-    if (f->flags & VERS_SYS_END_FLAG && !row_end)
+    if (f->flags & VERS_ROW_END && !row_end)
       row_end= f;
   }
 
-  DBUG_ASSERT(row_start);
-  DBUG_ASSERT(row_end);
+  if (!row_start || !row_end)
+  {
+    my_error(ER_VERS_PERIOD_COLUMNS, MYF(0), as_row.start.str, as_row.end.str);
+    return true;
+  }
 
   const Vers_type_handler *row_start_vers= row_start->type_handler()->vers();
 
@@ -8710,10 +8719,7 @@ bool Vers_parse_info::check_sys_fields(const Lex_table_name &table_name,
     return true;
   }
 
-  if (row_start_vers->check_sys_fields(table_name, row_start, row_end))
-    return true;
-
-  return false;
+  return row_start_vers->check_sys_fields(table_name, row_start, row_end);
 }
 
 bool Table_period_info::check_field(const Create_field* f,

@@ -1392,6 +1392,11 @@ uint xb_client_options_count = array_elements(xb_client_options);
 static const char *dbug_option;
 #endif
 
+#ifdef HAVE_URING
+extern const char *io_uring_may_be_unsafe;
+bool innodb_use_native_aio_default();
+#endif
+
 struct my_option xb_server_options[] =
 {
   {"datadir", 'h', "Path to the database root.", (G_PTR*) &mysql_data_home,
@@ -1508,7 +1513,12 @@ struct my_option xb_server_options[] =
    "Use native AIO if supported on this platform.",
    (G_PTR*) &srv_use_native_aio,
    (G_PTR*) &srv_use_native_aio, 0, GET_BOOL, NO_ARG,
-   TRUE, 0, 0, 0, 0, 0},
+#ifdef HAVE_URING
+   innodb_use_native_aio_default(),
+#else
+   TRUE,
+#endif
+   0, 0, 0, 0, 0},
   {"innodb_page_size", OPT_INNODB_PAGE_SIZE,
    "The universal page size of the database.",
    (G_PTR*) &innobase_page_size, (G_PTR*) &innobase_page_size, 0,
@@ -2071,8 +2081,12 @@ static bool innodb_init_param()
 		msg("InnoDB: Using Linux native AIO");
 	}
 #elif defined(HAVE_URING)
-
-	if (srv_use_native_aio) {
+	if (!srv_use_native_aio) {
+	} else if (io_uring_may_be_unsafe) {
+		msg("InnoDB: Using liburing on this kernel %s may cause hangs;"
+		    " see https://jira.mariadb.org/browse/MDEV-26674",
+		    io_uring_may_be_unsafe);
+	} else {
 		msg("InnoDB: Using liburing");
 	}
 #else
@@ -3320,7 +3334,7 @@ static void xb_load_single_table_tablespace(const char *dirname,
 	delete file;
 
 	if (err != DB_SUCCESS && xtrabackup_backup && !is_empty_file) {
-		die("Failed to not validate first page of the file %s, error %d",name, (int)err);
+		die("Failed to validate first page of the file %s, error %d",name, (int)err);
 	}
 
 	ut_free(name);
@@ -3450,7 +3464,7 @@ next_file:
 		if (err == ERROR_NO_MORE_FILES) {
 			status = 1;
 		} else {
-			msg("readdir_next_file in %s returned %lu", dir, err);
+			msg("FindNextFile in %s returned %lu", dirname, err);
 			status = -1;
 		}
 	}

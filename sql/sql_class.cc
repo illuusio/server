@@ -4787,6 +4787,19 @@ extern "C" const char *thd_priv_host(MYSQL_THD thd, size_t *length)
 }
 
 
+extern "C" const char *thd_priv_user(MYSQL_THD thd, size_t *length)
+{
+  const Security_context *sctx= thd->security_ctx;
+  if (!sctx)
+  {
+    *length= 0;
+    return NULL;
+  }
+  *length= strlen(sctx->priv_user);
+  return sctx->priv_user;
+}
+
+
 #ifdef INNODB_COMPATIBILITY_HOOKS
 
 /** open a table and add it to thd->open_tables
@@ -4888,11 +4901,13 @@ void destroy_thd(MYSQL_THD thd)
 extern "C" pthread_key(struct st_my_thread_var *, THR_KEY_mysys);
 MYSQL_THD create_background_thd()
 {
-  DBUG_ASSERT(!current_thd);
+  auto save_thd = current_thd;
+  set_current_thd(nullptr);
+
   auto save_mysysvar= pthread_getspecific(THR_KEY_mysys);
 
   /*
-    Allocate new mysys_var specifically this THD,
+    Allocate new mysys_var specifically new THD,
     so that e.g safemalloc, DBUG etc are happy.
   */
   pthread_setspecific(THR_KEY_mysys, 0);
@@ -4900,7 +4915,8 @@ MYSQL_THD create_background_thd()
   auto thd_mysysvar= pthread_getspecific(THR_KEY_mysys);
   auto thd= new THD(0);
   pthread_setspecific(THR_KEY_mysys, save_mysysvar);
-  thd->set_psi(PSI_CALL_get_thread());
+  thd->set_psi(nullptr);
+  set_current_thd(save_thd);
 
   /*
     Workaround the adverse effect of incrementing thread_count
@@ -4913,6 +4929,9 @@ MYSQL_THD create_background_thd()
   thd->set_command(COM_DAEMON);
   thd->system_thread= SYSTEM_THREAD_GENERIC;
   thd->security_ctx->host_or_ip= "";
+  thd->real_id= 0;
+  thd->thread_id= 0;
+  thd->query_id= 0;
   return thd;
 }
 
@@ -5005,13 +5024,9 @@ void reset_thd(MYSQL_THD thd)
   guarantees, in other words, server can't send OK packet
   before modified data is durable in redo log.
 */
-extern "C" MYSQL_THD thd_increment_pending_ops(void)
+extern "C" void thd_increment_pending_ops(MYSQL_THD thd)
 {
-  THD *thd = current_thd;
-  if (!thd)
-    return NULL;
   thd->async_state.inc_pending_ops();
-  return thd;
 }
 
 /**
@@ -5446,8 +5461,8 @@ extern "C" bool thd_is_strict_mode(const MYSQL_THD thd)
 */
 void thd_get_query_start_data(THD *thd, char *buf)
 {
-  LEX_CSTRING field_name;
-  Field_timestampf f((uchar *)buf, NULL, 0, Field::NONE, &field_name, NULL, 6);
+  Field_timestampf f((uchar *)buf, nullptr, 0, Field::NONE, &empty_clex_str,
+                     nullptr, 6);
   f.store_TIME(thd->query_start(), thd->query_start_sec_part());
 }
 

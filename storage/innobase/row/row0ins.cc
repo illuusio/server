@@ -695,6 +695,7 @@ row_ins_set_detailed(
 Acquires dict_foreign_err_mutex, rewinds dict_foreign_err_file
 and displays information about the given transaction.
 The caller must release dict_foreign_err_mutex. */
+TRANSACTIONAL_TARGET
 static
 void
 row_ins_foreign_trx_print(
@@ -708,7 +709,7 @@ row_ins_foreign_trx_print(
 	ut_ad(!srv_read_only_mode);
 
 	{
-		LockMutexGuard g{SRW_LOCK_CALL};
+		TMLockMutexGuard g{SRW_LOCK_CALL};
 		n_rec_locks = trx->lock.n_rec_locks;
 		n_trx_locks = UT_LIST_GET_LEN(trx->lock.trx_locks);
 		heap_size = mem_heap_get_size(trx->lock.lock_heap);
@@ -863,7 +864,6 @@ row_ins_invalidate_query_cache(
 	innobase_invalidate_query_cache(thr_get_trx(thr), name);
 }
 
-
 /** Fill virtual column information in cascade node for the child table.
 @param[out]	cascade		child update node
 @param[in]	rec		clustered rec of child table
@@ -910,6 +910,11 @@ row_ins_foreign_fill_virtual(
 	if (!record) {
 		return DB_OUT_OF_MEMORY;
 	}
+	ut_ad(!node->is_delete
+	      || (foreign->type & DICT_FOREIGN_ON_DELETE_SET_NULL));
+	ut_ad(foreign->type & (DICT_FOREIGN_ON_DELETE_SET_NULL
+			       | DICT_FOREIGN_ON_UPDATE_SET_NULL
+			       | DICT_FOREIGN_ON_UPDATE_CASCADE));
 
 	for (uint16_t i = 0; i < n_v_fld; i++) {
 
@@ -925,7 +930,7 @@ row_ins_foreign_fill_virtual(
 		dfield_t*	vfield = innobase_get_computed_value(
 				update->old_vrow, col, index,
 				&vc.heap, update->heap, NULL, thd, mysql_table,
-                                record, NULL, NULL, NULL);
+				record, NULL, NULL);
 
 		if (vfield == NULL) {
 			return DB_COMPUTE_VALUE_FAILED;
@@ -941,16 +946,11 @@ row_ins_foreign_fill_virtual(
 
 		upd_field_set_v_field_no(upd_field, i, index);
 
-		bool set_null =
-			node->is_delete
-			? (foreign->type & DICT_FOREIGN_ON_DELETE_SET_NULL)
-			: (foreign->type & DICT_FOREIGN_ON_UPDATE_SET_NULL);
-
 		dfield_t* new_vfield = innobase_get_computed_value(
 				update->old_vrow, col, index,
 				&vc.heap, update->heap, NULL, thd,
 				mysql_table, record, NULL,
-				set_null ? update : node->update, foreign);
+				update);
 
 		if (new_vfield == NULL) {
 			return DB_COMPUTE_VALUE_FAILED;
@@ -1657,23 +1657,6 @@ row_ins_check_foreign_constraint(
 		cmp = cmp_dtuple_rec(entry, rec, offsets);
 
 		if (cmp == 0) {
-			if (check_table->versioned()) {
-				bool history_row = false;
-
-				if (check_index->is_primary()) {
-					history_row = check_index->
-						vers_history_row(rec, offsets);
-				} else if (check_index->
-					vers_history_row(rec, history_row))
-				{
-					break;
-				}
-
-				if (history_row) {
-					continue;
-				}
-			}
-
 			if (rec_get_deleted_flag(rec,
 						 rec_offs_comp(offsets))) {
 				/* In delete-marked records, DB_TRX_ID must
@@ -1695,6 +1678,23 @@ row_ins_check_foreign_constraint(
 					goto end_scan;
 				}
 			} else {
+				if (check_table->versioned()) {
+					bool history_row = false;
+
+					if (check_index->is_primary()) {
+						history_row = check_index->
+							vers_history_row(rec,
+									 offsets);
+					} else if (check_index->
+						vers_history_row(rec,
+								 history_row)) {
+						break;
+					}
+
+					if (history_row) {
+						continue;
+					}
+				}
 				/* Found a matching record. Lock only
 				a record because we can allow inserts
 				into gaps */
@@ -1944,14 +1944,14 @@ row_ins_check_foreign_constraints(
 
 				ref_table = dict_table_open_on_name(
 					foreign->referenced_table_name_lookup,
-					FALSE, FALSE, DICT_ERR_IGNORE_NONE);
+					false, DICT_ERR_IGNORE_NONE);
 			}
 
 			err = row_ins_check_foreign_constraint(
 				TRUE, foreign, table, ref_tuple, thr);
 
-			if (ref_table != NULL) {
-				dict_table_close(ref_table, FALSE, FALSE);
+			if (ref_table) {
+				dict_table_close(ref_table);
 			}
 		}
 	}
@@ -2501,6 +2501,13 @@ extern "C" int thd_is_slave(const MYSQL_THD thd);
 # define thd_is_slave(thd) 0
 #endif
 
+#if defined __aarch64__&&defined __GNUC__&&__GNUC__==4&&!defined __clang__
+/* Avoid GCC 4.8.5 internal compiler error due to srw_mutex::wr_unlock().
+We would only need this for row_ins_clust_index_entry_low(),
+but GCC 4.8.5 does not support pop_options. */
+# pragma GCC optimize ("no-expensive-optimizations")
+#endif
+
 /***************************************************************//**
 Tries to insert an entry into a clustered index, ignoring foreign key
 constraints. If a record with the same unique key is found, the other
@@ -3040,9 +3047,7 @@ row_ins_sec_index_entry_low(
 			if (!index->is_committed()) {
 				ut_ad(!thr_get_trx(thr)
 				      ->dict_operation_lock_mode);
-				dict_sys.mutex_lock();
-				dict_set_corrupted_index_cache_only(index);
-				dict_sys.mutex_unlock();
+				index->type |= DICT_CORRUPT;
 				/* Do not return any error to the
 				caller. The duplicate will be reported
 				by ALTER TABLE or CREATE UNIQUE INDEX.

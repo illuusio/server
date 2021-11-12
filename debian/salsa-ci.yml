@@ -78,6 +78,11 @@ build bullseye-backports:
   variables:
     RELEASE: bullseye-backports
 
+build bullseye-backports:
+  extends: .build-package
+  variables:
+    RELEASE: bullseye-backports
+
 # Backport to Buster works, but not to Stretch which lacks libpmem and liburing
 build buster-backports:
   extends: .build-package
@@ -252,7 +257,33 @@ mariadb-10.6 Sid upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mariadb-10.5 Bullseye to mariadb-10.5 upgrade:
+mariadb-10.5 Bullseye to mariadb-10.6 upgrade:
+  stage: upgrade from Bullseye/Buster/Stretch
+  needs:
+    - job: build
+  image: debian:bullseye
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    # Install everything MariaDB currently in Debian Bullseye
+    - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
+    # Verify installation of MariaDB from Bullseye
+    - *test-verify-initial
+    - *test-enable-sid-repos
+    - *test-install
+    - service mariadb status
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
+mariadb-10.5 Bullseye to mariadb-10.6 upgrade:
   stage: upgrade from Bullseye/Buster/Stretch
   needs:
     - job: build

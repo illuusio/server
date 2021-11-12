@@ -94,13 +94,22 @@ bool fil_space_t::try_to_close(bool print_info)
 
     if (const auto n= space.set_closing())
     {
-      if (print_info)
-        ib::info() << "Cannot close file " << node->name
-                   << " because of "
-                   << (n & PENDING)
-                   << ((n & NEEDS_FSYNC)
-                       ? " pending operations and pending fsync"
-                       : " pending operations");
+      if (!print_info)
+        continue;
+      print_info= false;
+      const time_t now= time(nullptr);
+      if (now - fil_system.n_open_exceeded_time < 5)
+        continue; /* We display messages at most once in 5 seconds. */
+      fil_system.n_open_exceeded_time= now;
+
+      if (n & PENDING)
+        sql_print_information("InnoDB: Cannot close file %s because of "
+                              UINT32PF " pending operations%s", node->name,
+                              n & PENDING,
+                              (n & NEEDS_FSYNC) ? " and pending fsync" : "");
+      else if (n & NEEDS_FSYNC)
+        sql_print_information("InnoDB: Cannot close file %s because of "
+                              "pending fsync", node->name);
       continue;
     }
 
@@ -328,7 +337,7 @@ fil_node_t* fil_space_t::add(const char* name, pfs_os_file_t handle,
 	this->size += size;
 	UT_LIST_ADD_LAST(chain, node);
 	if (node->is_open()) {
-		n_pending.fetch_and(~CLOSING, std::memory_order_relaxed);
+		clear_closing();
 		if (++fil_system.n_open >= srv_max_n_open_files) {
 			reacquire();
 			try_to_close(true);
@@ -416,15 +425,18 @@ static bool fil_node_open_file(fil_node_t *node)
   ut_ad(node->space->purpose != FIL_TYPE_TEMPORARY);
   ut_ad(node->space->referenced());
 
+  const auto old_time= fil_system.n_open_exceeded_time;
+
   for (ulint count= 0; fil_system.n_open >= srv_max_n_open_files; count++)
   {
     if (fil_space_t::try_to_close(count > 1))
       count= 0;
     else if (count >= 2)
     {
-      ib::warn() << "innodb_open_files=" << srv_max_n_open_files
-                 << " is exceeded (" << fil_system.n_open
-                 << ") files stay open)";
+      if (old_time != fil_system.n_open_exceeded_time)
+        sql_print_warning("InnoDB: innodb_open_files=" ULINTPF
+                          " is exceeded (" ULINTPF " files stay open)",
+                          srv_max_n_open_files, fil_system.n_open);
       break;
     }
     else
@@ -570,10 +582,15 @@ fil_space_extend_must_retry(
 
 	const unsigned	page_size = space->physical_size();
 
-	/* Datafile::read_first_page() expects srv_page_size bytes.
-	fil_node_t::read_page0() expects at least 4 * srv_page_size bytes.*/
+	/* Datafile::read_first_page() expects innodb_page_size bytes.
+	fil_node_t::read_page0() expects at least 4 * innodb_page_size bytes.
+	os_file_set_size() expects multiples of 4096 bytes.
+	For ROW_FORMAT=COMPRESSED tables using 1024-byte or 2048-byte
+	pages, we will preallocate up to an integer multiple of 4096 bytes,
+	and let normal writes append 1024, 2048, or 3072 bytes to the file. */
 	os_offset_t new_size = std::max(
-		os_offset_t(size - file_start_page_no) * page_size,
+		(os_offset_t(size - file_start_page_no) * page_size)
+		& ~os_offset_t(4095),
 		os_offset_t(FIL_IBD_FILE_INITIAL_SIZE << srv_page_size_shift));
 
 	*success = os_file_set_size(node->name, node->handle, new_size,
@@ -683,7 +700,7 @@ ATTRIBUTE_COLD bool fil_space_t::prepare(bool have_mutex)
   }
   else
 clear:
-   n_pending.fetch_and(~CLOSING, std::memory_order_relaxed);
+    clear_closing();
 
   if (!have_mutex)
     mysql_mutex_unlock(&fil_system.mutex);
@@ -1434,8 +1451,7 @@ fil_space_t *fil_space_t::get(ulint id)
 
   if (n & STOPPING)
     space= nullptr;
-
-  if ((n & CLOSING) && !space->prepare())
+  else if ((n & CLOSING) && !space->prepare())
     space= nullptr;
 
   return space;
@@ -1552,38 +1568,23 @@ fil_name_write(
 fil_space_t *fil_space_t::check_pending_operations(ulint id)
 {
   ut_a(!is_system_tablespace(id));
-  bool being_deleted= false;
   mysql_mutex_lock(&fil_system.mutex);
   fil_space_t *space= fil_space_get_by_id(id);
 
-  if (!space);
-  else if (space->pending() & STOPPING)
-    being_deleted= true;
-  else
-  {
-    if (space->crypt_data)
-    {
-      space->reacquire();
-      mysql_mutex_unlock(&fil_system.mutex);
-      fil_space_crypt_close_tablespace(space);
-      mysql_mutex_lock(&fil_system.mutex);
-      space->release();
-    }
-    being_deleted= space->set_stopping();
-  }
-  mysql_mutex_unlock(&fil_system.mutex);
-
   if (!space)
-    return nullptr;
-
-  if (being_deleted)
   {
+    mysql_mutex_unlock(&fil_system.mutex);
+    return nullptr;
+  }
+
+  if (space->pending() & STOPPING)
+  {
+being_deleted:
     /* A thread executing DDL and another thread executing purge may
     be executing fil_delete_tablespace() concurrently for the same
     tablespace. Wait for the other thread to complete the operation. */
     for (ulint count= 0;; count++)
     {
-      mysql_mutex_lock(&fil_system.mutex);
       space= fil_space_get_by_id(id);
       ut_ad(!space || space->is_stopping());
       mysql_mutex_unlock(&fil_system.mutex);
@@ -1594,8 +1595,24 @@ fil_space_t *fil_space_t::check_pending_operations(ulint id)
         sql_print_warning("InnoDB: Waiting for tablespace " ULINTPF
                           " to be deleted", id);
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      mysql_mutex_lock(&fil_system.mutex);
     }
   }
+  else
+  {
+    if (space->crypt_data)
+    {
+      space->reacquire();
+      mysql_mutex_unlock(&fil_system.mutex);
+      fil_space_crypt_close_tablespace(space);
+      mysql_mutex_lock(&fil_system.mutex);
+      space->release();
+    }
+    if (space->set_stopping_check())
+      goto being_deleted;
+  }
+
+  mysql_mutex_unlock(&fil_system.mutex);
 
   for (ulint count= 0;; count++)
   {
@@ -2098,7 +2115,7 @@ to the .err log. This function is used to open a tablespace when we start
 mysqld after the dictionary has been booted, and also in IMPORT TABLESPACE.
 
 NOTE that we assume this operation is used either at the database startup
-or under the protection of the dictionary mutex, so that two users cannot
+or under the protection of dict_sys.latch, so that two users cannot
 race here. This operation does not leave the file associated with the
 tablespace open, but closes it after we have looked at the space id in it.
 
@@ -2730,16 +2747,19 @@ func_exit:
 /*============================ FILE I/O ================================*/
 
 /** Report information about an invalid page access. */
-ATTRIBUTE_COLD __attribute__((noreturn))
-static void
-fil_report_invalid_page_access(const char *name,
-                               os_offset_t offset, ulint len, bool is_read)
+ATTRIBUTE_COLD
+static void fil_invalid_page_access_msg(bool fatal, const char *name,
+                                        os_offset_t offset, ulint len,
+                                        bool is_read)
 {
-  ib::fatal() << "Trying to " << (is_read ? "read " : "write ") << len
-              << " bytes at " << offset
-              << " outside the bounds of the file: " << name;
+  sql_print_error("%s%s %zu bytes at " UINT64PF
+                  " outside the bounds of the file: %s",
+                  fatal ? "[FATAL] InnoDB: " : "InnoDB: ",
+                  is_read ? "Trying to read" : "Trying to write",
+                  len, offset, name);
+  if (fatal)
+    abort();
 }
-
 
 /** Update the data structures on write completion */
 inline void fil_node_t::complete_write()
@@ -2793,6 +2813,7 @@ fil_io_t fil_space_t::io(const IORequest &type, os_offset_t offset, size_t len,
 	}
 
 	ulint p = static_cast<ulint>(offset >> srv_page_size_shift);
+	bool fatal;
 
 	if (UNIV_LIKELY_NULL(UT_LIST_GET_NEXT(chain, node))) {
 		ut_ad(this == fil_system.sys_space
@@ -2803,13 +2824,16 @@ fil_io_t fil_space_t::io(const IORequest &type, os_offset_t offset, size_t len,
 			p -= node->size;
 			node = UT_LIST_GET_NEXT(chain, node);
 			if (!node) {
-				if (type.type == IORequest::READ_ASYNC) {
-					release();
-					return {DB_ERROR, nullptr};
+				release();
+				if (type.type != IORequest::READ_ASYNC) {
+					fatal = true;
+fail:
+					fil_invalid_page_access_msg(
+						fatal, node->name,
+						offset, len,
+						type.is_read());
 				}
-				fil_report_invalid_page_access(node->name,
-							       offset, len,
-							       type.is_read());
+				return {DB_IO_ERROR, nullptr};
 			}
 		}
 
@@ -2817,16 +2841,17 @@ fil_io_t fil_space_t::io(const IORequest &type, os_offset_t offset, size_t len,
 	}
 
 	if (UNIV_UNLIKELY(node->size <= p)) {
+		release();
+
 		if (type.type == IORequest::READ_ASYNC) {
-			release();
 			/* If we can tolerate the non-existent pages, we
 			should return with DB_ERROR and let caller decide
 			what to do. */
 			return {DB_ERROR, nullptr};
 		}
 
-		fil_report_invalid_page_access(
-			node->name, offset, len, type.is_read());
+		fatal = node->space->purpose != FIL_TYPE_IMPORT;
+		goto fail;
 	}
 
 	dberr_t err;

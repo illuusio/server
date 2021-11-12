@@ -1,4 +1,4 @@
-/* Copyright 2008-2015 Codership Oy <http://www.codership.com>
+/* Copyright 2008-2021 Codership Oy <http://www.codership.com>
    Copyright (c) 2020, 2021, MariaDB
 
    This program is free software; you can redistribute it and/or modify
@@ -108,7 +108,7 @@ long wsrep_slave_threads;                       // No. of slave appliers threads
 ulong wsrep_retry_autocommit;                   // Retry aborted autocommit trx
 ulong wsrep_max_ws_size;                        // Max allowed ws (RBR buffer) size
 ulong wsrep_max_ws_rows;                        // Max number of rows in ws
-ulong wsrep_forced_binlog_format;
+ulong wsrep_forced_binlog_format= BINLOG_FORMAT_UNSPEC;
 ulong wsrep_mysql_replication_bundle;
 
 bool              wsrep_gtid_mode;              // Enable WSREP native GTID support
@@ -806,17 +806,20 @@ void wsrep_init_globals()
 {
   wsrep_gtid_server.domain_id= wsrep_gtid_domain_id;
   wsrep_init_sidno(Wsrep_server_state::instance().connected_gtid().id());
-  wsrep_init_gtid();
   /* Recover last written wsrep gtid */
+  wsrep_init_gtid();
   if (wsrep_new_cluster)
   {
-    wsrep_server_gtid_t gtid= {wsrep_gtid_server.domain_id,
-                               wsrep_gtid_server.server_id, 0};
-    wsrep_get_binlog_gtid_seqno(gtid);
-    wsrep_gtid_server.seqno(gtid.seqno);
+    /* Start with provided domain_id & server_id found in configuration */
+    wsrep_server_gtid_t new_gtid;
+    new_gtid.domain_id= wsrep_gtid_domain_id;
+    new_gtid.server_id= global_system_variables.server_id;
+    new_gtid.seqno= 0;
+    /* Try to search for domain_id and server_id combination in binlog if found continue from last seqno */
+    wsrep_get_binlog_gtid_seqno(new_gtid);
+    wsrep_gtid_server.gtid(new_gtid);
   }
   wsrep_init_schema();
-
   if (WSREP_ON)
   {
     Wsrep_server_state::instance().initialized();
@@ -2577,12 +2580,29 @@ static int wsrep_TOI_begin(THD *thd, const char *db, const char *table,
                  wsrep_thd_query(thd));
       my_error(ER_ERROR_DURING_COMMIT, MYF(0), WSREP_SIZE_EXCEEDED);
       break;
-    default:
+    case wsrep::e_deadlock_error:
       WSREP_WARN("TO isolation failed for: %d, schema: %s, sql: %s. "
-                 "Check wsrep connection state and retry the query.",
+                 "Deadlock error.",
                  ret,
                  (thd->db.str ? thd->db.str : "(null)"),
                  wsrep_thd_query(thd));
+      my_error(ER_LOCK_DEADLOCK, MYF(0));
+      break;
+    case wsrep::e_timeout_error:
+      WSREP_WARN("TO isolation failed for: %d, schema: %s, sql: %s. "
+                 "Operation timed out.",
+                 ret,
+                 (thd->db.str ? thd->db.str : "(null)"),
+                 wsrep_thd_query(thd));
+      my_error(ER_LOCK_WAIT_TIMEOUT, MYF(0));
+      break;
+    default:
+      WSREP_WARN("TO isolation failed for: %d, schema: %s, sql: %s. "
+                 "Check your wsrep connection state and retry the query.",
+                 ret,
+                 (thd->db.str ? thd->db.str : "(null)"),
+                 wsrep_thd_query(thd));
+
       if (!thd->is_error())
       {
         my_error(ER_LOCK_DEADLOCK, MYF(0), "WSREP replication failed. Check "
@@ -2777,13 +2797,6 @@ int wsrep_to_isolation_begin(THD *thd, const char *db_, const char *table_,
     thd->variables.auto_increment_increment= 1;
   }
 
-  /*
-    TOI operations will ignore provided lock_wait_timeout and restore it
-    after operation is done.
-   */
-  thd->variables.saved_lock_wait_timeout= thd->variables.lock_wait_timeout;
-  thd->variables.lock_wait_timeout= LONG_TIMEOUT;
-
   if (thd->variables.wsrep_on && wsrep_thd_is_local(thd))
   {
     switch (wsrep_OSU_method_get(thd)) {
@@ -2800,8 +2813,19 @@ int wsrep_to_isolation_begin(THD *thd, const char *db_, const char *table_,
       ret= -1;
       break;
     }
+
     switch (ret) {
-    case 0: /* wsrep_TOI_begin should set toi mode */ break;
+    case 0: /* wsrep_TOI_begin should set toi mode */
+      if (thd->variables.wsrep_OSU_method == WSREP_OSU_TOI)
+      {
+        /*
+          TOI operations ignore the provided lock_wait_timeout once replicated,
+          and restore it after operation is done.
+         */
+        thd->variables.saved_lock_wait_timeout= thd->variables.lock_wait_timeout;
+        thd->variables.lock_wait_timeout= LONG_TIMEOUT;
+      }
+      break;
     case 1:
         /* TOI replication skipped, treat as success */
         ret= 0;

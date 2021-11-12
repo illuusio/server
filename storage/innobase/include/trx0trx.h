@@ -122,11 +122,18 @@ void trx_start_internal_low(trx_t *trx, bool read_write);
 	(t)->start_file = __FILE__;				\
 	trx_start_internal_low(t, true);			\
 	} while (false)
+#define trx_start_internal_read_only(t)				\
+	do {							\
+	(t)->start_line = __LINE__;				\
+	(t)->start_file = __FILE__;				\
+	trx_start_internal_low(t, false);			\
+	} while (false)
 #else
 #define trx_start_if_not_started(t, rw)				\
 	trx_start_if_not_started_low((t), rw)
 
 #define trx_start_internal(t) trx_start_internal_low(t, true)
+#define trx_start_internal_read_only(t) trx_start_internal_low(t, false)
 
 #define trx_start_if_not_started_xa(t, rw)			\
 	trx_start_if_not_started_xa_low((t), (rw))
@@ -334,6 +341,38 @@ struct trx_lock_t
   /** 2=high priority WSREP thread has marked this trx to abort;
   1=another transaction chose this as a victim in deadlock resolution. */
   Atomic_relaxed<byte> was_chosen_as_deadlock_victim;
+
+  /** Clear the deadlock victim status. */
+  void clear_deadlock_victim()
+  {
+#ifndef WITH_WSREP
+    was_chosen_as_deadlock_victim= false;
+#elif defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+    /* There is no 8-bit version of the 80386 BTR instruction.
+    Technically, this is the wrong addressing mode (16-bit), but
+    there are other data members stored after the byte. */
+    __asm__ __volatile__("lock btrw $0, %0"
+                         : "+m" (was_chosen_as_deadlock_victim));
+#else
+    was_chosen_as_deadlock_victim.fetch_and(byte(~1));
+#endif
+  }
+
+#ifdef WITH_WSREP
+  /** Flag the lock owner as a victim in Galera conflict resolution. */
+  void set_wsrep_victim()
+  {
+# if defined __GNUC__ && (defined __i386__ || defined __x86_64__)
+    /* There is no 8-bit version of the 80386 BTS instruction.
+    Technically, this is the wrong addressing mode (16-bit), but
+    there are other data members stored after the byte. */
+    __asm__ __volatile__("lock btsw $1, %0"
+                         : "+m" (was_chosen_as_deadlock_victim));
+# else
+    was_chosen_as_deadlock_victim.fetch_or(2);
+# endif
+  }
+#endif
 
   /** Next available rec_pool[] entry */
   byte rec_cached;
@@ -558,7 +597,7 @@ public:
 private:
   /** mutex protecting state and some of lock
   (some are protected by lock_sys.latch) */
-  srw_mutex mutex;
+  srw_spin_mutex mutex;
 #ifdef UNIV_DEBUG
   /** The owner of mutex (0 if none); protected by mutex */
   std::atomic<os_thread_id_t> mutex_owner{0};
@@ -582,6 +621,9 @@ public:
 	  == os_thread_get_curr_id());
     mutex.wr_unlock();
   }
+#ifndef SUX_LOCK_GENERIC
+  bool mutex_is_locked() const noexcept { return mutex.is_locked(); }
+#endif
 #ifdef UNIV_DEBUG
   /** @return whether the current thread holds the mutex */
   bool mutex_is_owner() const
@@ -725,11 +767,9 @@ public:
 	ulint		duplicates;	/*!< TRX_DUP_IGNORE | TRX_DUP_REPLACE */
 	bool		dict_operation;	/**< whether this modifies InnoDB
 					data dictionary */
-	ib_uint32_t	dict_operation_lock_mode;
-					/*!< 0, RW_S_LATCH, or RW_X_LATCH:
-					the latch mode trx currently holds
-					on dict_sys.latch. Protected
-					by dict_sys.latch. */
+	/** whether dict_sys.latch is held exclusively; protected by
+	dict_sys.latch */
+	bool dict_operation_lock_mode;
 
 	/** wall-clock time of the latest transition to TRX_STATE_ACTIVE;
 	used for diagnostic purposes only */

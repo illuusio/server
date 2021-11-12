@@ -684,7 +684,7 @@ buf_load()
 		}
 
 		space->reacquire();
-		buf_read_page_background(space, dump[i], zip_size, true);
+		buf_read_page_background(space, dump[i], zip_size);
 
 		if (buf_load_abort_flag) {
 			if (space) {
@@ -720,6 +720,10 @@ buf_load()
 	}
 
 	ut_free(dump);
+
+	if (i == dump_n) {
+		os_aio_wait_until_no_pending_reads();
+	}
 
 	ut_sprintf_timestamp(now);
 

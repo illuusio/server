@@ -57,7 +57,7 @@ ulint buf_lru_freed_page_count;
 ulint buf_flush_page_count;
 
 /** Flag indicating if the page_cleaner is in active state. */
-bool buf_page_cleaner_is_active;
+Atomic_relaxed<bool> buf_page_cleaner_is_active;
 
 /** Factor for scan length to determine n_pages for intended oldest LSN
 progress */
@@ -126,7 +126,7 @@ static void buf_flush_validate_skip()
 #endif /* UNIV_DEBUG */
 
 /** Wake up the page cleaner if needed */
-inline void buf_pool_t::page_cleaner_wakeup()
+void buf_pool_t::page_cleaner_wakeup()
 {
   if (!page_cleaner_idle())
     return;
@@ -366,10 +366,12 @@ void buf_page_write_complete(const IORequest &request)
   const bool temp= fsp_is_system_temporary(bpage->id().space());
 
   mysql_mutex_lock(&buf_pool.mutex);
+  mysql_mutex_assert_not_owner(&buf_pool.flush_list_mutex);
   buf_pool.stat.n_pages_written++;
   /* While we do not need any mutex for clearing oldest_modification
   here, we hope that it will be in the same cache line with io_fix,
   whose changes must be protected by buf_pool.mutex. */
+  ut_ad(temp || bpage->oldest_modification() > 2);
   bpage->clear_oldest_modification(temp);
   ut_ad(bpage->io_fix() == BUF_IO_WRITE);
   bpage->set_io_fix(BUF_IO_NONE);
@@ -945,7 +947,9 @@ static bool buf_flush_check_neighbor(const page_id_t id, ulint fold, bool lru)
   mysql_mutex_assert_owner(&buf_pool.mutex);
   ut_ad(fold == id.fold());
 
-  buf_page_t *bpage= buf_pool.page_hash_get_low(id, fold);
+  /* FIXME: cell_get() is being invoked while holding buf_pool.mutex */
+  const buf_page_t *bpage=
+    buf_pool.page_hash.get(id, buf_pool.page_hash.cell_get(fold));
 
   if (!bpage || buf_pool.watch_is_sentinel(*bpage))
     return false;
@@ -1105,9 +1109,10 @@ static ulint buf_flush_try_neighbors(fil_space_t *space,
       id_fold= id.fold();
     }
 
+    const buf_pool_t::hash_chain &chain= buf_pool.page_hash.cell_get(id_fold);
     mysql_mutex_lock(&buf_pool.mutex);
 
-    if (buf_page_t *bpage= buf_pool.page_hash_get_low(id, id_fold))
+    if (buf_page_t *bpage= buf_pool.page_hash.get(id, chain))
     {
       ut_ad(bpage->in_file());
       /* We avoid flushing 'non-old' blocks in an LRU flush,
@@ -2229,6 +2234,17 @@ furious_flush:
 unemployed:
       buf_flush_async_lsn= 0;
       buf_pool.page_cleaner_set_idle(true);
+
+      DBUG_EXECUTE_IF("ib_log_checkpoint_avoid", continue;);
+
+      mysql_mutex_unlock(&buf_pool.flush_list_mutex);
+
+      if (!recv_recovery_is_on() &&
+          !srv_startup_is_before_trx_rollback_phase &&
+          srv_operation == SRV_OPERATION_NORMAL)
+        log_checkpoint();
+
+      mysql_mutex_lock(&buf_pool.flush_list_mutex);
       continue;
     }
 
