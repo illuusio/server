@@ -1,9 +1,10 @@
-mariadb-10.6 (1:10.6.5-1) UNRELEASED; urgency=medium
+mariadb-10.6 (1:10.6.5-1) unstable; urgency=medium
 
   * New upstream version 10.6.5.
   * Drop MIPS and libatomic patches applied now upstream
+  * Enable Numa support (Closes: #861553)
 
- -- Otto Kekäläinen <otto@debian.org>  Sat, 20 Nov 2021 12:25:10 -0800
+ -- Otto Kekäläinen <otto@debian.org>  Sat, 27 Nov 2021 13:48:25 -0800
 
 mariadb-10.6 (1:10.6.4-1) unstable; urgency=medium
 
