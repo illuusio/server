@@ -1,0 +1,2 @@
+# Lintian Bug#1000469: false assumption about object files
+libmariadbd-dev: no-code-sections usr/lib/x86_64-linux-gnu/libmariadbd.a (debug_sync.cc.o longlong2str.c.o my_bit.c.o my_getpagesize.c.o my_lockmem.c.o my_new.cc.o os0thread.cc.o safemalloc.c.o strmov.c.o table_replication_applier_configuration.cc.o table_replication_applier_status.cc.o table_replication_applier_status_by_coordinator.cc.o viopipe.c.o)
