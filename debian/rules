@@ -185,13 +185,15 @@ endif
 	mv -v $(TMP)/usr/lib/mysql/plugin/qa_auth_client.so $(TMP)/usr/lib/$(DEB_HOST_MULTIARCH)/libmariadb3/plugin/
 
 # Install mariadb.socket without enabling it, keep using mariadb.service by default
+# @TODO: Temporarily disable extra and socket systemd file installation until
+# a '--build=all' compatible mechanism is found
 override_dh_systemd_enable:
 	dh_systemd_enable --name=mariadb
-	dh_systemd_enable --no-enable --name=mariadb mariadb.socket
-	dh_systemd_enable --no-enable --name=mariadb-extra mariadb-extra.socket
-	dh_systemd_enable --no-enable --name=mariadb@ mariadb.socket
-	dh_systemd_enable --no-enable --name=mariadb-extra@ mariadb-extra.socket
-	dh_systemd_enable --no-enable --name=mariadb@ mariadb@.service
+	dh_systemd_enable --no-enable --name=mariadb@ # mariadb@.service
+#	dh_systemd_enable --no-enable --name=mariadb mariadb.socket
+#	dh_systemd_enable --no-enable --name=mariadb-extra mariadb-extra.socket
+#	dh_systemd_enable --no-enable --name=mariadb@ mariadb.socket
+#	dh_systemd_enable --no-enable --name=mariadb-extra@ mariadb-extra.socket
 
 # Start mysql at sequence number 19 before 20 where apache, proftpd etc gets
 # started which might depend on a running database server.

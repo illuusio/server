@@ -96,13 +96,6 @@ autopkgtest:
     reports:
       junit: ${WORKING_DIR}/debci/artifacts/mysql-test-run-junit.xml
 
-test-build-all:
-  extends: .test-build-package-all
-  stage: test
-  allow_failure: true
-  # MariaDB 10.6 fails with:
-  # dh_systemd_enable: warning: Requested unit "mariadb.socket" but it was not found in any package acted on.
-
 piuparts:
   extends: .test-piuparts
   stage: test extras
