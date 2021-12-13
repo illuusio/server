@@ -1,1 +1,2 @@
 main.grant_kill : https://jira.mariadb.org/browse/MDEV-23915
+main.func_math : MDEV-26645
