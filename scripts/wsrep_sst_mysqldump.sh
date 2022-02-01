@@ -18,7 +18,17 @@
 
 # This is a reference script for mysqldump-based state snapshot tansfer
 
-. $(dirname "$0")/wsrep_sst_common
+if [ -x "@CMAKE_INSTALL_PREFIX@/@INSTALL_LIBEXECDIR@/wsrep_sst_common" ]
+then
+    . "@CMAKE_INSTALL_PREFIX@/@INSTALL_LIBEXECDIR@/wsrep_sst_common"
+else
+    if [ -x "$(dirname $0)/wsrep_sst_common" ]
+        . "$(dirname $0)/wsrep_sst_common"
+    else
+        echo "Can't find 'wsrep_sst_common' script"
+        exit 1
+    fi
+fi
 
 EINVAL=22
 
