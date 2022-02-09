@@ -1,0 +1,39 @@
+From: https://patch-diff.githubusercontent.com/raw/MariaDB/server/pull/1993.patch
+Forwarded: https://github.com/MariaDB/server/pull/1993
+From: Glenn Strauss <gstrauss@gluelogic.com>
+Date: Sat, 22 Jan 2022 14:25:18 -0500
+Subject: [PATCH] Include stdint.h in my_thread.h for uintptr_t
+
+This might fix kfreebsd-amd64 builds.
+
+From kfreebsd-amd64 build of mariadb-10.5:
+https://buildd.debian.org/status/fetch.php?pkg=mariadb-10.5&arch=kfreebsd-amd64&ver=1%3A10.5.12-1&stamp=1628487532&raw=0
+
+In file included from /<<PKGBUILDDIR>>/storage/perfschema/mysqld_thd_manager.h:4,
+                 from /<<PKGBUILDDIR>>/storage/perfschema/mysqld_thd_manager.cc:1:
+/<<PKGBUILDDIR>>/storage/perfschema/my_thread.h:27:9: error: ‘uintptr_t’ does not name a type; did you mean ‘intptr_t’?
+   27 | typedef uintptr_t my_thread_os_id_t;
+      |         ^~~~~~~~~
+      |         intptr_t
+/<<PKGBUILDDIR>>/storage/perfschema/my_thread.h:50:15: error: ‘my_thread_os_id_t’ does not name a type; did you mean ‘my_thread_attr_t’?
+   50 | static inline my_thread_os_id_t my_thread_os_id()
+      |               ^~~~~~~~~~~~~~~~~
+      |               my_thread_attr_t
+
+The kfreebsd-amd64 builds fail for mariadb-10.6 on missing libaio-dev, so the
+result of this will not be immediately visible.
+
+---
+ storage/perfschema/my_thread.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/storage/perfschema/my_thread.h
++++ b/storage/perfschema/my_thread.h
+@@ -24,6 +24,7 @@ typedef uint32 my_thread_os_id_t;
+ #elif defined(HAVE_PTHREAD_GETTHREADID_NP)
+ typedef int my_thread_os_id_t;
+ #elif defined(HAVE_INTEGER_PTHREAD_SELF)
++#include <stdint.h>
+ typedef uintptr_t my_thread_os_id_t;
+ #else
+ typedef unsigned long long my_thread_os_id_t;
