@@ -1,3 +1,14 @@
+mariadb-10.6 (1:10.6.6-1) UNRELEASED; urgency=medium
+
+  * New upstream version 10.6.6. Includes security fixes for
+    - CVE-2022-24048
+    - CVE-2022-24050
+    - CVE-2022-24051
+    - CVE-2022-24052
+  * Drop MIPS and CTE patches applied now upstream
+
+ -- Otto Kekäläinen <otto@debian.org>  Tue, 08 Feb 2022 18:55:24 -0800
+
 mariadb-10.6 (1:10.6.5-2) unstable; urgency=medium
 
   * Fix misc failures in 10.6 detected by Debian QA systems

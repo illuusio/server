@@ -1,9 +1,7 @@
 0025-Change-the-default-optimization-from-O3-to-O2-in-mys.patch
-mips-compilation-failure-__bss_start-symbol-miss.patch
 rocksdb-kfreebsd.patch
 mroonga-path-reproducible-build.patch
 env-perl-usr-bin-perl.patch
 fix-spelling.patch
 1556.patch
 fix-reproducible-builds-rocksdb.patch
-test-cte_nonrecursive.patch
