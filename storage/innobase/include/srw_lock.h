@@ -137,6 +137,8 @@ public:
   void destroy();
   /** @return whether any writer is waiting */
   bool is_waiting() const { return (value() & WRITER_WAITING) != 0; }
+  bool is_write_locked() const { return rw_lock::is_write_locked(); }
+  bool is_locked_or_waiting() const { return rw_lock::is_locked_or_waiting(); }
 
   bool rd_lock_try() { uint32_t l; return read_trylock(l); }
   bool wr_lock_try() { return write_trylock(); }
@@ -222,7 +224,7 @@ public:
   void wr_lock()
   {
     writer.wr_lock();
-#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_IX64
+#if defined __i386__||defined __x86_64__||defined _M_IX86||defined _M_X64
     /* On IA-32 and AMD64, this type of fetch_or() can only be implemented
     as a loop around LOCK CMPXCHG. In this particular case, setting the
     most significant bit using fetch_add() is equivalent, and is

@@ -4,7 +4,7 @@ Copyright (c) 2000, 2020, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, 2009 Google Inc.
 Copyright (c) 2009, Percona Inc.
 Copyright (c) 2012, Facebook Inc.
-Copyright (c) 2013, 2021, MariaDB Corporation.
+Copyright (c) 2013, 2022, MariaDB Corporation.
 
 Portions of this file contain modifications contributed and copyrighted by
 Google, Inc. Those modifications are gratefully acknowledged and are described
@@ -200,7 +200,7 @@ static char*	innodb_version_str = (char*) INNODB_VERSION_STR;
 extern uint srv_fil_crypt_rotate_key_age;
 extern uint srv_n_fil_crypt_iops;
 
-#if defined SAFE_MUTEX && defined UNIV_DEBUG
+#ifdef UNIV_DEBUG
 my_bool innodb_evict_tables_on_commit_debug;
 #endif
 
@@ -527,7 +527,6 @@ mysql_pfs_key_t	ibuf_bitmap_mutex_key;
 mysql_pfs_key_t	ibuf_mutex_key;
 mysql_pfs_key_t	ibuf_pessimistic_insert_mutex_key;
 mysql_pfs_key_t	log_sys_mutex_key;
-mysql_pfs_key_t	log_cmdq_mutex_key;
 mysql_pfs_key_t	log_flush_order_mutex_key;
 mysql_pfs_key_t	recalc_pool_mutex_key;
 mysql_pfs_key_t	purge_sys_pq_mutex_key;
@@ -3676,6 +3675,59 @@ static int innodb_init_abort()
 	DBUG_RETURN(1);
 }
 
+/** Return the minimum buffer pool size based on page size */
+static inline ulint min_buffer_pool_size()
+{
+  ulint s= (BUF_LRU_MIN_LEN + BUF_LRU_MIN_LEN / 4) * srv_page_size;
+  /* buf_pool_chunk_size minimum is 1M, so round up to a multiple */
+  ulint alignment= 1U << 20;
+  return UT_CALC_ALIGN(s, alignment);
+}
+
+/** Validate the requested buffer pool size.  Also, reserve the necessary
+memory needed for buffer pool resize.
+@param[in]	thd	thread handle
+@param[in]	var	pointer to system variable
+@param[out]	save	immediate result for update function
+@param[in]	value	incoming string
+@return 0 on success, 1 on failure.
+*/
+static
+int
+innodb_buffer_pool_size_validate(
+	THD*				thd,
+	struct st_mysql_sys_var*	var,
+	void*				save,
+	struct st_mysql_value*		value);
+
+/** Update the system variable innodb_buffer_pool_size using the "saved"
+value. This function is registered as a callback with MySQL.
+@param[in]	thd	thread handle
+@param[in]	var	pointer to system variable
+@param[out]	var_ptr	where the formal string goes
+@param[in]	save	immediate result from check function */
+static
+void
+innodb_buffer_pool_size_update(
+	THD*				thd,
+	struct st_mysql_sys_var*	var,
+	void*				var_ptr,
+	const void*			save);
+
+/* If the default value of innodb_buffer_pool_size is increased to be more than
+BUF_POOL_SIZE_THRESHOLD (srv/srv0start.cc), then srv_buf_pool_instances_default
+can be removed and 8 used instead. The problem with the current setup is that
+with 128MiB default buffer pool size and 8 instances by default we would emit
+a warning when no options are specified. */
+static MYSQL_SYSVAR_ULONGLONG(buffer_pool_size, innobase_buffer_pool_size,
+  PLUGIN_VAR_RQCMDARG,
+  "The size of the memory buffer InnoDB uses to cache data and indexes of its tables.",
+  innodb_buffer_pool_size_validate,
+  innodb_buffer_pool_size_update,
+  128ULL << 20,
+  2ULL << 20,
+  LLONG_MAX, 1024*1024L);
+
 /****************************************************************//**
 Gives the file extension of an InnoDB single-table tablespace. */
 static const char* ha_innobase_exts[] = {
@@ -3746,12 +3798,15 @@ static int innodb_init_params()
 
 	/* The buffer pool needs to be able to accommodate enough many
 	pages, even for larger pages */
-	if (srv_page_size > UNIV_PAGE_SIZE_DEF
-	    && innobase_buffer_pool_size < (24 * 1024 * 1024)) {
+	MYSQL_SYSVAR_NAME(buffer_pool_size).min_val= min_buffer_pool_size();
+
+	if (innobase_buffer_pool_size < MYSQL_SYSVAR_NAME(buffer_pool_size).min_val) {
 		ib::error() << "innodb_page_size="
 			<< srv_page_size << " requires "
-			<< "innodb_buffer_pool_size > 24M current "
-			<< innobase_buffer_pool_size;
+			<< "innodb_buffer_pool_size >= "
+			<< (MYSQL_SYSVAR_NAME(buffer_pool_size).min_val >> 20)
+			<< "MiB current " << (innobase_buffer_pool_size >> 20)
+			<< "MiB";
 		DBUG_RETURN(HA_ERR_INITIALIZATION);
 	}
 
@@ -9869,12 +9924,20 @@ wsrep_append_foreign_key(
 	dict_foreign_t*	foreign,	/*!< in: foreign key constraint */
 	const rec_t*	rec,		/*!<in: clustered index record */
 	dict_index_t*	index,		/*!<in: clustered index */
-	ibool		referenced,	/*!<in: is check for referenced table */
+	bool		referenced,	/*!<in: is check for
+					referenced table */
+	upd_node_t*	upd_node,	/*<!in: update node */
+	bool		pa_disable,	/*<!in: disable parallel apply ?*/
 	Wsrep_service_key_type	key_type)	/*!< in: access type of this key
 					(shared, exclusive, reference...) */
 {
-	if (!trx->is_wsrep() || !wsrep_thd_is_local(trx->mysql_thd)) {
+	ut_ad(trx->is_wsrep());
+
+	if (!wsrep_thd_is_local(trx->mysql_thd))
 		return DB_SUCCESS;
+
+	if (upd_node && wsrep_protocol_version < 4) {
+		key_type = WSREP_SERVICE_KEY_SHARED;
 	}
 
 	THD* thd = trx->mysql_thd;
@@ -9940,8 +10003,7 @@ wsrep_append_foreign_key(
 		WSREP_WARN("FK: %s missing in query: %s",
 			   (!foreign->referenced_table) ?
 			   "referenced table" : "foreign table",
-			   (wsrep_thd_query(thd)) ?
-			   wsrep_thd_query(thd) : "void");
+			   wsrep_thd_query(thd));
 		return DB_ERROR;
 	}
 
@@ -10019,18 +10081,22 @@ wsrep_append_foreign_key(
 		wkey_part,
 		(size_t*)&wkey.key_parts_num)) {
 		WSREP_WARN("key prepare failed for cascaded FK: %s",
-			   (wsrep_thd_query(thd)) ?
-			    wsrep_thd_query(thd) : "void");
+			   wsrep_thd_query(thd));
 		return DB_ERROR;
 	}
+
 	rcode = wsrep_thd_append_key(thd, &wkey, 1, key_type);
+
 	if (rcode) {
-		DBUG_PRINT("wsrep", ("row key failed: " ULINTPF, rcode));
 		WSREP_ERROR("Appending cascaded fk row key failed: %s, "
 			    ULINTPF,
-			    (wsrep_thd_query(thd)) ?
-			    wsrep_thd_query(thd) : "void", rcode);
+			    wsrep_thd_query(thd),
+			    rcode);
 		return DB_ERROR;
+	}
+
+	if (pa_disable) {
+		wsrep_thd_set_PA_unsafe(trx->mysql_thd);
 	}
 
 	return DB_SUCCESS;
@@ -11186,9 +11252,12 @@ create_table_info_t::create_options_are_invalid()
 		break;
 	}
 
-	if (m_create_info->data_file_name
-	    && m_create_info->data_file_name[0] != '\0'
-	    && !create_option_data_directory_is_valid()) {
+	if (!m_create_info->data_file_name
+	    || !m_create_info->data_file_name[0]) {
+	} else if (!my_use_symdir) {
+		my_error(WARN_OPTION_IGNORED, MYF(ME_WARNING),
+			 "DATA DIRECTORY");
+	} else if (!create_option_data_directory_is_valid()) {
 		ret = "DATA DIRECTORY";
 	}
 
@@ -11460,7 +11529,8 @@ create_table_info_t::parse_table_name(
 	  CREATE TABLE ... DATA DIRECTORY={path} TABLESPACE={name}... ;
 	we ignore the DATA DIRECTORY. */
 	if (m_create_info->data_file_name
-	    && m_create_info->data_file_name[0] != '\0') {
+	    && m_create_info->data_file_name[0]
+	    && my_use_symdir) {
 		if (!create_option_data_directory_is_valid()) {
 			push_warning_printf(
 				m_thd, Sql_condition::WARN_LEVEL_WARN,
@@ -11920,8 +11990,9 @@ create_table_info_t::set_tablespace_type(
 	used with TEMPORARY tables. */
 	m_use_data_dir =
 		m_use_file_per_table
-		&& (m_create_info->data_file_name != NULL)
-		&& (m_create_info->data_file_name[0] != '\0');
+		&& m_create_info->data_file_name
+		&& m_create_info->data_file_name[0]
+		&& my_use_symdir;
 }
 
 /** Initialize the create_table_info_t object.
@@ -13446,7 +13517,7 @@ int ha_innobase::delete_table(const char *name)
   if (fts)
   {
     fts_optimize_remove_table(table);
-    purge_sys.stop_FTS();
+    purge_sys.stop_FTS(*table);
     err= fts_lock_tables(trx, *table);
   }
 
@@ -13824,7 +13895,7 @@ int ha_innobase::truncate()
 
 	if (fts) {
 		fts_optimize_remove_table(ib_table);
-		purge_sys.stop_FTS();
+		purge_sys.stop_FTS(*ib_table);
 		error = fts_lock_tables(trx, *ib_table);
 	}
 
@@ -17515,8 +17586,10 @@ func_exit:
 	if (block != NULL) {
 		ib::info() << "Dirtying page: " << block->page.id();
 		mtr.write<1,mtr_t::FORCED>(*block,
-					   block->frame + FIL_PAGE_SPACE_ID,
-					   block->frame[FIL_PAGE_SPACE_ID]);
+					   block->page.frame
+					   + FIL_PAGE_SPACE_ID,
+					   block->page.frame
+					   [FIL_PAGE_SPACE_ID]);
 	}
 	mtr.commit();
 	log_write_up_to(mtr.commit_lsn(), true);
@@ -17970,7 +18043,8 @@ static bool innodb_buffer_pool_evict_uncompressed()
 	for (buf_block_t* block = UT_LIST_GET_LAST(buf_pool.unzip_LRU);
 	     block != NULL; ) {
 		buf_block_t*	prev_block = UT_LIST_GET_PREV(unzip_LRU, block);
-		ut_ad(block->page.state() == BUF_BLOCK_FILE_PAGE);
+		ut_ad(block->page.in_file());
+		ut_ad(block->page.belongs_to_unzip_LRU());
 		ut_ad(block->in_unzip_LRU_list);
 		ut_ad(block->page.in_LRU_list);
 
@@ -18880,11 +18954,6 @@ static MYSQL_SYSVAR_ENUM(flush_method, srv_file_flush_method,
   NULL, NULL, IF_WIN(SRV_ALL_O_DIRECT_FSYNC, SRV_O_DIRECT),
   &innodb_flush_method_typelib);
 
-static MYSQL_SYSVAR_BOOL(force_load_corrupted, srv_load_corrupted,
-  PLUGIN_VAR_NOCMDARG | PLUGIN_VAR_READONLY,
-  "Force InnoDB to load metadata of corrupted table.",
-  NULL, NULL, FALSE);
-
 static MYSQL_SYSVAR_STR(log_group_home_dir, srv_log_group_home_dir,
   PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
   "Path to InnoDB log files.", NULL, NULL, NULL);
@@ -19021,31 +19090,6 @@ static MYSQL_SYSVAR_UINT(autoextend_increment,
   PLUGIN_VAR_RQCMDARG,
   "Data file autoextend increment in megabytes",
   NULL, NULL, 64, 1, 1000, 0);
-
-/** Validate the requested buffer pool size.  Also, reserve the necessary
-memory needed for buffer pool resize.
-@param[in]	thd	thread handle
-@param[in]	var	pointer to system variable
-@param[out]	save	immediate result for update function
-@param[in]	value	incoming string
-@return 0 on success, 1 on failure.
-*/
-static
-int
-innodb_buffer_pool_size_validate(
-	THD*				thd,
-	struct st_mysql_sys_var*	var,
-	void*				save,
-	struct st_mysql_value*		value);
-
-static MYSQL_SYSVAR_ULONGLONG(buffer_pool_size, innobase_buffer_pool_size,
-  PLUGIN_VAR_RQCMDARG,
-  "The size of the memory buffer InnoDB uses to cache data and indexes of its tables.",
-  innodb_buffer_pool_size_validate,
-  innodb_buffer_pool_size_update,
-  srv_buf_pool_def_size,
-  srv_buf_pool_min_size,
-  LLONG_MAX, 1024*1024L);
 
 static MYSQL_SYSVAR_ULONG(buffer_pool_chunk_size, srv_buf_pool_chunk_unit,
   PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
@@ -19398,8 +19442,15 @@ bool innodb_use_native_aio_default()
 #ifdef HAVE_URING
   utsname &u= uname_for_io_uring;
   if (!uname(&u) && u.release[0] == '5' && u.release[1] == '.' &&
-      u.release[2] == '1' && u.release[3] > '0' && u.release[3] < '6')
+      u.release[2] == '1' && u.release[3] >= '1' && u.release[3] <= '5' &&
+      u.release[4] == '.')
   {
+    if (u.release[3] == '5') {
+      const char *s= strstr(u.version, "5.15.");
+      if (s || (s= strstr(u.release, "5.15.")))
+        if ((s[5] >= '3' || s[6] >= '0'))
+          return true; /* 5.15.3 and later should be fine */
+    }
     io_uring_may_be_unsafe= u.release;
     return false; /* working around io_uring hangs (MDEV-26674) */
   }
@@ -19564,8 +19615,8 @@ static MYSQL_SYSVAR_BOOL(read_only, srv_read_only_mode,
 
 static MYSQL_SYSVAR_BOOL(read_only_compressed, innodb_read_only_compressed,
   PLUGIN_VAR_OPCMDARG,
-  "Make ROW_FORMAT=COMPRESSED tables read-only (ON by default)",
-  NULL, NULL, TRUE);
+  "Make ROW_FORMAT=COMPRESSED tables read-only",
+  NULL, NULL, FALSE);
 
 static MYSQL_SYSVAR_BOOL(cmp_per_index_enabled, srv_cmp_per_index_enabled,
   PLUGIN_VAR_OPCMDARG,
@@ -19599,12 +19650,10 @@ static MYSQL_SYSVAR_BOOL(trx_purge_view_update_only_debug,
   " but the each purges were not done yet.",
   NULL, NULL, FALSE);
 
-# ifdef SAFE_MUTEX
 static MYSQL_SYSVAR_BOOL(evict_tables_on_commit_debug,
   innodb_evict_tables_on_commit_debug, PLUGIN_VAR_OPCMDARG,
   "On transaction commit, try to evict tables from the data dictionary cache.",
   NULL, NULL, FALSE);
-# endif /* SAFE_MUTEX */
 
 static MYSQL_SYSVAR_UINT(data_file_size_debug,
   srv_sys_space_size_debug,
@@ -19782,7 +19831,6 @@ static struct st_mysql_sys_var* innobase_system_variables[]= {
   MYSQL_SYSVAR(ft_min_token_size),
   MYSQL_SYSVAR(ft_num_word_optimize),
   MYSQL_SYSVAR(ft_sort_pll_degree),
-  MYSQL_SYSVAR(force_load_corrupted),
   MYSQL_SYSVAR(lock_wait_timeout),
   MYSQL_SYSVAR(deadlock_detect),
   MYSQL_SYSVAR(deadlock_report),
@@ -19880,9 +19928,7 @@ static struct st_mysql_sys_var* innobase_system_variables[]= {
   MYSQL_SYSVAR(trx_rseg_n_slots_debug),
   MYSQL_SYSVAR(limit_optimistic_insert_debug),
   MYSQL_SYSVAR(trx_purge_view_update_only_debug),
-# ifdef SAFE_MUTEX
   MYSQL_SYSVAR(evict_tables_on_commit_debug),
-# endif /* SAFE_MUTEX */
   MYSQL_SYSVAR(data_file_size_debug),
   MYSQL_SYSVAR(fil_make_page_dirty_debug),
   MYSQL_SYSVAR(saved_page_number_debug),
@@ -20857,7 +20903,18 @@ innodb_buffer_pool_size_validate(
 	struct st_mysql_value*		value)
 {
 	longlong	intbuf;
+
 	value->val_int(value, &intbuf);
+
+	if (static_cast<ulonglong>(intbuf) < MYSQL_SYSVAR_NAME(buffer_pool_size).min_val) {
+		push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
+				    ER_WRONG_ARGUMENTS,
+				    "innodb_buffer_pool_size must be at least"
+				    " %lld for innodb_page_size=%lu",
+				    MYSQL_SYSVAR_NAME(buffer_pool_size).min_val,
+				    srv_page_size);
+		return(1);
+	}
 
 	if (!srv_was_started) {
 		push_warning_printf(thd, Sql_condition::WARN_LEVEL_WARN,
@@ -21297,4 +21354,22 @@ void ins_node_t::vers_update_end(row_prebuilt_t *prebuilt, bool history_row)
   }
   if (UNIV_LIKELY_NULL(local_heap))
     mem_heap_free(local_heap);
+}
+
+/** Calculate aligned buffer pool size based on srv_buf_pool_chunk_unit,
+if needed.
+@param[in]	size	size in bytes
+@return	aligned size */
+ulint
+buf_pool_size_align(
+	ulint	size)
+{
+  const ulong	m = srv_buf_pool_chunk_unit;
+  size = ut_max((size_t) size, (size_t) MYSQL_SYSVAR_NAME(buffer_pool_size).min_val);
+
+  if (size % m == 0) {
+    return(size);
+  } else {
+    return (ulint)((size / m + 1) * m);
+  }
 }

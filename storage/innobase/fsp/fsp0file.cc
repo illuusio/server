@@ -438,10 +438,7 @@ Datafile::validate_for_recovery()
 		}
 
 		if (restore_from_doublewrite()) {
-			if (m_defer) {
-				return err;
-			}
-			return(DB_CORRUPTION);
+			return m_defer ? err : DB_CORRUPTION;
 		}
 
 		/* Free the previously read first page and then re-validate. */
@@ -773,7 +770,6 @@ Datafile::restore_from_doublewrite()
 			<< "Corrupted page " << page_id
 			<< " of datafile '" << m_filepath
 			<< "' could not be found in the doublewrite buffer.";
-
 		return(true);
 	}
 

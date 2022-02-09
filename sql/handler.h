@@ -353,9 +353,18 @@ enum chf_create_flags {
   run ANALYZE TABLE on it
  */
 #define HA_ONLINE_ANALYZE             (1ULL << 59)
+/*
+  Rowid's are not comparable. This is set if the rowid is unique to the
+  current open handler, like it is with federated where the rowid is a
+  pointer to a local result set buffer. The effect of having this set is
+  that the optimizer will not consirer the following optimizations for
+  the table:
+  ror scans or filtering
+*/
+#define HA_NON_COMPARABLE_ROWID (1ULL << 60)
 
 /* Implements SELECT ... FOR UPDATE SKIP LOCKED */
-#define HA_CAN_SKIP_LOCKED  (1ULL << 60)
+#define HA_CAN_SKIP_LOCKED  (1ULL << 61)
 
 #define HA_LAST_TABLE_FLAG HA_CAN_SKIP_LOCKED
 
@@ -483,6 +492,7 @@ enum chf_create_flags {
 #define HA_CREATE_TMP_ALTER     8U
 #define HA_LEX_CREATE_SEQUENCE  16U
 #define HA_VERSIONED_TABLE      32U
+#define HA_SKIP_KEY_SORT        64U
 
 #define HA_MAX_REC_LENGTH	65535
 
@@ -789,11 +799,16 @@ typedef bool Log_func(THD*, TABLE*, bool, const uchar*, const uchar*);
 */
 #define ALTER_COLUMN_INDEX_LENGTH            (1ULL << 60)
 
+/**
+  Indicate that index order might have been changed. Disables inplace algorithm
+  by default (not for InnoDB).
+*/
+#define ALTER_INDEX_ORDER                    (1ULL << 61)
 
 /**
   Means that the ignorability of an index is changed.
 */
-#define ALTER_INDEX_IGNORABILITY              (1ULL << 61)
+#define ALTER_INDEX_IGNORABILITY              (1ULL << 62)
 
 /*
   Flags set in partition_flags when altering partitions
@@ -2694,6 +2709,9 @@ public:
   /** true when InnoDB should abort the alter when table is not empty */
   const bool error_if_not_empty;
 
+  /** True when DDL should avoid downgrading the MDL */
+  bool mdl_exclusive_after_prepare= false;
+
   Alter_inplace_info(HA_CREATE_INFO *create_info_arg,
                      Alter_info *alter_info_arg,
                      KEY *key_info_arg, uint key_count_arg,
@@ -3349,6 +3367,9 @@ public:
   Rowid_filter *pushed_rowid_filter;
   /* true when the pushed rowid filter has been already filled */
   bool rowid_filter_is_active;
+  /* Used for disabling/enabling pushed_rowid_filter */
+  Rowid_filter *save_pushed_rowid_filter;
+  bool save_rowid_filter_is_active;
 
   Discrete_interval auto_inc_interval_for_cur_row;
   /**
@@ -3470,6 +3491,8 @@ public:
     pushed_idx_cond_keyno(MAX_KEY),
     pushed_rowid_filter(NULL),
     rowid_filter_is_active(0),
+    save_pushed_rowid_filter(NULL),
+    save_rowid_filter_is_active(false),
     auto_inc_intervals_count(0),
     m_psi(NULL),
     m_psi_batch_mode(PSI_BATCH_MODE_NONE),
@@ -4552,6 +4575,27 @@ public:
  {
    pushed_rowid_filter= NULL;
    rowid_filter_is_active= false;
+ }
+
+ virtual void disable_pushed_rowid_filter()
+ {
+   DBUG_ASSERT(pushed_rowid_filter != NULL &&
+               save_pushed_rowid_filter == NULL);
+   save_pushed_rowid_filter= pushed_rowid_filter;
+   if (rowid_filter_is_active)
+     save_rowid_filter_is_active= rowid_filter_is_active;
+   pushed_rowid_filter= NULL;
+   rowid_filter_is_active= false;
+ }
+
+ virtual void enable_pushed_rowid_filter()
+ {
+   DBUG_ASSERT(save_pushed_rowid_filter != NULL &&
+               pushed_rowid_filter == NULL);
+   pushed_rowid_filter= save_pushed_rowid_filter;
+   if (save_rowid_filter_is_active)
+     rowid_filter_is_active= true;
+   save_pushed_rowid_filter= NULL;
  }
 
  virtual bool rowid_filter_push(Rowid_filter *rowid_filter) { return true; }

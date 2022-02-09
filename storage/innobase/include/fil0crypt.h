@@ -296,17 +296,15 @@ byte* fil_space_encrypt(
 @param[in]	physical_size		page size
 @param[in]	fsp_flags		Tablespace flags
 @param[in,out]	src_frame		Page to decrypt
-@param[out]	err			DB_SUCCESS or DB_DECRYPTION_FAILED
-@return true if page decrypted, false if not.*/
-bool
+@return DB_SUCCESS or error */
+dberr_t
 fil_space_decrypt(
 	ulint			space_id,
 	fil_space_crypt_t*	crypt_data,
 	byte*			tmp_frame,
 	ulint			physical_size,
 	ulint			fsp_flags,
-	byte*			src_frame,
-	dberr_t*		err);
+	byte*			src_frame);
 
 /******************************************************************
 Decrypt a page
@@ -370,7 +368,7 @@ Return crypt statistics
 @param[out]	stat		Crypt statistics */
 void fil_crypt_total_stat(fil_crypt_stat_t *stat);
 
-#include "fil0crypt.ic"
+#include "fil0crypt.inl"
 #endif /* !UNIV_INNOCHECKSUM */
 
 /**

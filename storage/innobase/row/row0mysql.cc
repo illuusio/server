@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 2000, 2018, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2015, 2021, MariaDB Corporation.
+Copyright (c) 2015, 2022, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -2484,7 +2484,7 @@ dberr_t row_discard_tablespace_for_mysql(dict_table_t *table, trx_t *trx)
   if (fts_exist)
   {
     fts_optimize_remove_table(table);
-    purge_sys.stop_FTS();
+    purge_sys.stop_FTS(*table);
     err= fts_lock_tables(trx, *table);
     if (err != DB_SUCCESS)
     {
@@ -2495,6 +2495,7 @@ rollback:
         fts_optimize_add_table(table);
       }
       trx->rollback();
+      row_mysql_unlock_data_dictionary(trx);
       return err;
     }
   }
@@ -2508,10 +2509,7 @@ rollback:
 
   err= row_discard_tablespace_foreign_key_checks(trx, table);
   if (err != DB_SUCCESS)
-  {
-    row_mysql_unlock_data_dictionary(trx);
     goto rollback;
-  }
 
   /* Note: The following cannot be rolled back. Rollback would see the
   UPDATE of SYS_INDEXES.TABLE_ID as two operations: DELETE and INSERT.

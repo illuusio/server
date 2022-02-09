@@ -116,7 +116,7 @@ private:
       __asm__ __volatile__("lock btsl $1, %0" : "+m" (ref));
     else
       __asm__ __volatile__("lock btsl $0, %0" : "+m" (ref));
-#elif defined _MSC_VER && (defined _M_IX86 || defined _M_IX64)
+#elif defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
     _interlockedbittestandset(reinterpret_cast<volatile long*>(&ref),
                               needs_purge);
 #else
@@ -133,7 +133,7 @@ private:
       __asm__ __volatile__("lock btrl $1, %0" : "+m" (ref));
     else
       __asm__ __volatile__("lock btrl $0, %0" : "+m" (ref));
-#elif defined _MSC_VER && (defined _M_IX86 || defined _M_IX64)
+#elif defined _MSC_VER && (defined _M_IX86 || defined _M_X64)
     _interlockedbittestandreset(reinterpret_cast<volatile long*>(&ref),
                                 needs_purge);
 #else
@@ -302,7 +302,7 @@ inline uint32_t trx_rsegf_get_nth_undo(const buf_block_t *rseg_header, ulint n)
 {
   ut_ad(n < TRX_RSEG_N_SLOTS);
   return mach_read_from_4(TRX_RSEG + TRX_RSEG_UNDO_SLOTS +
-                          n * TRX_RSEG_SLOT_SIZE + rseg_header->frame);
+                          n * TRX_RSEG_SLOT_SIZE + rseg_header->page.frame);
 }
 
 #ifdef WITH_WSREP
@@ -346,4 +346,4 @@ up to which replication has proceeded.
 void trx_rseg_update_binlog_offset(buf_block_t *rseg_header, const trx_t *trx,
                                    mtr_t *mtr);
 
-#include "trx0rseg.ic"
+#include "trx0rseg.inl"

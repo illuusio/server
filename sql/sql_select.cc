@@ -505,7 +505,7 @@ static void trace_table_dependencies(THD *thd,
     {
       if (map & (1ULL << j))
       {
-        trace_one_table.add("map_bit", static_cast<longlong>(j));
+        trace_one_table.add("map_bit", j);
         break;
       }
     }
@@ -3264,6 +3264,14 @@ setup_subq_exit:
     }
     if (make_aggr_tables_info())
       DBUG_RETURN(1);
+
+    /*
+      It could be that we've only done optimization stage 1 for
+      some of the derived tables, and never did stage 2.
+      Do it now, otherwise Explain data structure will not be complete.
+    */
+    if (select_lex->handle_derived(thd->lex, DT_OPTIMIZE))
+      DBUG_RETURN(1);
   }
   /*
     Even with zero matching rows, subqueries in the HAVING clause may
@@ -5754,6 +5762,7 @@ make_join_statistics(JOIN *join, List<TABLE_LIST> &tables_list,
         if (!s->const_keys.is_clear_all())
         {
           sargable_cond= get_sargable_cond(join, s->table);
+          bool is_sargable_cond_of_where= sargable_cond == &join->conds;
 
           select= make_select(s->table, found_const_table_map,
                       		    found_const_table_map,
@@ -5769,6 +5778,12 @@ make_join_statistics(JOIN *join, List<TABLE_LIST> &tables_list,
             condition to where we got it from.
           */
           *sargable_cond= select->cond;
+
+          if (is_sargable_cond_of_where &&
+              join->conds && join->conds->type() == Item::COND_ITEM &&
+              ((Item_cond*) (join->conds))->functype() ==
+              Item_func::COND_AND_FUNC)
+            join->cond_equal= &((Item_cond_and*) (join->conds))->m_cond_equal;
 
           s->quick=select->quick;
           s->needed_reg=select->needed_reg;
@@ -10705,7 +10720,10 @@ bool JOIN::get_best_combination()
   if (!(join_tab= (JOIN_TAB*) thd->alloc(sizeof(JOIN_TAB)*
                                         (top_join_tab_count + aggr_tables))))
     DBUG_RETURN(TRUE);
-   
+
+  if (inject_splitting_cond_for_all_tables_with_split_opt())
+    DBUG_RETURN(TRUE);
+
   JOIN_TAB_RANGE *root_range;
   if (!(root_range= new (thd->mem_root) JOIN_TAB_RANGE))
     DBUG_RETURN(TRUE);
@@ -11713,16 +11731,20 @@ make_join_select(JOIN *join,SQL_SELECT *select,COND *cond)
           trace_const_cond.add("condition_on_constant_tables", const_cond);
           if (const_cond->is_expensive())
           {
-            trace_const_cond.add("evalualted", "false")
+            trace_const_cond.add("evaluated", "false")
                             .add("cause", "expensive cond");
           }
           else
           {
-            const bool const_cond_result = const_cond->val_int() != 0;
+            bool const_cond_result;
+            {
+              Json_writer_array a(thd, "computing_condition");
+              const_cond_result= const_cond->val_int() != 0;
+            }
             if (!const_cond_result)
             {
               DBUG_PRINT("info",("Found impossible WHERE condition"));
-              trace_const_cond.add("evalualted", "true")
+              trace_const_cond.add("evaluated", "true")
                               .add("found", "impossible where");
               join->exec_const_cond= NULL;
               DBUG_RETURN(1);
@@ -14751,8 +14773,6 @@ return_zero_rows(JOIN *join, select_result *result, List<TABLE_LIST> &tables,
     DBUG_RETURN(0);
   }
 
-  join->join_free();
-
   if (send_row)
   {
     /*
@@ -14799,6 +14819,14 @@ return_zero_rows(JOIN *join, select_result *result, List<TABLE_LIST> &tables,
     if (likely(!send_error))
       result->send_eof();				// Should be safe
   }
+  /*
+    JOIN::join_free() must be called after the virtual method
+    select::send_result_set_metadata() returned control since
+    implementation of this method could use data strutcures
+    that are released by the method JOIN::join_free().
+  */
+  join->join_free();
+
   DBUG_RETURN(0);
 }
 
@@ -18530,7 +18558,7 @@ Field *create_tmp_field(TABLE *table, Item *item,
                       make_copy_field);
   Field *result= item->create_tmp_field_ex(table->in_use->mem_root,
                                            table, &src, &prm);
-  if (item->is_json_type() && make_json_valid_expr(table, result))
+  if (is_json_type(item) && make_json_valid_expr(table, result))
     result= NULL;
 
   *from_field= src.field();
@@ -18978,7 +19006,7 @@ bool Create_tmp_table::add_fields(THD *thd,
                          item->marker == MARKER_NULL_KEY ||
                          param->bit_fields_as_long,
                          param->force_copy_fields);
-      if (!new_field)
+      if (unlikely(!new_field))
       {
         if (unlikely(thd->is_fatal_error))
           goto err;                             // Got OOM
@@ -19531,6 +19559,8 @@ bool Create_tmp_table::finalize(THD *thd,
   MEM_CHECK_DEFINED(table->record[0], table->s->reclength);
   MEM_CHECK_DEFINED(share->default_values, table->s->reclength);
 
+  empty_record(table);
+  table->status= STATUS_NO_RECORD;
   thd->mem_root= mem_root_save;
 
   DBUG_RETURN(false);
@@ -19571,16 +19601,7 @@ bool Create_tmp_table::add_schema_fields(THD *thd, TABLE *table,
       DBUG_RETURN(true); // EOM
     }
     field->init(table);
-    switch (def.def()) {
-    case DEFAULT_NONE:
-      field->flags|= NO_DEFAULT_VALUE_FLAG;
-      break;
-    case DEFAULT_TYPE_IMPLICIT:
-      break;
-    default:
-      DBUG_ASSERT(0);
-      break;
-    }
+    field->flags|= NO_DEFAULT_VALUE_FLAG;
     add_field(table, field, fieldnr, param->force_not_null_cols);
   }
 
@@ -20717,7 +20738,9 @@ bool instantiate_tmp_table(TABLE *table, KEY *keyinfo,
     if (create_internal_tmp_table(table, keyinfo, start_recinfo, recinfo,
                                   options))
       return TRUE;
-    MEM_CHECK_DEFINED(table->record[0], table->s->reclength);
+    // Make empty record so random data is not written to disk
+    empty_record(table);
+    table->status= STATUS_NO_RECORD;
   }
   if (open_tmp_table(table))
     return TRUE;
@@ -21314,11 +21337,8 @@ evaluate_join_record(JOIN *join, JOIN_TAB *join_tab,
       */
       if (shortcut_for_distinct && found_records != join->found_records)
         DBUG_RETURN(NESTED_LOOP_NO_MORE_ROWS);
-    }
-    else
-    {
-      join->thd->get_stmt_da()->inc_current_row_for_warning();
-      join_tab->read_record.unlock_row(join_tab);
+
+      DBUG_RETURN(NESTED_LOOP_OK);
     }
   }
   else
@@ -21328,9 +21348,11 @@ evaluate_join_record(JOIN *join, JOIN_TAB *join_tab,
       with the beginning coinciding with the current partial join.
     */
     join->join_examined_rows++;
-    join->thd->get_stmt_da()->inc_current_row_for_warning();
-    join_tab->read_record.unlock_row(join_tab);
   }
+
+  join->thd->get_stmt_da()->inc_current_row_for_warning();
+  join_tab->read_record.unlock_row(join_tab);
+
   DBUG_RETURN(NESTED_LOOP_OK);
 }
 
@@ -23134,21 +23156,6 @@ make_cond_for_table_from_pred(THD *thd, Item *root_cond, Item *cond,
       cond->marker= MARKER_CHECK_ON_READ;	// Checked when read
       return (COND*) 0;
     }
-    /*
-      If cond is an equality injected for split optimization then
-      a. when retain_ref_cond == false : cond is removed unconditionally
-         (cond that supports ref access is removed by the preceding code)
-      b. when retain_ref_cond == true : cond is removed if it does not
-         support ref access
-    */
-    if (left_item->type() == Item::FIELD_ITEM &&
-        is_eq_cond_injected_for_split_opt((Item_func_eq *) cond) &&
-        (!retain_ref_cond ||
-         !test_if_ref(root_cond, (Item_field*) left_item,right_item)))
-    {
-      cond->marker= MARKER_CHECK_ON_READ;
-      return (COND*) 0;
-    }
   }
   cond->marker= MARKER_PROCESSED;
   cond->set_join_tab_idx((uint8) join_tab_idx_arg);
@@ -24262,7 +24269,15 @@ check_reverse_order:
       }
     }
     else if (select && select->quick)
+    {
+      /* Cancel "Range checked for each record" */
+      if (tab->use_quick == 2)
+      {
+        tab->use_quick= 1;
+        tab->read_first_record= join_init_read_record;
+      }
       select->quick->need_sorted_output();
+    }
 
     if (tab->type == JT_EQ_REF)
       tab->read_record.unlock_row= join_read_key_unlock_row;
@@ -29499,6 +29514,12 @@ AGGR_OP::end_send()
   table->reginfo.lock_type= TL_UNLOCK;
 
   bool in_first_read= true;
+
+  /*
+     Reset the counter before copying rows from internal temporary table to
+     INSERT table.
+  */
+  join_tab->join->thd->get_stmt_da()->reset_current_row_for_warning();
   while (rc == NESTED_LOOP_OK)
   {
     int error;

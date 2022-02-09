@@ -51,6 +51,8 @@ extern bool	os_has_said_disk_full;
 /** File offset in bytes */
 typedef ib_uint64_t os_offset_t;
 
+class buf_tmp_buffer_t;
+
 #ifdef _WIN32
 
 /** We define always WIN_ASYNC_IO, and check at run-time whether
@@ -206,11 +208,13 @@ public:
     PUNCH_RANGE= WRITE_SYNC | 128,
   };
 
-  constexpr IORequest(buf_page_t *bpage, fil_node_t *node, Type type) :
-    bpage(bpage), node(node), type(type) {}
+  constexpr IORequest(buf_page_t *bpage, buf_tmp_buffer_t *slot,
+                      fil_node_t *node, Type type) :
+    bpage(bpage), slot(slot), node(node), type(type) {}
 
-  constexpr IORequest(Type type= READ_SYNC, buf_page_t *bpage= nullptr) :
-    bpage(bpage), type(type) {}
+  constexpr IORequest(Type type= READ_SYNC, buf_page_t *bpage= nullptr,
+                      buf_tmp_buffer_t *slot= nullptr) :
+    bpage(bpage), slot(slot), type(type) {}
 
   bool is_read() const { return (type & READ_SYNC) != 0; }
   bool is_write() const { return (type & WRITE_SYNC) != 0; }
@@ -237,7 +241,10 @@ private:
 
 public:
   /** Page to be written on write operation */
-  buf_page_t* const bpage= nullptr;
+  buf_page_t *const bpage= nullptr;
+
+  /** Memory to be used for encrypted or page_compressed pages */
+  buf_tmp_buffer_t *const slot= nullptr;
 
   /** File descriptor */
   fil_node_t *const node= nullptr;
@@ -1111,8 +1118,7 @@ void os_aio_free();
 @retval DB_IO_ERROR on I/O error */
 dberr_t os_aio(const IORequest &type, void *buf, os_offset_t offset, size_t n);
 
-/** Wait until there are no pending asynchronous writes.
-Only used on FLUSH TABLES...FOR EXPORT. */
+/** Wait until there are no pending asynchronous writes. */
 void os_aio_wait_until_no_pending_writes();
 
 /** Wait until all pending asynchronous reads have completed. */
@@ -1228,6 +1234,6 @@ inline bool is_absolute_path(const char *path)
   return false;
 }
 
-#include "os0file.ic"
+#include "os0file.inl"
 
 #endif /* os0file_h */

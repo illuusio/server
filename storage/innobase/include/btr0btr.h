@@ -460,9 +460,9 @@ template<bool has_prev= false>
 inline void btr_set_min_rec_mark(rec_t *rec, const buf_block_t &block,
                                  mtr_t *mtr)
 {
-  ut_ad(block.frame == page_align(rec));
-  ut_ad(!page_is_leaf(block.frame));
-  ut_ad(has_prev == page_has_prev(block.frame));
+  ut_ad(block.page.frame == page_align(rec));
+  ut_ad(!page_is_leaf(block.page.frame));
+  ut_ad(has_prev == page_has_prev(block.page.frame));
 
   rec-= page_rec_is_comp(rec) ? REC_NEW_INFO_BITS : REC_OLD_INFO_BITS;
 
@@ -676,7 +676,7 @@ btr_lift_page_up(
 #define BTR_N_LEAF_PAGES	1
 #define BTR_TOTAL_SIZE		2
 
-#include "btr0btr.ic"
+#include "btr0btr.inl"
 
 /****************************************************************
 Global variable controlling if scrubbing should be performed */

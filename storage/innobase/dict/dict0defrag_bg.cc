@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2021, MariaDB Corporation.
+Copyright (c) 2016, 2022, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -253,7 +253,9 @@ release_and_exit:
   trx_t *trx= trx_create();
   trx->mysql_thd= thd;
   trx_start_internal(trx);
-  dberr_t ret= lock_table_for_trx(table_stats, trx, LOCK_X);
+  dberr_t ret= trx->read_only
+    ? DB_READ_ONLY
+    : lock_table_for_trx(table_stats, trx, LOCK_X);
   if (ret == DB_SUCCESS)
     ret= lock_table_for_trx(index_stats, trx, LOCK_X);
   row_mysql_lock_data_dictionary(trx);
@@ -314,11 +316,11 @@ btr_get_size_and_reserved(
 	mtr->x_lock_space(index->table->space);
 
 	ulint n = fseg_n_reserved_pages(*root, PAGE_HEADER + PAGE_BTR_SEG_LEAF
-					+ root->frame, used, mtr);
+					+ root->page.frame, used, mtr);
 	if (flag == BTR_TOTAL_SIZE) {
 		n += fseg_n_reserved_pages(*root,
 					   PAGE_HEADER + PAGE_BTR_SEG_TOP
-					   + root->frame, &dummy, mtr);
+					   + root->page.frame, &dummy, mtr);
 		*used += dummy;
 	}
 
@@ -388,7 +390,9 @@ release_and_exit:
   trx_t *trx= trx_create();
   trx->mysql_thd= thd;
   trx_start_internal(trx);
-  dberr_t ret= lock_table_for_trx(table_stats, trx, LOCK_X);
+  dberr_t ret= trx->read_only
+    ? DB_READ_ONLY
+    : lock_table_for_trx(table_stats, trx, LOCK_X);
   if (ret == DB_SUCCESS)
     ret= lock_table_for_trx(index_stats, trx, LOCK_X);
 

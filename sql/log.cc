@@ -1,5 +1,5 @@
 /* Copyright (c) 2000, 2018, Oracle and/or its affiliates.
-   Copyright (c) 2009, 2021, MariaDB Corporation.
+   Copyright (c) 2009, 2022, MariaDB Corporation.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -1699,7 +1699,7 @@ static int binlog_close_connection(handlerton *hton, THD *thd)
   binlog_cache_mngr *const cache_mngr=
     (binlog_cache_mngr*) thd_get_ha_data(thd, binlog_hton);
 #ifdef WITH_WSREP
-  if (cache_mngr && !cache_mngr->trx_cache.empty()) {
+  if (WSREP(thd) && cache_mngr && !cache_mngr->trx_cache.empty()) {
     IO_CACHE* cache= cache_mngr->get_binlog_cache_log(true);
     uchar *buf;
     size_t len=0;
@@ -3710,6 +3710,7 @@ bool MYSQL_BIN_LOG::open(const char *log_name,
             opt_slave_sql_verify_checksum ? (enum_binlog_checksum_alg) binlog_checksum_options
                                           : BINLOG_CHECKSUM_ALG_OFF;
         s.checksum_alg= relay_log_checksum_alg;
+        s.set_relay_log_event();
       }
       else
         s.checksum_alg= (enum_binlog_checksum_alg)binlog_checksum_options;
@@ -7029,7 +7030,6 @@ void MYSQL_BIN_LOG::purge()
     DBUG_EXECUTE_IF("expire_logs_always", { purge_time = my_time(0); });
     if (purge_time >= 0)
     {
-      ha_flush_logs();
       purge_logs_before_date(purge_time);
     }
     DEBUG_SYNC(current_thd, "after_purge_logs_before_date");
@@ -7980,6 +7980,9 @@ MYSQL_BIN_LOG::queue_for_group_commit(group_commit_entry *orig_entry)
     DBUG_ASSERT(entry != NULL);
     cur= entry->thd->wait_for_commit_ptr;
   }
+
+  result= orig_queue == NULL;
+
 #ifdef WITH_WSREP
   if (wsrep_is_active(entry->thd) &&
       wsrep_run_commit_hook(entry->thd, entry->all))
@@ -7992,8 +7995,6 @@ MYSQL_BIN_LOG::queue_for_group_commit(group_commit_entry *orig_entry)
     if (orig_queue == NULL)
       result= -3;
   }
-  else
-    DBUG_ASSERT(result == 0);
 #endif /* WITH_WSREP */
 
   if (opt_binlog_commit_wait_count > 0 && orig_queue != NULL)
@@ -8003,7 +8004,6 @@ MYSQL_BIN_LOG::queue_for_group_commit(group_commit_entry *orig_entry)
 
   DBUG_PRINT("info", ("Queued for group commit as %s",
                       (orig_queue == NULL) ? "leader" : "participant"));
-  result= orig_queue == NULL;
 
 end:
   if (backup_lock_released)
