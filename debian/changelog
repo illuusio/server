@@ -1,13 +1,41 @@
-mariadb-10.6 (1:10.6.6-1) UNRELEASED; urgency=medium
+mariadb-10.6 (1:10.6.7-1) UNRELEASED; urgency=medium
 
+  [ Otto Kekäläinen ]
+  * New upstream version 10.6.7. Includes security fixes for
+    - CVE-2021-46661
+    - CVE-2021-46663
+    - CVE-2021-46664
+    - CVE-2021-46665
+    - CVE-2021-46668
   * New upstream version 10.6.6. Includes security fixes for
+    - CVE-2021-46659
     - CVE-2022-24048
     - CVE-2022-24050
     - CVE-2022-24051
     - CVE-2022-24052
+  * Previous release 10.6.5 included security fixes for:
+    - CVE-2021-46662
+    - CVE-2021-46667
+  * Notable upstream functional changes in 10.6.6 and 10.6.7:
+    - New default value for innodb_change_buffering is 'none' instead of old
+      value 'all' (MDEV-27734). This change should improve crash safety but
+      might cause performance regressions on systems that use old spinning disks
+      (HDD) where seek latency is higher.
+    - New default value for innodb_read_only_compressed is 'OFF' instead of
+      'ON'. Upstream originally intended to deprecate ROW_FORMAT=COMPRESSED but
+      abandoned the plan.
+    - New default minimum value for innodb_buffer_pool_size is 20 MB (from 2 MB)
   * Drop MIPS and CTE patches applied now upstream
+  * Add upstream patch to make Mroonga builds reproducible (Closes: #976984)
+  * Add patch for potential kfreebsd-amd64 build failure (Closes: #994665)
 
- -- Otto Kekäläinen <otto@debian.org>  Tue, 08 Feb 2022 18:55:24 -0800
+  [ Faustin Lammler ]
+  * Salsa-CI: use a mirror redirector for the CI
+
+  [ Bas Couwenberg ]
+  * Don't require debian.cnf to be executable in logrotate (Closes: #1005186)
+
+ -- Otto Kekäläinen <otto@debian.org>  Wed, 16 Feb 2022 20:50:11 -0800
 
 mariadb-10.6 (1:10.6.5-2) unstable; urgency=medium
 
