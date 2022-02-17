@@ -6,4 +6,4 @@ fix-spelling.patch
 1556.patch
 fix-reproducible-builds-rocksdb.patch
 mroonga-mrn-lib-dirs-path-reproducible-build.patch
-1993-kfreebsd-amd64.patch
+2006-kfreebsd-amd64.patch
