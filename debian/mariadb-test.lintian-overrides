@@ -16,6 +16,3 @@ package-contains-documentation-outside-usr-share-doc usr/share/mysql/mysql-test/
 # Test plugins intentionally not fully featured
 shared-library-lacks-prerequisites usr/lib/mysql/plugin/auth_0x0100.so
 shared-library-lacks-prerequisites usr/lib/mysql/plugin/debug_key_management.so
-# Intentional as the plugins are used by both the client and server
-breakout-link usr/lib/*/libmariadb3/plugin/auth_test_plugin.so -> usr/lib/mysql/plugin/auth_test_plugin.so
-breakout-link usr/lib/*/libmariadb3/plugin/qa_auth_interface.so -> usr/lib/mysql/plugin/qa_auth_interface.so

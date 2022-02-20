@@ -47,13 +47,9 @@ source-contains-prebuilt-java-object storage/connect/mysql-test/connect/std_data
 # Intentionally use a version that is easy to backport to Debian Stretch and Ubuntu Bionic (or Xenial-backports)
 package-uses-old-debhelper-compat-version 10
 # Intentional as libmariadbd-dev provides libmysqld-dev
-version-substvar-for-external-package libmariadb-dev -> libmysqld-dev
-version-substvar-for-external-package libmariadb-dev -> libmysqlclient-dev
-version-substvar-for-external-package libmariadbd-dev -> libmariadbclient-dev
-# Same as above but with newer Lintian syntax
 version-substvar-for-external-package Replaces (line 219) ${source:Version} libmariadbd-dev -> libmariadbclient-dev
 version-substvar-for-external-package Replaces (line 63) ${source:Version} libmariadb-dev -> libmysqlclient-dev
-version-substvar-for-external-package Replaces (line 61) ${source:Version} libmariadb-dev -> libmysqld-dev
+version-substvar-for-external-package Replaces (line 60) ${source:Version} libmariadb-dev -> libmysqld-dev
 # Not much we can do about this in Debian, no need for Lintian to fail the whole check on it
 source-is-missing storage/mroonga/vendor/groonga/examples/dictionary/html/js/jquery-ui-1.8.18.custom.js line 58 is 273 characters long (>256)
 source-is-missing storage/mroonga/vendor/groonga/examples/dictionary/html/js/jquery-ui-1.8.18.custom.js
