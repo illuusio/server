@@ -1,5 +1,4 @@
 Forwarded: https://github.com/MariaDB/server/pull/1556
-From 3cf95de573a6b10e68df2efc1f8cf2f42fdd2d68 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Otto=20Kek=C3=A4l=C3=A4inen?= <otto@kekalainen.net>
 Date: Wed, 30 Sep 2020 20:01:35 +0300
 Subject: [PATCH] MDEV-22659: Create one single unified and optimal logrotate

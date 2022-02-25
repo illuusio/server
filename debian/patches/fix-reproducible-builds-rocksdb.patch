@@ -1,4 +1,4 @@
-From: https://github.com/SafetyCulture/rocksdb/storage/rocksdb/commit/22aa678dac1bb4c01662a414498f9a1ef2a5a4c7
+Origin: upstream, https://github.com/SafetyCulture/rocksdb/storage/rocksdb/commit/22aa678dac1bb4c01662a414498f9a1ef2a5a4c7
 Author: Otto Kekäläinen <otto@kekalainen.net>
 Subject: Make RocksDB build reproducible
 

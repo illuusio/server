@@ -1,4 +1,4 @@
-From: https://github.com/MariaDB/server/commit/64e358821e0e8b5a2134aa93ba9ddf24cd46ac7c
+Origin: upstream, https://github.com/MariaDB/server/commit/64e358821e0e8b5a2134aa93ba9ddf24cd46ac7c
 Author: Oleksandr Byelkin <sanja@mariadb.com>
 Date: Fri, 4 Feb 2022 14:52:03 +0100
 Subject: [PATCH] Revert "don't build with OpenSSL 3.0, it doesn't work before

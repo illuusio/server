@@ -1,3 +1,15 @@
 # OK, these files are part of test suite and only used for a test
 arch-dependent-file-in-usr-share usr/share/mysql/mysql-test/lib/My/SafeProcess/my_safe_process
 arch-dependent-file-in-usr-share usr/share/mysql/mysql-test/lib/My/SafeProcess/wsrep_check_version
+# myisam stopwords and other variable names that cannot be changed and spelling errors remain
+spelling-error-in-binary usr/bin/* AfE Safe
+spelling-error-in-binary usr/bin/* yuR your
+spelling-error-in-binary usr/bin/* no one
+spelling-error-in-binary usr/bin/* that's
+spelling-error-in-binary usr/bin/* theres there's
+spelling-error-in-binary usr/lib/mysql/plugin/qa_auth_interface.so userA users
+# Valid reason for documentation in context in directory
+package-contains-documentation-outside-usr-share-doc usr/share/mysql/mysql-test/README*
+# Test plugins intentionally not fully featured
+shared-library-lacks-prerequisites usr/lib/mysql/plugin/auth_0x0100.so
+shared-library-lacks-prerequisites usr/lib/mysql/plugin/debug_key_management.so
