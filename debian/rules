@@ -118,6 +118,8 @@ override_dh_auto_test:
 	dh_testdir
 	# Ensure at least an empty file exists
 	touch mysql-test/unstable-tests
+	# Skip unstable tests if such are defined for arch
+	[ ! -f debian/unstable-tests.$(DEB_HOST_ARCH) ] || cat debian/unstable-tests.$(DEB_HOST_ARCH) >> mysql-test/unstable-tests
 	# Run testsuite
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	# Don't use --mem here as official Debian builders and most Docker systems don't have a large mem device available and
