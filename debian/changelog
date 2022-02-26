@@ -1,4 +1,4 @@
-mariadb-10.6 (1:10.6.7-2~exp1) experimental; urgency=medium
+mariadb-10.6 (1:10.6.7-2) UNRELEASED; urgency=medium
 
   * Backport OpenSSL 3.0 support for MariaDB 10.6 series (Closes: #1005950)
   * Clean away most Lintian overrides and unstable-tests to see full

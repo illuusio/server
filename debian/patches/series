@@ -9,3 +9,4 @@ mroonga-mrn-lib-dirs-path-reproducible-build.patch
 2006-kfreebsd-amd64.patch
 openssl-3-enable.patch
 openssl-3-compatibility.patch
+MDEV-26645-fix-test-main.func_math.patch
