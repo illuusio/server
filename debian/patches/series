@@ -10,3 +10,4 @@ mroonga-mrn-lib-dirs-path-reproducible-build.patch
 openssl-3-enable.patch
 openssl-3-compatibility.patch
 MDEV-26645-fix-test-main.func_math.patch
+2028-MDEV-23915-fix-test-main.grat_kill.patch
