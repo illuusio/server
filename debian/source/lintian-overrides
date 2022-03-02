@@ -3,6 +3,9 @@ version-substvar-for-external-package libmariadb-dev -> libmysqld-dev
 version-substvar-for-external-package Replaces (line 60) ${source:Version} libmariadb-dev -> libmysqld-dev
 # Not much we can do about this in Debian, no need for Lintian to fail the whole check on it
 source-is-missing storage/mroonga/vendor/groonga/examples/dictionary/html/js/jquery-ui-1.8.18.custom.js
+# Do not alert for documentation in html
+source-is-missing sql/share/charsets/languages.html
+source-is-missing storage/rocksdb/rocksdb/docs/_includes/footer.html
 # Data or test files where long lines are justified
 very-long-line-length-in-source-file *.test *
 very-long-line-length-in-source-file *.result *
