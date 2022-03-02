@@ -1,10 +1,14 @@
-mariadb-10.6 (1:10.6.7-2) UNRELEASED; urgency=medium
+mariadb-10.6 (1:10.6.7-2) unstable; urgency=medium
 
   * Backport OpenSSL 3.0 support for MariaDB 10.6 series (Closes: #1005950)
   * Clean away most Lintian overrides and unstable-tests to see full
     QA results in Debian experimental
+  * Add upstream PR#2028 to fix main.grant_kill test failure
+  * Update unstable-tests skip lists after review of 1:10.6.7-2~exp1 builds
+  * Fix more spelling errors
+  * Fix misc Lintian issues and add overrides
 
- -- Otto Kekäläinen <otto@debian.org>  Fri, 25 Feb 2022 00:49:29 -0800
+ -- Otto Kekäläinen <otto@debian.org>  Tue, 01 Mar 2022 20:40:07 -0800
 
 mariadb-10.6 (1:10.6.7-1) unstable; urgency=medium
 
