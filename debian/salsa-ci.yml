@@ -8,7 +8,12 @@ include:
 variables:
   DEB_BUILD_OPTIONS: "nocheck noautodbgsym"
   RELEASE: sid
+  # Reprotest works, but takes very long time and often fails due to timeouts.
+  # Thus is is best kept disabled and only occasionally manually enabled to
+  # test that reproducibility works, along with atomic reprotest to directly
+  # pinpoint what aspect of the build is broken if not reproducible.
   SALSA_CI_DISABLE_REPROTEST: 1
+  SALSA_CI_ENABLE_ATOMIC_REPROTEST: 0
   SALSA_CI_DISABLE_MISSING_BREAKS: 0
   SALSA_CI_DISABLE_RC_BUGS: 0
 
@@ -216,7 +221,7 @@ fresh install:
   script:
     - *test-prepare-container
     - *test-install
-    - service mariadb status # There is no init.d/mysql in MariaDB 10.5
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.6
     - *test-verify-final
   variables:
     GIT_STRATEGY: none
@@ -237,7 +242,7 @@ mariadb-10.6 Sid upgrade:
   script:
     - *test-prepare-container
     - *test-install
-    - service mariadb status # There is no init.d/mysql in MariaDB 10.5
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.6
     - *test-verify-final
   variables:
     GIT_STRATEGY: none
@@ -310,7 +315,7 @@ test basic features:
   script:
     - *test-prepare-container
     - *test-install
-    - service mariadb status # There is no init.d/mysql in MariaDB 10.5
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.6
     - *test-verify-final
     - |
       # Print info about server
@@ -585,7 +590,7 @@ mariadb.org-10.6 to mariadb-10.6 upgrade:
     # Verify installation of MariaDB built in this commit
     - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
     - mariadb --version # Client version
-    - service mariadb status # There is no init.d/mysql in MariaDB 10.5
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.6
     - *test-verify-final
   variables:
     GIT_STRATEGY: none
@@ -628,7 +633,7 @@ mariadb.org-10.4 to mariadb-10.6 upgrade:
   stage: upgrade extras
   needs:
     - job: build
-  image: debian:sid
+  image: debian:${RELEASE}
   artifacts:
     when: always
     name: "$CI_BUILD_NAME"
@@ -661,7 +666,7 @@ mariadb.org-10.3 to mariadb-10.6 upgrade:
   stage: upgrade extras
   needs:
     - job: build
-  image: debian:sid
+  image: debian:${RELEASE}
   artifacts:
     when: always
     name: "$CI_BUILD_NAME"
@@ -699,7 +704,7 @@ mariadb.org-10.2 to mariadb-10.6 upgrade:
   stage: upgrade extras
   needs:
     - job: build
-  image: debian:sid
+  image: debian:${RELEASE}
   artifacts:
     when: always
     name: "$CI_BUILD_NAME"
