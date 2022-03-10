@@ -1,12 +1,13 @@
-mariadb-10.6 (1:10.6.7-3~exp1) experimental; urgency=medium
+mariadb-10.6 (1:10.6.7-3) unstable; urgency=medium
 
   * Fix syntax error in unstable tests lists
   * Forward patches upstream and update metadata for them
   * Bugfix: Include missing sql_parse.cc in ER_KILL_DENIED_ERROR patch
   * Fix mysql_install_db by reverting recent addition (MDEV-27980)
   * Fix htm use on PowerPC to fix build failure (might close #1006527)
+  * Revert "Strip path from Mroonga to make the build reproducible"
 
- -- Otto Kekäläinen <otto@debian.org>  Mon, 07 Mar 2022 11:19:03 -0800
+ -- Otto Kekäläinen <otto@debian.org>  Wed, 09 Mar 2022 22:26:32 -0800
 
 mariadb-10.6 (1:10.6.7-2) unstable; urgency=medium
 
