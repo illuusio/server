@@ -577,7 +577,7 @@ mariadb.org-10.6 to mariadb-10.6 upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo 'deb https://deb.mariadb.org/repo/10.6/debian sid main' > /etc/apt/sources.list.d/mariadb.list
+    - echo 'deb https://deb.mariadb.org/10.6/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
     # Package libmariadbclient-dev from mariadb.org conflicts with libmariadb-dev in Sid, so cannot use wildcard that would include it
     # Enable this line when there is a way to install them only from the mariadb.org repo
@@ -613,7 +613,7 @@ mariadb.org-10.5 to mariadb-10.6 upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo 'deb https://deb.mariadb.org/repo/10.5/debian sid main' > /etc/apt/sources.list.d/mariadb.list
+    - echo 'deb https://deb.mariadb.org/10.5/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
     - apt-get install -y mariadb-server-10.5
     - *test-verify-initial
@@ -643,7 +643,7 @@ mariadb.org-10.4 to mariadb-10.6 upgrade:
     - *test-prepare-container
     - apt install -y curl systemctl # systemctl shim needed on platforms that don't have systemd
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo 'deb https://deb.mariadb.org/repo/10.4/debian sid main' > /etc/apt/sources.list.d/mariadb.list
+    - echo 'deb https://deb.mariadb.org/10.4/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
     - *test-install-readline-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.4
@@ -676,7 +676,7 @@ mariadb.org-10.3 to mariadb-10.6 upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo 'deb https://deb.mariadb.org/repo/10.3/debian sid main' > /etc/apt/sources.list.d/mariadb.list
+    - echo 'deb https://deb.mariadb.org/10.3/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
     - *test-install-readline-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.3
@@ -714,7 +714,7 @@ mariadb.org-10.2 to mariadb-10.6 upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo 'deb https://deb.mariadb.org/repo/10.2/debian sid main' > /etc/apt/sources.list.d/mariadb.list
+    - echo 'deb https://deb.mariadb.org/10.2/debian sid main' > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
     - *test-install-readline-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.2
