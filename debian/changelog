@@ -1,8 +1,50 @@
-mariadb-10.6 (1:10.6.7-4) UNRELEASED; urgency=medium
+mariadb-10.6 (1:10.6.8-1) UNRELEASED; urgency=medium
 
-  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  * New upstream version 10.6.8. Includes security fixes for
+  - CVE-2022-27376
+  - CVE-2022-27377
+  - CVE-2022-27378
+  - CVE-2022-27379
+  - CVE-2022-27380
+  - CVE-2022-27381
+  - CVE-2022-27382
+  - CVE-2022-27383
+  - CVE-2022-27384
+  - CVE-2022-27386
+  - CVE-2022-27387
+  - CVE-2022-27444
+  - CVE-2022-27445
+  - CVE-2022-27446
+  - CVE-2022-27447
+  - CVE-2022-27448
+  - CVE-2022-27449
+  - CVE-2022-27451
+  - CVE-2022-27452
+  - CVE-2022-27455
+  - CVE-2022-27456
+  - CVE-2022-27457
+  - CVE-2022-27458
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 13 Mar 2022 12:28:53 -0700
+  [ Daniel Black ]
+  * Move client programs to client package from MariaDB server package
+
+  [ Otto Kekäläinen ]
+  * Update breaks/replaces to accommodate the moved mariadb-binlog et al
+  * Use pmem also on riscv64
+
+  [ Tuukka Pasanen ]
+  * Allow to use Perl DBD::mysl with mariadb-report (MDEV-28376)
+
+  [ Andreas Hasenack ]
+  * Disable LTO on Ubuntu
+
+  [ Faustin Lammler ]
+  * Use archive.mariadb.org as official watch source
+
+  [ Laurent Bigonville ]
+  * Fix pmem availability check (Closes: #1006530)
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 22 May 2022 00:01:56 -0700
 
 mariadb-10.6 (1:10.6.7-3) unstable; urgency=medium
 
