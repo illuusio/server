@@ -62,7 +62,7 @@ endif
 # Only attempt to build with PMEM on archs that have package libpmem-dev available
 # See https://packages.debian.org/search?searchon=names&keywords=libpmem-dev
 ifneq (,$(filter $(DEB_HOST_ARCH),amd64 arm64 ppc64el riscv64))
-		CMAKEFLAGS += -DWITH_PMEM=yes
+    CMAKEFLAGS += -DWITH_PMEM=yes
 endif
 
 # Add support for verbose builds
@@ -106,7 +106,7 @@ endif
 	    -DCONC_DEFAULT_CHARSET=utf8mb4 \
 	    -DPLUGIN_AWS_KEY_MANAGEMENT=NO \
 	    -DPLUGIN_COLUMNSTORE=NO \
-			-DWITH_NUMA=auto \
+	    -DWITH_NUMA=auto \
 	    -DIGNORE_AIO_CHECK=YES \
 	    -DWITH_URING=YES \
 	    -DWITH_INNODB_SNAPPY=ON \

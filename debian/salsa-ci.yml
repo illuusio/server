@@ -510,7 +510,6 @@ default-libmysqlclient-dev upgrade in Buster:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-
 # Upgrading from MySQL 8.0 with datadir in place is not possible. Users need to do a data dump.
 # The Debian maintainer scripts detect this situation and simply moves old datadir aside and start fresh.
 mysql-8.0 Sid to mariadb-10.6 upgrade:
@@ -607,11 +606,6 @@ mariadb.org-10.6 to mariadb-10.6 upgrade:
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
-  allow_failure: true
-  # Installation on Sid fails on missing liburing1 because upstream 10.6
-  # MariaDB.org buildbot has not run 'apt upgrade' for a long time.
-  # Remove this allow_failure once buildbot has built a new 10.6
-  # release using latest liburing-dev in Debian Sid.
 
 mariadb.org-10.5 to mariadb-10.6 upgrade:
   stage: upgrade extras
