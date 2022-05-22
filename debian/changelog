@@ -1,4 +1,4 @@
-mariadb-10.6 (1:10.6.8-1) UNRELEASED; urgency=medium
+mariadb-10.6 (1:10.6.8-1) unstable; urgency=medium
 
   * New upstream version 10.6.8. Includes security fixes for
   - CVE-2022-27376
@@ -28,11 +28,8 @@ mariadb-10.6 (1:10.6.8-1) UNRELEASED; urgency=medium
   [ Daniel Black ]
   * Move client programs to client package from MariaDB server package
 
-  [ Otto Kekäläinen ]
-  * Update breaks/replaces to accommodate the moved mariadb-binlog et al
-  * Use pmem also on riscv64
-
   [ Tuukka Pasanen ]
+  * MDEV-12275: Add switch '--silent' to SySV init upgrade
   * Allow to use Perl DBD::mysl with mariadb-report (MDEV-28376)
 
   [ Andreas Hasenack ]
@@ -44,7 +41,17 @@ mariadb-10.6 (1:10.6.8-1) UNRELEASED; urgency=medium
   [ Laurent Bigonville ]
   * Fix pmem availability check (Closes: #1006530)
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 22 May 2022 00:01:56 -0700
+  [ Otto Kekäläinen ]
+  * Update breaks/replaces to accommodate the moved mariadb-binlog et al
+  * Use pmem also on riscv64
+  * Add Bulgarian and Chinese translations for error messages
+  * Use proper pid namespace
+  * Add upstream PR#2129 to fix wsrep_sst_backup packaging
+  * Deb: Move my_print_defaults to MariaDB client core package
+  * Deb: Ensure the not-installed list is up-to-date
+  * Install all available man pages in appropriate packages
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 22 May 2022 16:44:02 -0700
 
 mariadb-10.6 (1:10.6.7-3) unstable; urgency=medium
 
