@@ -3,7 +3,7 @@
 Copyright (c) 1996, 2017, Oracle and/or its affiliates. All rights reserved.
 Copyright (c) 2008, Google Inc.
 Copyright (c) 2009, Percona Inc.
-Copyright (c) 2013, 2021, MariaDB Corporation.
+Copyright (c) 2013, 2022, MariaDB Corporation.
 
 Portions of this file contain modifications contributed and copyrighted by
 Google, Inc. Those modifications are gratefully acknowledged and are described
@@ -55,7 +55,6 @@ Created 2/16/1996 Heikki Tuuri
 #include "buf0dblwr.h"
 #include "buf0dump.h"
 #include "os0file.h"
-#include "os0thread.h"
 #include "fil0fil.h"
 #include "fil0crypt.h"
 #include "fsp0fsp.h"
@@ -820,7 +819,6 @@ srv_open_tmp_tablespace(bool create_new_db)
 static void srv_shutdown_threads()
 {
 	ut_ad(!srv_undo_sources);
-	ut_d(srv_master_thread_enable());
 	srv_master_timer.reset();
 	srv_shutdown_state = SRV_SHUTDOWN_EXIT_THREADS;
 
@@ -1225,13 +1223,12 @@ dberr_t srv_start(bool create_new_db)
 	recv_sys.create();
 	lock_sys.create(srv_lock_table_size);
 
+	srv_startup_is_before_trx_rollback_phase = true;
 
 	if (!srv_read_only_mode) {
 		buf_flush_page_cleaner_init();
 		ut_ad(buf_page_cleaner_is_active);
 	}
-
-	srv_startup_is_before_trx_rollback_phase = true;
 
 	/* Check if undo tablespaces and redo log files exist before creating
 	a new system tablespace */
@@ -1462,10 +1459,9 @@ file_checked:
 			if (err != DB_SUCCESS) {
 				return srv_init_abort(err);
 			}
-			if (srv_operation == SRV_OPERATION_RESTORE) {
-				break;
+			if (srv_operation != SRV_OPERATION_RESTORE) {
+				dict_sys.load_sys_tables();
 			}
-			dict_sys.load_sys_tables();
 			err = trx_lists_init_at_db_start();
 			if (err != DB_SUCCESS) {
 				return srv_init_abort(err);
@@ -1899,8 +1895,6 @@ void srv_shutdown_bg_undo_sources()
 {
 	srv_shutdown_state = SRV_SHUTDOWN_INITIATED;
 
-	ut_d(srv_master_thread_enable());
-
 	if (srv_undo_sources) {
 		ut_ad(!srv_read_only_mode);
 		fts_optimize_shutdown();
@@ -2072,7 +2066,7 @@ srv_get_meta_data_filename(
 	char*		path;
 
 	/* Make sure the data_dir_path is set. */
-	dict_get_and_save_data_dir_path(table, false);
+	dict_get_and_save_data_dir_path(table);
 
 	const char* data_dir_path = DICT_TF_HAS_DATA_DIR(table->flags)
 		? table->data_dir_path : nullptr;

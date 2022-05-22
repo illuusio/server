@@ -1,6 +1,6 @@
 
 # Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
-# Copyright (c) 2014, 2021, MariaDB Corporation.
+# Copyright (c) 2014, 2022, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -186,7 +186,6 @@ SET(INNOBASE_SOURCES
 	include/mtr0types.h
 	include/os0file.h
 	include/os0file.inl
-	include/os0thread.h
 	include/page0cur.h
 	include/page0cur.inl
 	include/page0page.h
@@ -214,7 +213,6 @@ SET(INNOBASE_SOURCES
 	include/row0import.h
 	include/row0ins.h
 	include/row0log.h
-	include/row0log.inl
 	include/row0merge.h
 	include/row0mysql.h
 	include/row0purge.h
@@ -283,7 +281,6 @@ SET(INNOBASE_SOURCES
 	mem/mem0mem.cc
 	mtr/mtr0mtr.cc
 	os/os0file.cc
-	os/os0thread.cc
 	page/page0cur.cc
 	page/page0page.cc
 	page/page0zip.cc
@@ -378,6 +375,20 @@ IF(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64"
       row/row0mysql.cc
       srv/srv0srv.cc
       COMPILE_FLAGS "-O0"
+      )
+ENDIF()
+
+# Older gcc version insist on -mhtm flag for including the
+# htmxlintrin.h header. This is also true for new gcc versions
+# like 11.2.0 in Debian Sid
+# s390x because of the way it defines the high level intrinsics
+# as not-inline in the header file can only be included by one
+# source file that has -mhtm enabled.
+IF(CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64|powerpc64|s390x"
+   OR CMAKE_SYSTEM_NAME MATCHES "AIX")
+  ADD_COMPILE_FLAGS(
+      sync/srw_lock.cc
+      COMPILE_FLAGS "-mhtm"
       )
 ENDIF()
 IF(MSVC)

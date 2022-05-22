@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2013, 2021, MariaDB Corporation.
+Copyright (c) 2013, 2022, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -73,11 +73,6 @@ should not happen. This is because when we do LRU flushing we also put
 the blocks on free list. If LRU list is very small then we can end up
 in thrashing. */
 #define BUF_LRU_MIN_LEN		256
-
-# ifdef UNIV_DEBUG
-extern my_bool	buf_disable_resize_buffer_pool_debug; /*!< if TRUE, resizing
-					buffer pool is not allowed. */
-# endif /* UNIV_DEBUG */
 
 /** This structure defines information we will fetch from each buffer pool. It
 will be used to print table IO stats */
@@ -1353,7 +1348,7 @@ public:
   {
     ut_ad(is_initialised());
     size_t size= 0;
-    for (auto j= n_chunks; j--; )
+    for (auto j= ut_min(n_chunks_new, n_chunks); j--; )
       size+= chunks[j].size;
     return size;
   }
@@ -1363,7 +1358,7 @@ public:
   @return whether the frame will be withdrawn */
   bool will_be_withdrawn(const byte *ptr) const
   {
-    ut_ad(curr_size < old_size);
+    ut_ad(n_chunks_new < n_chunks);
 #ifdef SAFE_MUTEX
     if (resize_in_progress())
       mysql_mutex_assert_owner(&mutex);
@@ -1383,7 +1378,7 @@ public:
   @return whether the frame will be withdrawn */
   bool will_be_withdrawn(const buf_page_t &bpage) const
   {
-    ut_ad(curr_size < old_size);
+    ut_ad(n_chunks_new < n_chunks);
 #ifdef SAFE_MUTEX
     if (resize_in_progress())
       mysql_mutex_assert_owner(&mutex);
@@ -1535,16 +1530,24 @@ public:
   /** Remove the sentinel block for the watch before replacing it with a
   real block. watch_unset() or watch_occurred() will notice
   that the block has been replaced with the real block.
-  @param watch      sentinel
-  @param chain      locked hash table chain */
-  inline void watch_remove(buf_page_t *watch, hash_chain &chain);
+  @param w          sentinel
+  @param chain      locked hash table chain
+  @return           w->state() */
+  inline uint32_t watch_remove(buf_page_t *w, hash_chain &chain);
 
   /** @return whether less than 1/4 of the buffer pool is available */
+  TPOOL_SUPPRESS_TSAN
   bool running_out() const
   {
     return !recv_recovery_is_on() &&
-      UNIV_UNLIKELY(UT_LIST_GET_LEN(free) + UT_LIST_GET_LEN(LRU) <
-                    std::min(curr_size, old_size) / 4);
+      UT_LIST_GET_LEN(free) + UT_LIST_GET_LEN(LRU) <
+        n_chunks_new / 4 * chunks->size;
+  }
+
+  /** @return whether the buffer pool is shrinking */
+  inline bool is_shrinking() const
+  {
+    return n_chunks_new < n_chunks;
   }
 
 #ifdef UNIV_DEBUG
@@ -1577,7 +1580,7 @@ public:
   static constexpr uint32_t READ_AHEAD_PAGES= 64;
 
   /** Buffer pool mutex */
-  MY_ALIGNED(CPU_LEVEL1_DCACHE_LINESIZE) mysql_mutex_t mutex;
+  alignas(CPU_LEVEL1_DCACHE_LINESIZE) mysql_mutex_t mutex;
   /** Number of pending LRU flush; protected by mutex. */
   ulint n_flush_LRU_;
   /** broadcast when n_flush_LRU reaches 0; protected by mutex */
@@ -1603,15 +1606,15 @@ public:
 	ut_allocator<unsigned char>	allocator;	/*!< Allocator used for
 					allocating memory for the the "chunks"
 					member. */
-	volatile ulint	n_chunks;	/*!< number of buffer pool chunks */
-	volatile ulint	n_chunks_new;	/*!< new number of buffer pool chunks */
+	ulint		n_chunks;	/*!< number of buffer pool chunks */
+	ulint		n_chunks_new;	/*!< new number of buffer pool chunks.
+					both n_chunks{,new} are protected under
+					mutex */
 	chunk_t*	chunks;		/*!< buffer pool chunks */
 	chunk_t*	chunks_old;	/*!< old buffer pool chunks to be freed
 					after resizing buffer pool */
 	/** current pool size in pages */
 	Atomic_counter<ulint> curr_size;
-	/** previous pool size in pages */
-	Atomic_counter<ulint> old_size;
 	/** read-ahead request size in pages */
 	Atomic_counter<uint32_t> read_ahead_area;
 
@@ -1759,7 +1762,7 @@ public:
 
   /** mutex protecting flush_list, buf_page_t::set_oldest_modification()
   and buf_page_t::list pointers when !oldest_modification() */
-  MY_ALIGNED(CPU_LEVEL1_DCACHE_LINESIZE) mysql_mutex_t flush_list_mutex;
+  alignas(CPU_LEVEL1_DCACHE_LINESIZE) mysql_mutex_t flush_list_mutex;
   /** "hazard pointer" for flush_list scans; protected by flush_list_mutex */
   FlushHp flush_hp;
   /** modified blocks (a subset of LRU) */
@@ -1882,9 +1885,14 @@ public:
   buf_tmp_buffer_t *io_buf_reserve() { return io_buf.reserve(); }
 
   /** @return whether any I/O is pending */
-  bool any_io_pending() const
+  bool any_io_pending()
   {
-    return n_pend_reads || n_flush_LRU() || n_flush_list();
+    if (n_pend_reads)
+      return true;
+    mysql_mutex_lock(&mutex);
+    const bool any_pending{n_flush_LRU_ || n_flush_list_};
+    mysql_mutex_unlock(&mutex);
+    return any_pending;
   }
   /** @return total amount of pending I/O */
   ulint io_pending() const
@@ -1996,7 +2004,8 @@ inline void buf_page_t::set_state(uint32_t s)
 {
   mysql_mutex_assert_owner(&buf_pool.mutex);
   ut_ad(s <= REMOVE_HASH || s >= UNFIXED);
-  ut_ad(s <= READ_FIX);
+  ut_ad(s < WRITE_FIX);
+  ut_ad(s <= READ_FIX || zip.fix == READ_FIX);
   zip.fix= s;
 }
 

@@ -4,7 +4,7 @@ MariaBackup: hot backup tool for InnoDB
 Originally Created 3/3/2009 Yasufumi Kinoshita
 Written by Alexey Kopytov, Aleksandr Kuzminsky, Stewart Smith, Vadim Tkachenko,
 Yasufumi Kinoshita, Ignacio Nin and Baron Schwartz.
-(c) 2017, 2021, MariaDB Corporation.
+(c) 2017, 2022, MariaDB Corporation.
 Portions written by Marko Mäkelä.
 
 This program is free software; you can redistribute it and/or modify
@@ -51,6 +51,7 @@ Street, Fifth Floor, Boston, MA 02110-1335 USA
 #include <my_getopt.h>
 #include <mysql_com.h>
 #include <my_default.h>
+#include <scope.h>
 #include <sql_class.h>
 
 #include <fcntl.h>
@@ -244,7 +245,8 @@ ulong innobase_read_io_threads = 4;
 ulong innobase_write_io_threads = 4;
 
 longlong innobase_page_size = (1LL << 14); /* 16KB */
-char*	innobase_buffer_pool_filename = NULL;
+char *innobase_buffer_pool_filename = NULL;
+char *buffer_pool_filename = NULL;
 
 /* The default values for the following char* start-up parameters
 are determined in innobase_init below: */
@@ -339,6 +341,7 @@ uint opt_lock_wait_timeout = 0;
 uint opt_lock_wait_threshold = 0;
 uint opt_debug_sleep_before_unlock = 0;
 uint opt_safe_slave_backup_timeout = 0;
+uint opt_max_binlogs = UINT_MAX;
 
 const char *opt_history = NULL;
 
@@ -602,7 +605,7 @@ void CorruptedPages::zero_out_free_pages()
           die("Can't zero out corrupted page " UINT32PF " of tablespace %s",
               *page_it, space_name.c_str());
         msg("Corrupted page " UINT32PF
-            " of tablespace %s was successfuly fixed.",
+            " of tablespace %s was successfully fixed.",
             *page_it, space_name.c_str());
       }
     }
@@ -1069,7 +1072,8 @@ enum options_xtrabackup
   OPT_XTRA_CHECK_PRIVILEGES,
   OPT_XTRA_MYSQLD_ARGS,
   OPT_XB_IGNORE_INNODB_PAGE_CORRUPTION,
-  OPT_INNODB_FORCE_RECOVERY
+  OPT_INNODB_FORCE_RECOVERY,
+  OPT_MAX_BINLOGS
 };
 
 struct my_option xb_client_options[]= {
@@ -1466,6 +1470,17 @@ struct my_option xb_client_options[]= {
      &opt_log_innodb_page_corruption, &opt_log_innodb_page_corruption, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
 
+    {"sst_max_binlogs", OPT_MAX_BINLOGS,
+     "Number of recent binary logs to be included in the backup. "
+     "Setting this parameter to zero normally disables transmission "
+     "of binary logs to the joiner nodes during SST using Galera. "
+     "But sometimes a single current binlog can still be transmitted "
+     "to the joiner even with sst_max_binlogs=0, because it is "
+     "required for Galera to work properly with GTIDs support.",
+     (G_PTR *) &opt_max_binlogs,
+     (G_PTR *) &opt_max_binlogs, 0, GET_UINT, OPT_ARG,
+     UINT_MAX, 0, UINT_MAX, 0, 1, 0},
+
 #define MYSQL_CLIENT
 #include "sslopt-longopts.h"
 #undef MYSQL_CLIENT
@@ -1519,14 +1534,14 @@ struct my_option xb_server_options[] =
    (G_PTR*)&opt_encrypted_backup,
    0, GET_BOOL, NO_ARG, TRUE, 0, 0, 0, 0, 0},
 
-   {"log", OPT_LOG, "Ignored option for MySQL option compatibility",
+  {"log", OPT_LOG, "Ignored option for MySQL option compatibility",
    (G_PTR*) &log_ignored_opt, (G_PTR*) &log_ignored_opt, 0,
    GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
-   {"log_bin", OPT_LOG, "Base name for the log sequence",
+  {"log_bin", OPT_LOG, "Base name for the log sequence",
    &opt_log_bin, &opt_log_bin, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 
-   {"innodb", OPT_INNODB, "Ignored option for MySQL option compatibility",
+  {"innodb", OPT_INNODB, "Ignored option for MySQL option compatibility",
    (G_PTR*) &innobase_ignored_opt, (G_PTR*) &innobase_ignored_opt, 0,
    GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
 #ifdef BTR_CUR_HASH_ADAPT
@@ -1649,10 +1664,10 @@ struct my_option xb_server_options[] =
    0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
   {"plugin-dir", OPT_PLUGIN_DIR,
-  "Server plugin directory. Used to load encryption plugin during 'prepare' phase."
-  "Has no effect in the 'backup' phase (plugin directory during backup is the same as server's)",
-  &xb_plugin_dir, &xb_plugin_dir,
-  0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0 },
+   "Server plugin directory. Used to load encryption plugin during 'prepare' phase."
+   "Has no effect in the 'backup' phase (plugin directory during backup is the same as server's)",
+   &xb_plugin_dir, &xb_plugin_dir,
+   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0 },
 
   {"open_files_limit", OPT_OPEN_FILES_LIMIT, "the maximum number of file "
    "descriptors to reserve with setrlimit().",
@@ -1669,12 +1684,12 @@ struct my_option xb_server_options[] =
   &xb_rocksdb_datadir, &xb_rocksdb_datadir,
   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0 },
 
-  { "rocksdb-backup", OPT_BACKUP_ROCKSDB, "Backup rocksdb data, if rocksdb plugin is installed."
+  {"rocksdb-backup", OPT_BACKUP_ROCKSDB, "Backup rocksdb data, if rocksdb plugin is installed."
    "Used only with --backup option. Can be useful for partial backups, to exclude all rocksdb data",
    &xb_backup_rocksdb, &xb_backup_rocksdb,
    0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0 },
 
-   {"check-privileges", OPT_XTRA_CHECK_PRIVILEGES, "Check database user "
+  {"check-privileges", OPT_XTRA_CHECK_PRIVILEGES, "Check database user "
    "privileges fro the backup user",
    &opt_check_privileges, &opt_check_privileges,
    0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0 },
@@ -3084,7 +3099,7 @@ static void log_copying_thread()
          (!metadata_to_lsn || metadata_to_lsn > log_copy_scanned_lsn))
   {
     timespec abstime;
-    set_timespec_nsec(abstime, 1000ULL * xtrabackup_log_copy_interval);
+    set_timespec_nsec(abstime, 1000000ULL * xtrabackup_log_copy_interval);
     mysql_cond_timedwait(&log_copying_stop, &log_sys.mutex, &abstime);
   }
   log_copying_running= false;
@@ -4587,13 +4602,6 @@ fail:
 	}
 
 
-	if (auto b = aligned_malloc(UNIV_PAGE_SIZE_MAX, 4096)) {
-		field_ref_zero = static_cast<byte*>(
-			memset_aligned<4096>(b, 0, UNIV_PAGE_SIZE_MAX));
-	} else {
-		goto fail;
-	}
-
         {
 	/* definition from recv_recovery_from_checkpoint_start() */
 	ulint		max_cp_field;
@@ -4610,10 +4618,6 @@ reread_log_header:
 		msg("Error: cannot read redo log header");
 unlock_and_fail:
 		mysql_mutex_unlock(&log_sys.mutex);
-free_and_fail:
-		aligned_free(const_cast<byte*>(field_ref_zero));
-		field_ref_zero = nullptr;
-		goto fail;
 	}
 
 	if (log_sys.log.format == 0) {
@@ -4639,7 +4643,7 @@ free_and_fail:
 	xtrabackup_init_datasinks();
 
 	if (!select_history()) {
-		goto free_and_fail;
+		goto fail;
 	}
 
 	/* open the log file */
@@ -4648,7 +4652,7 @@ free_and_fail:
 	if (dst_log_file == NULL) {
 		msg("Error: failed to open the target stream for '%s'.",
 		    LOG_FILE_NAME);
-		goto free_and_fail;
+		goto fail;
 	}
 
 	/* label it */
@@ -4686,7 +4690,7 @@ free_and_fail:
 	if (ds_write(dst_log_file, log_hdr_buf, LOG_FILE_HDR_SIZE)) {
 		msg("error: write to logfile failed");
 		aligned_free(log_hdr_buf);
-		goto free_and_fail;
+		goto fail;
 	}
 
 	aligned_free(log_hdr_buf);
@@ -4707,7 +4711,7 @@ free_and_fail:
 		    " error %s.", ut_strerr(err));
 fail_before_log_copying_thread_start:
 		log_copying_running = false;
-		goto free_and_fail;
+		goto fail;
 	}
 
 	/* copy log file by current position */
@@ -4730,7 +4734,7 @@ fail_before_log_copying_thread_start:
 
 	/* FLUSH CHANGED_PAGE_BITMAPS call */
 	if (!flush_changed_page_bitmaps()) {
-		goto free_and_fail;
+		goto fail;
 	}
 
 	ut_a(xtrabackup_parallel > 0);
@@ -4797,9 +4801,6 @@ fail_before_log_copying_thread_start:
 
 	if (opt_log_innodb_page_corruption)
 		ok = corrupted_pages.print_to_file(MB_CORRUPTED_PAGES_FILE);
-
-	aligned_free(const_cast<byte*>(field_ref_zero));
-	field_ref_zero = nullptr;
 
 	if (!ok) {
 		goto fail;
@@ -5545,11 +5546,23 @@ static ibool prepare_handle_new_files(const char *data_home_dir,
                                       const char *file_name, void *arg)
 {
 	const char *dest_dir = static_cast<const char *>(arg);
-	std::string src_path = std::string(data_home_dir) + '/' + std::string(db_name) + '/' + file_name;
+	std::string src_path = std::string(data_home_dir) + '/' + std::string(db_name) + '/';
 	/* Copy "*.new" files from incremental to base dir for incremental backup */
 	std::string dest_path=
 		dest_dir ? std::string(dest_dir) + '/' + std::string(db_name) +
-			'/' + file_name : src_path;
+			'/' : src_path;
+
+	/*
+	  A CREATE DATABASE could have happened during the base mariabackup run.
+	  In case if the current table file (e.g. `t1.new`) is from such
+	  a new database, the database directory may not exist yet in
+	  the base backup directory. Let's make sure to check if the directory
+	  exists (and create if needed).
+	*/
+	if (!directory_exists(dest_path.c_str(), true/*create if not exists*/))
+		return FALSE;
+	src_path+= file_name;
+	dest_path+= file_name;
 
 	size_t index = dest_path.find(".new");
 	DBUG_ASSERT(index != std::string::npos);
@@ -6299,6 +6312,44 @@ static bool check_all_privileges()
 	return true;
 }
 
+static
+void
+xb_init_buffer_pool(const char * filename)
+{
+	if (filename &&
+#ifdef _WIN32
+		(filename[0] == '/'  ||
+		 filename[0] == '\\' ||
+		 strchr(filename, ':')))
+#else
+		filename[0] == FN_LIBCHAR)
+#endif
+	{
+		buffer_pool_filename = strdup(filename);
+	} else {
+		char filepath[FN_REFLEN];
+		char *dst_dir =
+			(innobase_data_home_dir && *innobase_data_home_dir) ?
+			 innobase_data_home_dir : mysql_data_home;
+		size_t dir_length;
+		if (dst_dir && *dst_dir) {
+			dir_length = strlen(dst_dir);
+			while (IS_TRAILING_SLASH(dst_dir, dir_length)) {
+				dir_length--;
+			}
+			memcpy(filepath, dst_dir, dir_length);
+		}
+		else {
+			filepath[0] = '.';
+			dir_length = 1;
+		}
+		snprintf(filepath + dir_length,
+			sizeof(filepath) - dir_length, "%c%s", FN_LIBCHAR,
+			filename ? filename : "ib_buffer_pool");
+		buffer_pool_filename = strdup(filepath);
+	}
+}
+
 bool
 xb_init()
 {
@@ -6363,11 +6414,16 @@ xb_init()
 		if (!get_mysql_vars(mysql_connection)) {
 			return(false);
 		}
+
+		xb_init_buffer_pool(buffer_pool_filename);
+
 		if (opt_check_privileges && !check_all_privileges()) {
 			return(false);
 		}
-		history_start_time = time(NULL);
 
+		history_start_time = time(NULL);
+	} else {
+		xb_init_buffer_pool(innobase_buffer_pool_filename);
 	}
 
 	return(true);
@@ -6715,7 +6771,7 @@ int main(int argc, char **argv)
 	key_map_full.set_all();
 
 	logger.init_base();
-	logger.set_handlers(LOG_FILE, LOG_NONE, LOG_NONE);
+	logger.set_handlers(LOG_NONE, LOG_NONE);
 	mysql_mutex_init(key_LOCK_error_log, &LOCK_error_log,
 			 MY_MUTEX_INIT_FAST);
 
@@ -6754,6 +6810,8 @@ int main(int argc, char **argv)
 	cleanup_errmsgs();
 	free_error_messages();
 	mysql_mutex_destroy(&LOCK_error_log);
+
+	free(buffer_pool_filename);
 
 	if (status == EXIT_SUCCESS) {
 		msg("completed OK!");
@@ -6925,6 +6983,20 @@ static int main_low(char** argv)
 			return(EXIT_FAILURE);
 		}
 	}
+
+	ut_ad(!field_ref_zero);
+	if (auto b = aligned_malloc(UNIV_PAGE_SIZE_MAX, 4096)) {
+		field_ref_zero = static_cast<byte*>(
+			memset_aligned<4096>(b, 0, UNIV_PAGE_SIZE_MAX));
+	} else {
+		msg("Can't allocate memory for field_ref_zero");
+		return EXIT_FAILURE;
+	}
+
+	auto _ = make_scope_exit([]() {
+		aligned_free(const_cast<byte*>(field_ref_zero));
+		field_ref_zero = nullptr;
+		});
 
 	/* --backup */
 	if (xtrabackup_backup && !xtrabackup_backup_func()) {

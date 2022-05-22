@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 1995, 2021, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2014, 2021, MariaDB Corporation.
+Copyright (c) 2014, 2022, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -86,7 +86,9 @@ bool fil_space_t::try_to_close(bool print_info)
     of fil_system.space_list, so that they would be less likely to be
     closed here. */
     fil_node_t *node= UT_LIST_GET_FIRST(space.chain);
-    ut_ad(node);
+    if (!node)
+      /* fil_ibd_create() did not invoke fil_space_t::add() yet */
+      continue;
     ut_ad(!UT_LIST_GET_NEXT(chain, node));
 
     if (!node->is_open())
@@ -446,6 +448,8 @@ static bool fil_node_open_file(fil_node_t *node)
       /* Flush tablespaces so that we can close modified files. */
       fil_flush_file_spaces();
       mysql_mutex_lock(&fil_system.mutex);
+      if (node->is_open())
+        return true;
     }
   }
 
@@ -988,6 +992,9 @@ fil_space_t *fil_space_t::create(ulint id, ulint flags,
 		if (UNIV_LIKELY(id <= fil_system.max_assigned_id)) {
 			break;
 		}
+		if (UNIV_UNLIKELY(srv_operation == SRV_OPERATION_BACKUP)) {
+			break;
+		}
 		if (!fil_system.space_id_reuse_warned) {
 			ib::warn() << "Allocated tablespace ID " << id
 				<< ", old maximum was "
@@ -1137,7 +1144,10 @@ err_exit:
     }
 
     if (create_new_db)
+    {
+      node->find_metadata(node->handle);
       continue;
+    }
     if (skip_read)
     {
       size+= node->size;
@@ -1771,8 +1781,9 @@ char* fil_make_filepath(const char *path, const fil_space_t::name_type &name,
 	if (path != NULL) {
 		memcpy(full_name, path, path_len);
 		len = path_len;
-		full_name[len] = '\0';
 	}
+
+	full_name[len] = '\0';
 
 	if (trim_name) {
 		/* Find the offset of the last DIR separator and set it to
@@ -2132,7 +2143,7 @@ a remote tablespace is found it will be changed to true.
 If the fix_dict boolean is set, then it is safe to use an internal SQL
 statement to update the dictionary tables if they are incorrect.
 
-@param[in]	validate	true if we should validate the tablespace
+@param[in]	validate	0=maybe missing, 1=do not validate, 2=validate
 @param[in]	purpose		FIL_TYPE_TABLESPACE or FIL_TYPE_TEMPORARY
 @param[in]	id		tablespace ID
 @param[in]	flags		expected FSP_SPACE_FLAGS
@@ -2144,7 +2155,7 @@ If file-per-table, it is the table name in the databasename/tablename format
 @retval	NULL	if the tablespace could not be opened */
 fil_space_t*
 fil_ibd_open(
-	bool			validate,
+	unsigned		validate,
 	fil_type_t		purpose,
 	ulint			id,
 	ulint			flags,
@@ -2156,7 +2167,7 @@ fil_ibd_open(
 	fil_space_t* space = fil_space_get_by_id(id);
 	mysql_mutex_unlock(&fil_system.mutex);
 	if (space) {
-		if (validate && !srv_read_only_mode) {
+		if (validate > 1 && !srv_read_only_mode) {
 			fsp_flags_try_adjust(space,
 					     flags & ~FSP_FLAGS_MEM_MASK);
 		}
@@ -2193,8 +2204,9 @@ func_exit:
 
 	/* Look for a filepath embedded in an ISL where the default file
 	would be. */
-	if (df_remote.open_link_file(name)) {
-		validate = true;
+	bool must_validate = df_remote.open_link_file(name);
+
+	if (must_validate) {
 		if (df_remote.open_read_only(true) == DB_SUCCESS) {
 			ut_ad(df_remote.is_open());
 			++tablespaces_found;
@@ -2207,15 +2219,12 @@ func_exit:
 				    << df_remote.filepath()
 				    << "' could not be opened read-only.";
 		}
-	}
-
-	/* Attempt to open the tablespace at the dictionary filepath. */
-	if (path_in) {
-		if (!df_default.same_filepath_as(path_in)) {
-			/* Dict path is not the default path. Always validate
-			remote files. If default is opened, it was moved. */
-			validate = true;
-		}
+	} else if (path_in && !df_default.same_filepath_as(path_in)) {
+		/* Dict path is not the default path. Always validate
+		remote files. If default is opened, it was moved. */
+		must_validate = true;
+	} else if (validate > 1) {
+		must_validate = true;
 	}
 
 	/* Always look for a file at the default location. But don't log
@@ -2227,7 +2236,7 @@ func_exit:
 	the first server startup. The tables ought to be dropped by
 	drop_garbage_tables_after_restore() a little later. */
 
-	const bool strict = !tablespaces_found
+	const bool strict = validate && !tablespaces_found
 		&& !(srv_operation == SRV_OPERATION_NORMAL
 		     && srv_start_after_restore
 		     && srv_force_recovery < SRV_FORCE_NO_BACKGROUND
@@ -2253,7 +2262,7 @@ func_exit:
 	normal, we only found 1. */
 	/* For encrypted tablespace, we need to check the
 	encryption in header of first page. */
-	if (!validate && tablespaces_found == 1) {
+	if (!must_validate && tablespaces_found == 1) {
 		goto skip_validate;
 	}
 
@@ -2269,7 +2278,8 @@ func_exit:
 	First, bail out if no tablespace files were found. */
 	if (valid_tablespaces_found == 0) {
 		if (!strict
-		    && IF_WIN(GetLastError() == ERROR_FILE_NOT_FOUND,
+		    && IF_WIN(GetLastError() == ERROR_FILE_NOT_FOUND
+			      || GetLastError() == ERROR_PATH_NOT_FOUND,
 			      errno == ENOENT)) {
 			/* Suppress a message about a missing file. */
 			goto corrupted;
@@ -2282,7 +2292,7 @@ func_exit:
 				TROUBLESHOOT_DATADICT_MSG);
 		goto corrupted;
 	}
-	if (!validate) {
+	if (!must_validate) {
 		goto skip_validate;
 	}
 
@@ -2365,7 +2375,7 @@ skip_validate:
 		df_remote.is_open() ? df_remote.filepath() :
 		df_default.filepath(), OS_FILE_CLOSED, 0, false, true);
 
-	if (validate && !srv_read_only_mode) {
+	if (must_validate && !srv_read_only_mode) {
 		df_remote.close();
 		df_default.close();
 		if (space->acquire()) {
@@ -2644,6 +2654,13 @@ tablespace_check:
 		? fil_space_read_crypt_data(fil_space_t::zip_size(flags),
 					    first_page)
 		: NULL;
+
+	if (crypt_data && !crypt_data->is_key_found()) {
+		crypt_data->~fil_space_crypt_t();
+		ut_free(crypt_data);
+		return FIL_LOAD_INVALID;
+	}
+
 	space = fil_space_t::create(
 		space_id, flags, FIL_TYPE_TABLESPACE, crypt_data);
 
@@ -3161,12 +3178,6 @@ fil_names_clear(
 	bool	do_write)
 {
 	mtr_t	mtr;
-	ulint	mtr_checkpoint_size = RECV_SCAN_SIZE - 1;
-
-	DBUG_EXECUTE_IF(
-		"increase_mtr_checkpoint_size",
-		mtr_checkpoint_size = 75 * 1024;
-		);
 
 	mysql_mutex_assert_owner(&log_sys.mutex);
 	ut_ad(lsn);
@@ -3176,8 +3187,8 @@ fil_names_clear(
 	for (auto it = fil_system.named_spaces.begin();
 	     it != fil_system.named_spaces.end(); ) {
 		if (mtr.get_log()->size()
-		    + (3 + 5 + 1) + strlen(it->chain.start->name)
-		    >= mtr_checkpoint_size) {
+		    + strlen(it->chain.start->name)
+		    >= RECV_SCAN_SIZE - (3 + 5 + 1)) {
 			/* Prevent log parse buffer overflow */
 			mtr.commit_files();
 			mtr.start();

@@ -4712,10 +4712,11 @@ void Item_func_in::mark_as_condition_AND_part(TABLE_LIST *embedding)
   Query_arena *arena, backup;
   arena= thd->activate_stmt_arena_if_needed(&backup);
 
-  if (to_be_transformed_into_in_subq(thd))
+  if (!transform_into_subq_checked)
   {
-    transform_into_subq= true;
-    thd->lex->current_select->in_funcs.push_back(this, thd->mem_root);
+    if ((transform_into_subq= to_be_transformed_into_in_subq(thd)))
+      thd->lex->current_select->in_funcs.push_back(this, thd->mem_root);
+    transform_into_subq_checked= true;
   }
 
   if (arena)
@@ -7666,7 +7667,17 @@ bool Item_equal::create_pushable_equalities(THD *thd,
     if (!eq ||  equalities->push_back(eq, thd->mem_root))
       return true;
     if (!clone_const)
-      right_item->set_extraction_flag(MARKER_IMMUTABLE);
+    {
+      /*
+        Also set IMMUTABLE_FL for any sub-items of the right_item.
+        This is needed to prevent Item::cleanup_excluding_immutables_processor
+        from peforming cleanup of the sub-items and so creating an item tree
+        where a fixed item has non-fixed items inside it.
+      */
+      int16 new_flag= MARKER_IMMUTABLE;
+      right_item->walk(&Item::set_extraction_flag_processor, false,
+                       (void*)&new_flag);
+    }
   }
 
   while ((item=it++))
