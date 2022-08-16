@@ -988,7 +988,6 @@ row_sel_get_clust_rec(
 	dict_index_t*	index;
 	rec_t*		clust_rec;
 	rec_t*		old_vers;
-	dberr_t		err		= DB_SUCCESS;
 	mem_heap_t*	heap		= NULL;
 	rec_offs	offsets_[REC_OFFS_NORMAL_SIZE];
 	rec_offs*	offsets		= offsets_;
@@ -1006,9 +1005,12 @@ row_sel_get_clust_rec(
 
 	index = dict_table_get_first_index(plan->table);
 
-	btr_pcur_open_with_no_init(index, plan->clust_ref, PAGE_CUR_LE,
-				   BTR_SEARCH_LEAF, &plan->clust_pcur,
-				   0, mtr);
+	dberr_t err = btr_pcur_open_with_no_init(index, plan->clust_ref,
+						 PAGE_CUR_LE, BTR_SEARCH_LEAF,
+						 &plan->clust_pcur, 0, mtr);
+	if (UNIV_UNLIKELY(err != DB_SUCCESS)) {
+		goto err_exit;
+	}
 
 	clust_rec = btr_pcur_get_rec(&(plan->clust_pcur));
 
@@ -1019,9 +1021,10 @@ row_sel_get_clust_rec(
 	    || btr_pcur_get_low_match(&(plan->clust_pcur))
 	    < dict_index_get_n_unique(index)) {
 
-		ut_a(rec_get_deleted_flag(rec,
-					  dict_table_is_comp(plan->table)));
-		ut_a(node->read_view);
+		if (!node->read_view ||
+		    !rec_get_deleted_flag(rec, plan->table->not_redundant())) {
+			err = DB_CORRUPTION;
+		}
 
 		/* In a rare case it is possible that no clust rec is found
 		for a delete-marked secondary index record: if in row0umod.cc
@@ -1201,13 +1204,13 @@ re_scan:
 
 			/* MDEV-14059 FIXME: why re-latch the block?
 			pcur is already positioned on it! */
-			uint32_t page_no = page_get_page_no(
-				btr_pcur_get_page(pcur));
-
 			cur_block = buf_page_get_gen(
-				page_id_t(index->table->space_id, page_no),
-				index->table->space->zip_size(),
+				btr_pcur_get_block(pcur)->page.id(),
+				btr_pcur_get_block(pcur)->zip_size(),
 				RW_X_LATCH, NULL, BUF_GET, mtr, &err);
+			if (!cur_block) {
+				goto func_end;
+			}
 		} else {
 			mtr->start();
 			goto func_end;
@@ -1224,6 +1227,7 @@ re_scan:
 		}
 
 		match->matched_recs->clear();
+		// FIXME: check for !cur_block
 
 		rtr_cur_search_with_match(
 			cur_block, index,
@@ -1355,8 +1359,9 @@ sel_set_rec_lock(
 
 /*********************************************************************//**
 Opens a pcur to a table index. */
+MY_ATTRIBUTE((warn_unused_result, nonnull))
 static
-void
+dberr_t
 row_sel_open_pcur(
 /*==============*/
 	plan_t*		plan,	/*!< in: table plan */
@@ -1367,6 +1372,10 @@ row_sel_open_pcur(
 	que_node_t*	exp;
 	ulint		n_fields;
 	ulint		i;
+
+	ut_ad(!plan->n_rows_prefetched);
+	ut_ad(!plan->n_rows_fetched);
+	ut_ad(!plan->cursor_at_end);
 
 	index = plan->index;
 
@@ -1381,6 +1390,8 @@ row_sel_open_pcur(
 
 		cond = UT_LIST_GET_NEXT(cond_list, cond);
 	}
+
+	dberr_t err;
 
 	if (plan->tuple) {
 		n_fields = dtuple_get_n_fields(plan->tuple);
@@ -1399,24 +1410,17 @@ row_sel_open_pcur(
 					 que_node_get_val(exp));
 		}
 
-		/* Open pcur to the index */
-
-		btr_pcur_open_with_no_init(index, plan->tuple, plan->mode,
-					   BTR_SEARCH_LEAF, &plan->pcur,
-					   NULL, mtr);
+		err = btr_pcur_open_with_no_init(index, plan->tuple,
+						 plan->mode, BTR_SEARCH_LEAF,
+						 &plan->pcur, nullptr, mtr);
 	} else {
-		/* Open the cursor to the start or the end of the index
-		(FALSE: no init) */
-
-		btr_pcur_open_at_index_side(plan->asc, index, BTR_SEARCH_LEAF,
-					    &(plan->pcur), false, 0, mtr);
+		err = btr_pcur_open_at_index_side(plan->asc, index,
+						  BTR_SEARCH_LEAF, &plan->pcur,
+						  false, 0, mtr);
 	}
 
-	ut_ad(plan->n_rows_prefetched == 0);
-	ut_ad(plan->n_rows_fetched == 0);
-	ut_ad(plan->cursor_at_end == FALSE);
-
-	plan->pcur_is_open = TRUE;
+	plan->pcur_is_open = err == DB_SUCCESS;
+	return err;
 }
 
 /*********************************************************************//**
@@ -1551,7 +1555,9 @@ row_sel_try_search_shortcut(
 	ut_ad(plan->unique_search);
 	ut_ad(!plan->must_get_clust);
 
-	row_sel_open_pcur(plan, mtr);
+	if (row_sel_open_pcur(plan, mtr) != DB_SUCCESS) {
+		return SEL_RETRY;
+	}
 
 	const rec_t* rec = btr_pcur_get_rec(&(plan->pcur));
 
@@ -1732,7 +1738,11 @@ table_loop:
 	if (!plan->pcur_is_open) {
 		/* Evaluate the expressions to build the search tuple and
 		open the cursor */
-		row_sel_open_pcur(plan, &mtr);
+		err = row_sel_open_pcur(plan, &mtr);
+
+		if (UNIV_UNLIKELY(err != DB_SUCCESS)) {
+			goto mtr_commit_exit;
+		}
 
 		cursor_just_opened = TRUE;
 
@@ -1794,7 +1804,11 @@ rec_loop:
 		search result set, resulting in the phantom problem. */
 
 		if (!node->read_view) {
-			rec_t*	next_rec = page_rec_get_next(rec);
+			const rec_t* next_rec = page_rec_get_next_const(rec);
+			if (UNIV_UNLIKELY(!next_rec)) {
+				err = DB_CORRUPTION;
+				goto lock_wait_or_error;
+			}
 			unsigned lock_type;
 
 			offsets = rec_get_offsets(next_rec, index, offsets,
@@ -2263,10 +2277,8 @@ stop_for_a_while:
 	plan->stored_cursor_rec_processed = FALSE;
 	btr_pcur_store_position(&(plan->pcur), &mtr);
 
-	mtr.commit();
-
 	err = DB_SUCCESS;
-	goto func_exit;
+	goto mtr_commit_exit;
 
 commit_mtr_for_a_while:
 	/* Stores the cursor position and commits &mtr; this is used if
@@ -2290,7 +2302,7 @@ lock_wait_or_error:
 
 	plan->stored_cursor_rec_processed = FALSE;
 	btr_pcur_store_position(&(plan->pcur), &mtr);
-
+mtr_commit_exit:
 	mtr.commit();
 
 func_exit:
@@ -3332,7 +3344,6 @@ Row_sel_get_clust_rec_for_mysql::operator()(
 	dict_index_t*	clust_index;
 	const rec_t*	clust_rec;
 	rec_t*		old_vers;
-	dberr_t		err;
 	trx_t*		trx;
 
 	*out_rec = NULL;
@@ -3346,9 +3357,13 @@ Row_sel_get_clust_rec_for_mysql::operator()(
 
 	clust_index = dict_table_get_first_index(sec_index->table);
 
-	btr_pcur_open_with_no_init(clust_index, prebuilt->clust_ref,
-				   PAGE_CUR_LE, BTR_SEARCH_LEAF,
-				   prebuilt->clust_pcur, 0, mtr);
+	dberr_t err = btr_pcur_open_with_no_init(clust_index,
+						 prebuilt->clust_ref,
+						 PAGE_CUR_LE, BTR_SEARCH_LEAF,
+						 prebuilt->clust_pcur, 0, mtr);
+	if (UNIV_UNLIKELY(err != DB_SUCCESS)) {
+		return err;
+	}
 
 	clust_rec = btr_pcur_get_rec(prebuilt->clust_pcur);
 
@@ -3408,16 +3423,19 @@ Row_sel_get_clust_rec_for_mysql::operator()(
 				btr_pcur_get_block(prebuilt->pcur)->page.id(),
 				btr_pcur_get_block(prebuilt->pcur)->zip_size(),
 				RW_NO_LATCH, NULL, BUF_GET, mtr, &err);
+			ut_ad(block); // FIXME: avoid crash
 			mem_heap_t*	heap = mem_heap_create(256);
 			dtuple_t*       tuple = dict_index_build_data_tuple(
 				rec, sec_index, true,
 				sec_index->n_fields, heap);
 			page_cur_t     page_cursor;
-
-		        ulint		low_match = page_cur_search(
-						block, sec_index, tuple,
-						PAGE_CUR_LE, &page_cursor);
-
+			ulint up_match = 0, low_match = 0;
+			ut_ad(!page_cur_search_with_match(block, sec_index,
+							  tuple, PAGE_CUR_LE,
+							  &up_match,
+							  &low_match,
+							  &page_cursor,
+							  nullptr));
 			ut_ad(low_match < dtuple_get_n_fields_cmp(tuple));
 			mem_heap_free(heap);
 			clust_rec = NULL;
@@ -3427,7 +3445,7 @@ Row_sel_get_clust_rec_for_mysql::operator()(
 #endif /* UNIV_DEBUG */
 		} else if (!rec_get_deleted_flag(rec,
 					  dict_table_is_comp(sec_index->table))
-		    || prebuilt->select_lock_type != LOCK_NONE) {
+			   || prebuilt->select_lock_type != LOCK_NONE) {
 			/* In a rare case it is possible that no clust
 			rec is found for a delete-marked secondary index
 			record: if in row0umod.cc in
@@ -3446,17 +3464,13 @@ Row_sel_get_clust_rec_for_mysql::operator()(
 			fputs("\n"
 			      "InnoDB: clust index record ", stderr);
 			rec_print(stderr, clust_rec, clust_index);
-			putc('\n', stderr);
-			trx_print(stderr, trx, 600);
-			fputs("\n"
-			      "InnoDB: Submit a detailed bug report"
-			      " to https://jira.mariadb.org/\n", stderr);
-			ut_ad(0);
+			err = DB_CORRUPTION;
+			clust_rec = NULL;
+			goto func_exit;
 		}
 
-		clust_rec = NULL;
-
 		err = DB_SUCCESS;
+		clust_rec = NULL;
 		goto func_exit;
 	}
 
@@ -3481,7 +3495,7 @@ Row_sel_get_clust_rec_for_mysql::operator()(
 		case DB_SUCCESS_LOCKED_REC:
 			break;
 		default:
-			goto err_exit;
+			return err;
 		}
 	} else {
 		/* This is a non-locking consistent read: if necessary, fetch
@@ -3512,9 +3526,8 @@ Row_sel_get_clust_rec_for_mysql::operator()(
 					clust_rec, offsets, offset_heap, &old_vers,
 					vrow, mtr);
 
-				if (err != DB_SUCCESS) {
-
-					goto err_exit;
+				if (UNIV_UNLIKELY(err != DB_SUCCESS)) {
+					return err;
 				}
 				cached_lsn = lsn;
 				cached_page_id = bpage.id();
@@ -3538,7 +3551,7 @@ Row_sel_get_clust_rec_for_mysql::operator()(
 			}
 
 			if (old_vers == NULL) {
-				goto err_exit;
+				return err;
 			}
 
 			clust_rec = old_vers;
@@ -3574,7 +3587,7 @@ Row_sel_get_clust_rec_for_mysql::operator()(
 			case DB_SUCCESS_LOCKED_REC:
 				break;
 			default:
-				goto err_exit;
+				return err;
 			}
 		}
 
@@ -3591,8 +3604,7 @@ func_exit:
 		btr_pcur_store_position(prebuilt->clust_pcur, mtr);
 	}
 
-err_exit:
-	return(err);
+	return err;
 }
 
 /** Restores cursor position after it has been stored. We have to take into
@@ -3653,7 +3665,9 @@ prev:
 		if (btr_pcur_is_on_user_rec(pcur) && !moves_up
 		    && !rec_is_metadata(btr_pcur_get_rec(pcur),
 					*pcur->btr_cur.index)) {
-			btr_pcur_move_to_prev(pcur, mtr);
+			if (!btr_pcur_move_to_prev(pcur, mtr)) {
+				return true;
+			}
 		}
 		return true;
 	case BTR_PCUR_BEFORE:
@@ -3933,8 +3947,12 @@ row_sel_try_search_shortcut_for_mysql(
 
 	srw_spin_lock* ahi_latch = btr_search_sys.get_latch(*index);
 	ahi_latch->rd_lock(SRW_LOCK_CALL);
-	btr_pcur_open_with_no_init(index, search_tuple, PAGE_CUR_GE,
-				   BTR_SEARCH_LEAF, pcur, ahi_latch, mtr);
+	if (btr_pcur_open_with_no_init(index, search_tuple, PAGE_CUR_GE,
+				       BTR_SEARCH_LEAF, pcur, ahi_latch, mtr)
+	    != DB_SUCCESS) {
+		goto retry;
+	}
+
 	rec = btr_pcur_get_rec(pcur);
 
 	if (!page_rec_is_user_rec(rec) || rec_is_metadata(rec, *index)) {
@@ -4350,9 +4368,13 @@ row_search_mvcc(
 	if (!prebuilt->table->space) {
 		DBUG_RETURN(DB_TABLESPACE_DELETED);
 	} else if (!prebuilt->table->is_readable()) {
-		DBUG_RETURN(prebuilt->table->space
-			    ? DB_DECRYPTION_FAILED
-			    : DB_TABLESPACE_NOT_FOUND);
+		if (fil_space_crypt_t* crypt_data =
+		    prebuilt->table->space->crypt_data) {
+			if (crypt_data->should_encrypt()) {
+				DBUG_RETURN(DB_DECRYPTION_FAILED);
+			}
+		}
+		DBUG_RETURN(DB_CORRUPTION);
 	} else if (!prebuilt->index_usable) {
 		DBUG_RETURN(DB_MISSING_HISTORY);
 	} else if (prebuilt->index->is_corrupted()) {
@@ -4699,6 +4721,15 @@ wait_table_again:
 			pcur, moves_up, &mtr);
 
 		if (UNIV_UNLIKELY(need_to_process)) {
+			if (UNIV_UNLIKELY(!btr_pcur_get_rec(pcur))) {
+				mtr.commit();
+				trx->op_info = "";
+				if (UNIV_LIKELY_NULL(heap)) {
+					mem_heap_free(heap);
+				}
+				return DB_CORRUPTION;
+			}
+
 			if (UNIV_UNLIKELY(prebuilt->row_read_type
 					  == ROW_READ_DID_SEMI_CONSISTENT)) {
 				/* We did a semi-consistent read,
@@ -4716,7 +4747,7 @@ wait_table_again:
 			pessimistic locking read, the record
 			cannot be skipped. */
 
-			goto next_rec;
+			goto next_rec_after_check;
 		}
 
 	} else if (dtuple_get_n_fields(search_tuple) > 0) {
@@ -4745,6 +4776,7 @@ wait_table_again:
 					   	 pcur, 0, &mtr);
 
 		if (err != DB_SUCCESS) {
+page_corrupted:
 			rec = NULL;
 			goto page_read_error;
 		}
@@ -4762,6 +4794,10 @@ wait_table_again:
 			/* Try to place a gap lock on the next index record
 			to prevent phantoms in ORDER BY ... DESC queries */
 			const rec_t*	next_rec = page_rec_get_next_const(rec);
+			if (UNIV_UNLIKELY(!next_rec)) {
+				err = DB_CORRUPTION;
+				goto page_corrupted;
+			}
 
 			offsets = rec_get_offsets(next_rec, index, offsets,
 						  index->n_core_fields,
@@ -4788,13 +4824,7 @@ wait_table_again:
 
 		if (err != DB_SUCCESS) {
 			if (err == DB_DECRYPTION_FAILED) {
-				ib_push_warning(trx->mysql_thd,
-					DB_DECRYPTION_FAILED,
-					"Table %s is encrypted but encryption service or"
-					" used key_id is not available. "
-					" Can't continue reading table.",
-					prebuilt->table->name.m_name);
-				index->table->file_unreadable = true;
+				btr_decryption_failed(*index);
 			}
 			rec = NULL;
 			goto page_read_error;
@@ -5717,6 +5747,7 @@ next_rec:
 			  == ROW_READ_DID_SEMI_CONSISTENT)) {
 		prebuilt->row_read_type = ROW_READ_TRY_SEMI_CONSISTENT;
 	}
+next_rec_after_check:
 	did_semi_consistent_read = false;
 	prebuilt->new_rec_locks = 0;
 	vrow = NULL;
@@ -5742,7 +5773,6 @@ next_rec:
 		/* No need to do store restore for R-tree */
 		mtr.commit();
 		mtr.start();
-		mtr_extra_clust_savepoint = 0;
 	} else if (mtr_extra_clust_savepoint) {
 		/* We must release any clustered index latches
 		if we are moving to the next non-clustered
@@ -5750,8 +5780,9 @@ next_rec:
 		order if we would access a different clustered
 		index page right away without releasing the previous. */
 		mtr.rollback_to_savepoint(mtr_extra_clust_savepoint);
-		mtr_extra_clust_savepoint = 0;
 	}
+
+	mtr_extra_clust_savepoint = 0;
 
 	if (moves_up) {
 		if (UNIV_UNLIKELY(spatial_search)) {
@@ -5760,9 +5791,7 @@ next_rec:
 				goto rec_loop;
 			}
 		} else {
-			const buf_block_t* block = btr_pcur_get_block(pcur);
-			/* This is based on btr_pcur_move_to_next(),
-			but avoids infinite read loop of a corrupted page. */
+			/* This is based on btr_pcur_move_to_next() */
 			ut_ad(pcur->pos_state == BTR_PCUR_IS_POSITIONED);
 			ut_ad(pcur->latch_mode != BTR_NO_LATCHES);
 			pcur->old_stored = false;
@@ -5770,14 +5799,12 @@ next_rec:
 				if (btr_pcur_is_after_last_in_tree(pcur)) {
 					goto not_moved;
 				}
-				btr_pcur_move_to_next_page(pcur, &mtr);
-				if (UNIV_UNLIKELY(btr_pcur_get_block(pcur)
-						  == block)) {
-					err = DB_CORRUPTION;
+				err = btr_pcur_move_to_next_page(pcur, &mtr);
+				if (err != DB_SUCCESS) {
 					goto lock_wait_or_error;
 				}
-			} else {
-				btr_pcur_move_to_next_on_page(pcur);
+			} else if (!btr_pcur_move_to_next_on_page(pcur)) {
+				goto corrupted;
 			}
 
 			goto rec_loop;
@@ -5785,6 +5812,11 @@ next_rec:
 	} else {
 		if (btr_pcur_move_to_prev(pcur, &mtr)) {
 			goto rec_loop;
+		}
+		if (UNIV_UNLIKELY(!btr_pcur_get_rec(pcur))) {
+corrupted:
+			err = DB_CORRUPTION;
+			goto normal_return;
 		}
 	}
 
@@ -6103,8 +6135,10 @@ row_search_get_max_rec(
 	btr_pcur_t	pcur;
 	const rec_t*	rec;
 	/* Open at the high/right end (false), and init cursor */
-	btr_pcur_open_at_index_side(
-		false, index, BTR_SEARCH_LEAF, &pcur, true, 0, mtr);
+	if (btr_pcur_open_at_index_side(false, index, BTR_SEARCH_LEAF, &pcur,
+					true, 0, mtr) != DB_SUCCESS) {
+		return nullptr;
+	}
 
 	do {
 		const page_t*	page;

@@ -79,7 +79,6 @@ Created 10/21/1995 Heikki Tuuri
 
 #include <thread>
 #include <chrono>
-#include <memory>
 
 /* Per-IO operation environment*/
 class io_slots
@@ -133,8 +132,8 @@ public:
 	}
 };
 
-static std::unique_ptr<io_slots> read_slots;
-static std::unique_ptr<io_slots> write_slots;
+static io_slots *read_slots;
+static io_slots *write_slots;
 
 /** Number of retries for partial I/O's */
 constexpr ulint NUM_RETRIES_ON_PARTIAL_IO = 10;
@@ -316,26 +315,13 @@ private:
   os_offset_t m_offset;
 };
 
-#undef USE_FILE_LOCK
-#ifndef _WIN32
-/* On Windows, mandatory locking is used */
-# define USE_FILE_LOCK
-#endif
-#ifdef USE_FILE_LOCK
+#ifndef _WIN32 /* On Microsoft Windows, mandatory locking is used */
 /** Obtain an exclusive lock on a file.
-@param[in]	fd		file descriptor
-@param[in]	name		file name
+@param fd      file descriptor
+@param name    file name
 @return 0 on success */
-static
-int
-os_file_lock(
-	int		fd,
-	const char*	name)
+int os_file_lock(int fd, const char *name)
 {
-	if (my_disable_locking) {
-		return 0;
-	}
-
 	struct flock lk;
 
 	lk.l_type = F_WRLCK;
@@ -361,7 +347,7 @@ os_file_lock(
 
 	return(0);
 }
-#endif /* USE_FILE_LOCK */
+#endif /* !_WIN32 */
 
 
 /** Create a temporary file. This function is like tmpfile(3), but
@@ -411,46 +397,6 @@ os_file_read_string(
 
 		str[flen] = '\0';
 	}
-}
-
-/** This function returns a new path name after replacing the basename
-in an old path with a new basename.  The old_path is a full path
-name including the extension.  The tablename is in the normal
-form "databasename/tablename".  The new base name is found after
-the forward slash.  Both input strings are null terminated.
-
-This function allocates memory to be returned.  It is the callers
-responsibility to free the return value after it is no longer needed.
-
-@param[in]	old_path		Pathname
-@param[in]	tablename		Contains new base name
-@return own: new full pathname */
-char *os_file_make_new_pathname(const char *old_path, const char *tablename)
-{
-  /* Split the tablename into its database and table name components.
-  They are separated by a '/'. */
-  const char *last_slash= strrchr(tablename, '/');
-  const char *base_name= last_slash ? last_slash + 1 : tablename;
-
-  /* Find the offset of the last slash. We will strip off the
-  old basename.ibd which starts after that slash. */
-  last_slash = strrchr(old_path, '/');
-#ifdef _WIN32
-  if (const char *last= strrchr(old_path, '\\'))
-    if (last > last_slash)
-      last_slash= last;
-#endif
-
-  size_t dir_len= last_slash
-    ? size_t(last_slash - old_path)
-    : strlen(old_path);
-
-  /* allocate a new path and move the old directory path to it. */
-  size_t new_path_len= dir_len + strlen(base_name) + sizeof "/.ibd";
-  char *new_path= static_cast<char*>(ut_malloc_nokey(new_path_len));
-  memcpy(new_path, old_path, dir_len);
-  snprintf(new_path + dir_len, new_path_len - dir_len, "/%s.ibd", base_name);
-  return new_path;
 }
 
 /** This function reduces a null-terminated full remote path name into
@@ -851,6 +797,7 @@ os_file_get_last_error_low(
 	case EXDEV:
 	case ENOTDIR:
 	case EISDIR:
+	case EPERM:
 		return(OS_FILE_PATH_ERROR);
 	case EAGAIN:
 		if (srv_use_native_aio) {
@@ -1106,17 +1053,18 @@ os_file_create_simple_func(
 		os_file_set_nocache(file, name, mode_str);
 	}
 
-#ifdef USE_FILE_LOCK
+#ifndef _WIN32
 	if (!read_only
 	    && *success
-	    && (access_type == OS_FILE_READ_WRITE)
+	    && access_type == OS_FILE_READ_WRITE
+	    && !my_disable_locking
 	    && os_file_lock(file, name)) {
 
 		*success = false;
 		close(file);
 		file = -1;
 	}
-#endif /* USE_FILE_LOCK */
+#endif /* !_WIN32 */
 
 	return(file);
 }
@@ -1284,10 +1232,11 @@ os_file_create_func(
 		os_file_set_nocache(file, name, mode_str);
 	}
 
-#ifdef USE_FILE_LOCK
+#ifndef _WIN32
 	if (!read_only
 	    && *success
 	    && create_mode != OS_FILE_OPEN_RAW
+	    && !my_disable_locking
 	    && os_file_lock(file, name)) {
 
 		if (create_mode == OS_FILE_OPEN_RETRY) {
@@ -1313,7 +1262,7 @@ os_file_create_func(
 		close(file);
 		file = -1;
 	}
-#endif /* USE_FILE_LOCK */
+#endif /* !_WIN32 */
 
 	return(file);
 }
@@ -1386,10 +1335,11 @@ os_file_create_simple_no_error_handling_func(
 
 	*success = (file != -1);
 
-#ifdef USE_FILE_LOCK
+#ifndef _WIN32
 	if (!read_only
 	    && *success
 	    && access_type == OS_FILE_READ_WRITE
+	    && !my_disable_locking
 	    && os_file_lock(file, name)) {
 
 		*success = false;
@@ -1397,7 +1347,7 @@ os_file_create_simple_no_error_handling_func(
 		file = -1;
 
 	}
-#endif /* USE_FILE_LOCK */
+#endif /* !_WIN32 */
 
 	return(file);
 }
@@ -3561,10 +3511,17 @@ extern void fil_aio_callback(const IORequest &request);
 
 static void io_callback(tpool::aiocb *cb)
 {
-  ut_a(cb->m_err == DB_SUCCESS);
   const IORequest &request= *static_cast<const IORequest*>
     (static_cast<const void*>(cb->m_userdata));
-
+  if (cb->m_err != DB_SUCCESS)
+  {
+    ib::fatal() << "IO Error: " << cb->m_err << " during " <<
+      (request.is_async() ? "async " : "sync ") <<
+      (request.is_LRU() ? "lru " : "") <<
+      (cb->m_opcode == tpool::aio_opcode::AIO_PREAD ? "read" : "write") <<
+      " of " << cb->m_len << " bytes, for file " << cb->m_fh << ", returned " <<
+      cb->m_ret_len;
+  }
   /* Return cb back to cache*/
   if (cb->m_opcode == tpool::aio_opcode::AIO_PREAD)
   {
@@ -3714,10 +3671,6 @@ int os_aio_init()
   int max_read_events= int(srv_n_read_io_threads *
                            OS_AIO_N_PENDING_IOS_PER_THREAD);
   int max_events= max_read_events + max_write_events;
-
-  read_slots.reset(new io_slots(max_read_events, srv_n_read_io_threads));
-  write_slots.reset(new io_slots(max_write_events, srv_n_write_io_threads));
-
   int ret;
 #if LINUX_NATIVE_AIO
   if (srv_use_native_aio && !is_linux_native_aio_supported())
@@ -3748,12 +3701,11 @@ disable:
   }
 #endif
 
-  if (ret)
+  if (!ret)
   {
-    read_slots.reset();
-    write_slots.reset();
+    read_slots= new io_slots(max_read_events, srv_n_read_io_threads);
+    write_slots= new io_slots(max_write_events, srv_n_write_io_threads);
   }
-
   return ret;
 }
 
@@ -3761,8 +3713,10 @@ disable:
 void os_aio_free()
 {
   srv_thread_pool->disable_aio();
-  read_slots.reset();
-  write_slots.reset();
+  delete read_slots;
+  delete write_slots;
+  read_slots= nullptr;
+  write_slots= nullptr;
 }
 
 /** Wait until there are no pending asynchronous writes. */
@@ -3851,7 +3805,7 @@ func_exit:
 	}
 
 	compile_time_assert(sizeof(IORequest) <= tpool::MAX_AIO_USERDATA_LEN);
-	io_slots* slots= type.is_read() ? read_slots.get() : write_slots.get();
+	io_slots* slots= type.is_read() ? read_slots : write_slots;
 	tpool::aiocb* cb = slots->acquire();
 
 	cb->m_buffer = buf;

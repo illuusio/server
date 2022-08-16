@@ -392,6 +392,7 @@ POSITION::POSITION()
   ref_depend_map= dups_producing_tables= 0;
   inner_tables_handled_with_other_sjs= 0;
   type= JT_UNKNOWN;
+  key_dependent= 0;
   dups_weedout_picker.set_empty();
   firstmatch_picker.set_empty();
   loosescan_picker.set_empty();
@@ -786,7 +787,22 @@ void remove_redundant_subquery_clauses(st_select_lex *subq_select_lex)
         Here SUBQ cannot be removed.
       */
       if (!ord->in_field_list)
+      {
         (*ord->item)->walk(&Item::eliminate_subselect_processor, FALSE, NULL);
+        /*
+          Remove from the JOIN::all_fields list any reference to the elements
+          of the eliminated GROUP BY list unless it is 'in_field_list'.
+          This is needed in order not to confuse JOIN::make_aggr_tables_info()
+          when it constructs different structure for execution phase.
+	*/
+        List_iterator<Item> li(subq_select_lex->join->all_fields);
+	Item *item;
+        while ((item= li++))
+	{
+          if (item == *ord->item)
+	    li.remove();
+	}
+      }
     }
     subq_select_lex->join->group_list= NULL;
     subq_select_lex->group_list.empty();
@@ -1982,6 +1998,9 @@ JOIN::optimize_inner()
 
   DEBUG_SYNC(thd, "before_join_optimize");
   THD_STAGE_INFO(thd, stage_optimizing);
+#ifndef DBUG_OFF
+  dbug_join_tab_array_size= 0;
+#endif
 
   // rownum used somewhere in query, no limits and it is derived
   if (unlikely(thd->lex->with_rownum &&
@@ -2011,7 +2030,6 @@ JOIN::optimize_inner()
     /* Merge all mergeable derived tables/views in this SELECT. */
     if (select_lex->handle_derived(thd->lex, DT_MERGE))
       DBUG_RETURN(TRUE);  
-    table_count= select_lex->leaf_tables.elements;
   }
 
   if (select_lex->first_cond_optimization &&
@@ -2058,8 +2076,6 @@ JOIN::optimize_inner()
   }
   
   eval_select_list_used_tables();
-
-  table_count= select_lex->leaf_tables.elements;
 
   if (select_lex->options & OPTION_SCHEMA_TABLE &&
       optimize_schema_tables_memory_usage(select_lex->leaf_tables))
@@ -3280,6 +3296,9 @@ setup_subq_exit:
     {
       if (!(join_tab= (JOIN_TAB*) thd->alloc(sizeof(JOIN_TAB))))
         DBUG_RETURN(1);
+#ifndef DBUG_OFF
+      dbug_join_tab_array_size= 1;
+#endif
       need_tmp= 1;
     }
     if (make_aggr_tables_info())
@@ -3593,6 +3612,7 @@ bool JOIN::make_aggr_tables_info()
   {
     aggr_tables++;
     curr_tab= join_tab + exec_join_tab_cnt();
+    DBUG_ASSERT(curr_tab - join_tab < dbug_join_tab_array_size);
     bzero((void*)curr_tab, sizeof(JOIN_TAB));
     curr_tab->ref.key= -1;
     if (only_const_tables())
@@ -3721,6 +3741,7 @@ bool JOIN::make_aggr_tables_info()
 
       curr_tab++;
       aggr_tables++;
+      DBUG_ASSERT(curr_tab - join_tab < dbug_join_tab_array_size);
       bzero((void*)curr_tab, sizeof(JOIN_TAB));
       curr_tab->ref.key= -1;
 
@@ -6291,7 +6312,11 @@ add_key_field(JOIN *join,
          Field IN ...
       */
       if (field->flags & PART_KEY_FLAG)
-        stat[0].key_dependent|=used_tables;
+      {
+        stat[0].key_dependent|= used_tables;
+        if (field->key_start.bits_set())
+          stat[0].key_start_dependent= 1;
+      }
 
       bool is_const=1;
       for (uint i=0; i<num_values; i++)
@@ -7242,6 +7267,7 @@ bool sort_and_filter_keyuse(THD *thd, DYNAMIC_ARRAY *keyuse,
   use= save_pos= dynamic_element(keyuse,0,KEYUSE*);
   prev= &key_end;
   found_eq_constant= 0;
+  /* Loop over all elements except the last 'key_end' */
   for (i=0 ; i < keyuse->elements-1 ; i++,use++)
   {
     if (!use->is_for_hash_join())
@@ -7635,7 +7661,7 @@ double cost_for_index_read(const THD *thd, const TABLE *table, uint key,
   Adjust cost from table->quick_costs calculated by
   multi_range_read_info_const() to be comparable with cost_for_index_read()
 
-  This functions is needed because best_access_patch doesn't add
+  This functions is needed because best_access_path() doesn't add
   TIME_FOR_COMPARE to it's costs until very late.
   Preferably we should fix so that all costs are comparably.
   (All compared costs should include TIME_FOR_COMPARE for all found
@@ -7699,6 +7725,13 @@ best_access_path(JOIN      *join,
   double best_time=         DBL_MAX;
   double records=           DBL_MAX;
   table_map best_ref_depends_map= 0;
+  /*
+    key_dependent is 0 if all key parts could be used or if there was an
+    EQ_REF table found (which uses all key parts). In other words, we cannot
+    find a better key for the table even if remaining_tables is reduced.
+    Otherwise it's a bitmap of tables that could improve key usage.
+  */
+  table_map key_dependent= 0;
   Range_rowid_filter_cost_info *best_filter= 0;
   double tmp;
   ha_rows rec;
@@ -7750,6 +7783,8 @@ best_access_path(JOIN      *join,
       key_part_map const_part= 0;
       /* The or-null keypart in ref-or-null access: */
       key_part_map ref_or_null_part= 0;
+      key_part_map all_parts= 0;
+
       if (is_hash_join_key_no(key))
       {
         /* 
@@ -7781,15 +7816,16 @@ best_access_path(JOIN      *join,
       do /* For each keypart */
       {
         uint keypart= keyuse->keypart;
-        table_map best_part_found_ref= 0;
+        table_map best_part_found_ref= 0, key_parts_dependent= 0;
         double best_prev_record_reads= DBL_MAX;
-        
+
         do /* For each way to access the keypart */
         {
           /*
             if 1. expression doesn't refer to forward tables
                2. we won't get two ref-or-null's
           */
+          all_parts|= keyuse->keypart_map;
           if (!(remaining_tables & keyuse->used_tables) &&
               (!keyuse->validity_ref || *keyuse->validity_ref) &&
               s->access_from_tables_is_allowed(keyuse->used_tables,
@@ -7798,6 +7834,7 @@ best_access_path(JOIN      *join,
                                      KEY_OPTIMIZE_REF_OR_NULL)))
           {
             found_part|= keyuse->keypart_map;
+            key_parts_dependent= 0;
             if (!(keyuse->used_tables & ~join->const_table_map))
               const_part|= keyuse->keypart_map;
 
@@ -7820,10 +7857,16 @@ best_access_path(JOIN      *join,
             if (keyuse->optimize & KEY_OPTIMIZE_REF_OR_NULL)
               ref_or_null_part |= keyuse->keypart_map;
           }
+          else if (!(found_part & keyuse->keypart_map))
+            key_parts_dependent|= keyuse->used_tables;
+
           loose_scan_opt.add_keyuse(remaining_tables, keyuse);
           keyuse++;
         } while (keyuse->table == table && keyuse->key == key &&
                  keyuse->keypart == keypart);
+        /* If we found a usable key, remember the dependent tables */
+        if (all_parts & 1)
+          key_dependent|= key_parts_dependent;
 	found_ref|= best_part_found_ref;
       } while (keyuse->table == table && keyuse->key == key);
 
@@ -8210,6 +8253,27 @@ best_access_path(JOIN      *join,
     } /* for each key */
     records= best_records;
   }
+  else
+  {
+    /*
+      No usable keys found. However, there may still be an option to use
+      "Range checked for each record" when all depending tables has
+      been read. s->key_dependent tells us which tables these could be and
+      s->key_start_dependent tells us if a first key part was used.
+      s->key_dependent may include more tables than could be used,
+      but this is ok as not having any usable keys is a rare thing and
+      the performance penalty for extra table bits is that
+      best_extension_by_limited_search() would not be able to prune tables
+      earlier.
+      Example query:
+      SELECT * FROM t1,t2 where t1.key1=t2.key1 OR t2.key2<1
+    */
+    if (s->key_start_dependent)
+      key_dependent= s->key_dependent;
+  }
+  /* Check that s->key_dependent contains all used_tables found in s->keyuse */
+  key_dependent&= ~PSEUDO_TABLE_BITS;
+  DBUG_ASSERT((key_dependent & s->key_dependent) == key_dependent);
 
   /* 
     If there is no key to access the table, but there is an equi-join
@@ -8461,6 +8525,8 @@ best_access_path(JOIN      *join,
   pos->use_join_buffer= best_uses_jbuf;
   pos->spl_plan= spl_plan;
   pos->range_rowid_filter_info= best_filter;
+  pos->key_dependent= (best_type == JT_EQ_REF ? (table_map) 0 :
+                       key_dependent & remaining_tables);
 
   loose_scan_opt.save_to_position(s, loose_scan_pos);
 
@@ -8663,6 +8729,10 @@ choose_plan(JOIN *join, table_map join_tables)
   {
     choose_initial_table_order(join);
   }
+  /*
+    Note: constant tables are already in the join prefix. We don't
+    put them into the cur_sj_inner_tables, though.
+  */
   join->cur_sj_inner_tables= 0;
 
   if (straight_join)
@@ -8942,7 +9012,7 @@ determine_search_depth(JOIN *join)
 */
 
 static void
-optimize_straight_join(JOIN *join, table_map join_tables)
+optimize_straight_join(JOIN *join, table_map remaining_tables)
 {
   JOIN_TAB *s;
   uint idx= join->const_tables;
@@ -8960,30 +9030,32 @@ optimize_straight_join(JOIN *join, table_map join_tables)
     Json_writer_object trace_one_table(thd);
     if (unlikely(thd->trace_started()))
     {
-      trace_plan_prefix(join, idx, join_tables);
+      trace_plan_prefix(join, idx, remaining_tables);
       trace_one_table.add_table_name(s);
     }
     /* Find the best access method from 's' to the current partial plan */
-    best_access_path(join, s, join_tables, join->positions, idx,
+    best_access_path(join, s, remaining_tables, join->positions, idx,
                      disable_jbuf, record_count,
                      position, &loose_scan_pos);
 
-    /* compute the cost of the new plan extended with 's' */
+    /* Compute the cost of the new plan extended with 's' */
     record_count= COST_MULT(record_count, position->records_read);
     const double filter_cmp_gain= position->range_rowid_filter_info
       ? position->range_rowid_filter_info->get_cmp_gain(record_count)
       : 0;
-    read_time+= COST_ADD(read_time - filter_cmp_gain,
-                         COST_ADD(position->read_time,
-                                  record_count / TIME_FOR_COMPARE));
-    advance_sj_state(join, join_tables, idx, &record_count, &read_time,
-                     &loose_scan_pos);
+    read_time= COST_ADD(read_time,
+                        COST_ADD(position->read_time -
+                                 filter_cmp_gain,
+                                 record_count /
+                                 TIME_FOR_COMPARE));
+    optimize_semi_joins(join, remaining_tables, idx, &record_count, &read_time,
+                        &loose_scan_pos);
 
-    join_tables&= ~(s->table->map);
+    remaining_tables&= ~(s->table->map);
     double pushdown_cond_selectivity= 1.0;
     if (use_cond_selectivity > 1)
       pushdown_cond_selectivity= table_cond_selectivity(join, idx, s,
-                                                        join_tables);
+                                                        remaining_tables);
     position->cond_selectivity= pushdown_cond_selectivity;
     ++idx;
   }
@@ -9157,6 +9229,13 @@ greedy_search(JOIN      *join,
     /* This has been already checked by best_extension_by_limited_search */
     DBUG_ASSERT(!is_interleave_error);
 
+    /*
+      Also, update the semi-join optimization state. Information about the
+      picked semi-join operation is in best_pos->...picker, but we need to
+      update the global state in the JOIN object, too.
+    */
+    if (!join->emb_sjm_nest)
+      update_sj_state(join, best_table, idx, remaining_tables);
 
     /* find the position of 'best_table' in 'join->best_ref' */
     best_idx= idx;
@@ -9164,8 +9243,13 @@ greedy_search(JOIN      *join,
     while (pos && best_table != pos)
       pos= join->best_ref[++best_idx];
     DBUG_ASSERT((pos != NULL)); // should always find 'best_table'
-    /* move 'best_table' at the first free position in the array of joins */
-    swap_variables(JOIN_TAB*, join->best_ref[idx], join->best_ref[best_idx]);
+    /*
+      move 'best_table' at the first free position in the array of joins,
+      keeping the sorted table order intact
+    */
+    memmove(join->best_ref + idx + 1, join->best_ref + idx,
+            sizeof(JOIN_TAB*) * (best_idx - idx));
+    join->best_ref[idx]= best_table;
 
     /* compute the cost of the new plan extended with 'best_table' */
     record_count= COST_MULT(record_count, join->positions[idx].records_read);
@@ -9384,10 +9468,7 @@ double table_multi_eq_cond_selectivity(JOIN *join, uint idx, JOIN_TAB *s,
   double sel= 1.0;
   COND_EQUAL *cond_equal= join->cond_equal;
 
-  if (!cond_equal || !cond_equal->current_level.elements)
-    return sel;
-
-   if (!s->keyuse)
+  if (!cond_equal || !cond_equal->current_level.elements || !s->keyuse)
     return sel;
 
   Item_equal *item_equal;
@@ -9912,7 +9993,7 @@ best_extension_by_limited_search(JOIN      *join,
      'join' is a partial plan with lower cost than the best plan so far,
      so continue expanding it further with the tables in 'remaining_tables'.
   */
-  JOIN_TAB *s;
+  JOIN_TAB *s, **pos;
   double best_record_count= DBL_MAX;
   double best_read_time=    DBL_MAX;
   bool disable_jbuf= join->thd->variables.join_cache_level == 0;
@@ -9932,7 +10013,7 @@ best_extension_by_limited_search(JOIN      *join,
   DBUG_EXECUTE("opt", print_plan(join, idx, record_count, read_time, read_time,
                                 "part_plan"););
 
-  /* 
+  /*
     If we are searching for the execution plan of a materialized semi-join nest
     then allowed_tables contains bits only for the tables from this nest.
   */
@@ -9940,10 +10021,12 @@ best_extension_by_limited_search(JOIN      *join,
   if (join->emb_sjm_nest)
     allowed_tables= join->emb_sjm_nest->sj_inner_tables & ~join->const_table_map;
 
-  for (JOIN_TAB **pos= join->best_ref + idx ; (s= *pos) ; pos++)
+  for (pos= join->best_ref + idx ; (s= *pos) ; pos++)
   {
     table_map real_table_bit= s->table->map;
     DBUG_ASSERT(remaining_tables & real_table_bit);
+
+    swap_variables(JOIN_TAB*, join->best_ref[idx], *pos);
 
     if ((allowed_tables & real_table_bit) &&
         !(remaining_tables & s->dependent) &&
@@ -9965,24 +10048,24 @@ best_extension_by_limited_search(JOIN      *join,
       best_access_path(join, s, remaining_tables, join->positions, idx,
                        disable_jbuf, record_count, position, &loose_scan_pos);
 
-      /* Compute the cost of extending the plan with 's' */
+      /* Compute the cost of the new plan extended with 's' */
       current_record_count= COST_MULT(record_count, position->records_read);
       const double filter_cmp_gain= position->range_rowid_filter_info
         ? position->range_rowid_filter_info->get_cmp_gain(current_record_count)
         : 0;
-      current_read_time=COST_ADD(read_time,
-                                 COST_ADD(position->read_time -
-                                          filter_cmp_gain,
-                                          current_record_count /
-                                          TIME_FOR_COMPARE));
+      current_read_time= COST_ADD(read_time,
+                                  COST_ADD(position->read_time -
+                                           filter_cmp_gain,
+                                           current_record_count /
+                                           TIME_FOR_COMPARE));
 
       if (unlikely(thd->trace_started()))
       {
         trace_one_table.add("rows_for_plan", current_record_count);
         trace_one_table.add("cost_for_plan", current_read_time);
       }
-      advance_sj_state(join, remaining_tables, idx, &current_record_count,
-                       &current_read_time, &loose_scan_pos);
+      optimize_semi_joins(join, remaining_tables, idx, &current_record_count,
+                          &current_read_time, &loose_scan_pos);
 
       /* Expand only partial plans with lower cost than the best QEP so far */
       if (current_read_time >= join->best_read)
@@ -10009,11 +10092,18 @@ best_extension_by_limited_search(JOIN      *join,
             (idx == join->const_tables &&  // 's' is the first table in the QEP
             s->table == join->sort_by_table))
         {
+          /*
+            Store the current record count and cost as the best
+            possible cost at this level if the following holds:
+            - It's the lowest record number and cost so far
+              - There is no remaing table that could improve index usage
+                or we found an EQ_REF or REF key with less than 2
+                matching records (good enough).
+          */
           if (best_record_count >= current_record_count &&
               best_read_time >= current_read_time &&
-              /* TODO: What is the reasoning behind this condition? */
-              (!(s->key_dependent & allowed_tables & remaining_tables) ||
-               join->positions[idx].records_read < 2.0))
+              (!(position->key_dependent & allowed_tables) ||
+               position->records_read < 2.0))
           {
             best_record_count= current_record_count;
             best_read_time=    current_read_time;
@@ -10057,7 +10147,6 @@ best_extension_by_limited_search(JOIN      *join,
           allowed_tables)
       {
         /* Recursively expand the current partial plan */
-        swap_variables(JOIN_TAB*, join->best_ref[idx], *pos);
         Json_writer_array trace_rest(thd, "rest_of_plan");
         best_res=
           best_extension_by_limited_search(join,
@@ -10070,8 +10159,7 @@ best_extension_by_limited_search(JOIN      *join,
                                            prune_level,
                                            use_cond_selectivity);
         if ((int) best_res < (int) SEARCH_OK)
-          DBUG_RETURN(best_res);                // Abort
-        swap_variables(JOIN_TAB*, join->best_ref[idx], *pos);
+          goto end;                             // Return best_res
         if (best_res == SEARCH_FOUND_EDGE &&
             check_if_edge_table(join->positions+ idx,
                                 pushdown_cond_selectivity) !=
@@ -10116,11 +10204,27 @@ best_extension_by_limited_search(JOIN      *join,
       if (best_res == SEARCH_FOUND_EDGE)
       {
         trace_one_table.add("pruned_by_hanging_leaf", true);
-        DBUG_RETURN(best_res);
+        goto end;
       }
     }
   }
-  DBUG_RETURN(SEARCH_OK);
+  best_res= SEARCH_OK;
+
+end:
+  /* Restore original table order */
+  if (!*pos)
+    pos--;                                      // Revert last pos++ in for loop
+  if (pos != join->best_ref + idx)
+  {
+    JOIN_TAB *tmp= join->best_ref[idx];
+    uint elements= (uint) (pos - (join->best_ref + idx));
+
+    memmove((void*) (join->best_ref + idx),
+            (void*) (join->best_ref + idx + 1),
+            elements * sizeof(JOIN_TAB*));
+    *pos= tmp;
+  }
+  DBUG_RETURN(best_res);
 }
 
 
@@ -10791,6 +10895,21 @@ bool JOIN::get_best_combination()
   fix_semijoin_strategies_for_picked_join_order(this);
   top_join_tab_count= get_number_of_tables_at_top_level(this);
 
+#ifndef DBUG_OFF
+  dbug_join_tab_array_size= top_join_tab_count + aggr_tables;
+#endif
+  /*
+    NOTE: The above computation of aggr_tables can produce wrong result because some
+    of the variables it uses may change their values after we leave this function.
+    Known examples:
+     - Dangerous: using_outer_summary_function=false at this point. Added
+       DBUG_ASSERT below to demonstrate. Can this cause us to allocate less
+       space than we would need?
+     - Not dangerous: select_distinct can be true here but be assigned false
+       afterwards.
+  */
+  aggr_tables= 2;
+  DBUG_ASSERT(!tmp_table_param.using_outer_summary_function);
   if (!(join_tab= (JOIN_TAB*) thd->alloc(sizeof(JOIN_TAB)*
                                         (top_join_tab_count + aggr_tables))))
     DBUG_RETURN(TRUE);
@@ -12520,6 +12639,7 @@ bool generate_derived_keys_for_table(KEYUSE *keyuse, uint count, uint keys)
                                (uchar *) &first_keyuse))
 
       {
+        JOIN_TAB *tab;
         first_keyuse= save_first_keyuse;
         if (table->add_tmp_key(table->s->keys, parts, 
                                get_next_field_for_derived_key, 
@@ -12527,6 +12647,9 @@ bool generate_derived_keys_for_table(KEYUSE *keyuse, uint count, uint keys)
                                FALSE))
           return TRUE;
         table->reginfo.join_tab->keys.set_bit(table->s->keys);
+        tab= table->reginfo.join_tab;
+        for (uint i=0; i < parts; i++)
+          tab->key_dependent|= save_first_keyuse[i].used_tables;
       }
       else
       {
@@ -14308,7 +14431,6 @@ void JOIN::cleanup(bool full)
     /* Free the original optimized join created for the group_by_handler */
     join_tab= original_join_tab;
     original_join_tab= 0;
-    table_count= original_table_count;
   }
 
   if (join_tab)
@@ -29889,11 +30011,12 @@ bool build_notnull_conds_for_range_scans(JOIN *join, Item *cond,
 
   DBUG_ENTER("build_notnull_conds_for_range_scans");
 
-  for (JOIN_TAB *s= join->join_tab + join->const_tables ;
+  for (JOIN_TAB *s= join->join_tab;
        s < join->join_tab + join->table_count ; s++)
   {
     /* Clear all needed bitmaps to mark found fields */
-    if (allowed & s->table->map)
+    if ((allowed & s->table->map) &&
+        !(s->table->map && join->const_table_map))
       bitmap_clear_all(&s->table->tmp_set);
   }
 
@@ -29908,17 +30031,18 @@ bool build_notnull_conds_for_range_scans(JOIN *join, Item *cond,
     For each table t from 'allowed' build a conjunction of NOT NULL predicates
     constructed for all found fields if they are included in some indexes.
     If the construction of the conjunction succeeds attach the formula to
-    t->table->notnull_cond. The condition will be used to look for complementary
-    range scans.
+    t->table->notnull_cond. The condition will be used to look for
+    complementary range scans.
   */
-  for (JOIN_TAB *s= join->join_tab + join->const_tables ;
+  for (JOIN_TAB *s= join->join_tab ;
        s < join->join_tab + join->table_count ; s++)
   {
     TABLE *tab= s->table;
     List<Item> notnull_list;
     Item *notnull_cond= 0;
 
-    if (!(allowed & tab->map))
+    if (!(allowed & tab->map) ||
+        (s->table->map && join->const_table_map))
       continue;
 
     for (Field** field_ptr= tab->field; *field_ptr; field_ptr++)

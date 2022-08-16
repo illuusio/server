@@ -245,8 +245,7 @@ ulong innobase_read_io_threads = 4;
 ulong innobase_write_io_threads = 4;
 
 longlong innobase_page_size = (1LL << 14); /* 16KB */
-char *innobase_buffer_pool_filename = NULL;
-char *buffer_pool_filename = NULL;
+char*	innobase_buffer_pool_filename = NULL;
 
 /* The default values for the following char* start-up parameters
 are determined in innobase_init below: */
@@ -341,7 +340,6 @@ uint opt_lock_wait_timeout = 0;
 uint opt_lock_wait_threshold = 0;
 uint opt_debug_sleep_before_unlock = 0;
 uint opt_safe_slave_backup_timeout = 0;
-uint opt_max_binlogs = UINT_MAX;
 
 const char *opt_history = NULL;
 
@@ -584,8 +582,8 @@ void CorruptedPages::zero_out_free_pages()
              space_it->second.pages.begin();
          page_it != space_it->second.pages.end(); ++page_it)
     {
-      bool is_free= fseg_page_is_free(space, *page_it);
-      if (!is_free) {
+      if (fseg_page_is_allocated(space, *page_it))
+      {
         space_info_t &space_info = non_free_pages[space_id];
         space_info.pages.insert(*page_it);
         if (space_info.space_name.empty())
@@ -846,7 +844,6 @@ static void backup_file_op(ulint space_id, int type,
 	case FILE_MODIFY:
 		ddl_tracker.insert_defer_id(
 			space_id, filename_to_spacename(name, len));
-		msg("DDL tracking : modify %zu \"%.*s\"", space_id, int(len), name);
 		break;
 	case FILE_RENAME:
 	{
@@ -896,7 +893,6 @@ static void backup_file_op_fail(ulint space_id, int type,
 				filename_to_spacename(name, len).c_str());
 		break;
 	case FILE_MODIFY:
-		msg("DDL tracking : modify %zu \"%.*s\"", space_id, int(len), name);
 		break;
 	case FILE_RENAME:
 		msg("DDL tracking : rename %zu \"%.*s\",\"%.*s\"",
@@ -1072,8 +1068,7 @@ enum options_xtrabackup
   OPT_XTRA_CHECK_PRIVILEGES,
   OPT_XTRA_MYSQLD_ARGS,
   OPT_XB_IGNORE_INNODB_PAGE_CORRUPTION,
-  OPT_INNODB_FORCE_RECOVERY,
-  OPT_MAX_BINLOGS
+  OPT_INNODB_FORCE_RECOVERY
 };
 
 struct my_option xb_client_options[]= {
@@ -1469,17 +1464,6 @@ struct my_option xb_client_options[]= {
      "corrupted pages and can not be considered as consistent.",
      &opt_log_innodb_page_corruption, &opt_log_innodb_page_corruption, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
-
-    {"sst_max_binlogs", OPT_MAX_BINLOGS,
-     "Number of recent binary logs to be included in the backup. "
-     "Setting this parameter to zero normally disables transmission "
-     "of binary logs to the joiner nodes during SST using Galera. "
-     "But sometimes a single current binlog can still be transmitted "
-     "to the joiner even with sst_max_binlogs=0, because it is "
-     "required for Galera to work properly with GTIDs support.",
-     (G_PTR *) &opt_max_binlogs,
-     (G_PTR *) &opt_max_binlogs, 0, GET_UINT, OPT_ARG,
-     UINT_MAX, 0, UINT_MAX, 0, 1, 0},
 
 #define MYSQL_CLIENT
 #include "sslopt-longopts.h"
@@ -4614,31 +4598,31 @@ fail:
 reread_log_header:
 	dberr_t err = recv_find_max_checkpoint(&max_cp_field);
 
-	if (err != DB_SUCCESS) {
+	if (err != DB_SUCCESS)
 		msg("Error: cannot read redo log header");
-unlock_and_fail:
-		mysql_mutex_unlock(&log_sys.mutex);
-	}
-
-	if (log_sys.log.format == 0) {
+	else if (log_sys.log.format == 0) {
 		msg("Error: cannot process redo log before MariaDB 10.2.2");
-		goto unlock_and_fail;
+		err = DB_ERROR;
 	}
+	else {
+		byte* buf = log_sys.checkpoint_buf;
+		checkpoint_lsn_start = log_sys.log.get_lsn();
+		checkpoint_no_start = log_sys.next_checkpoint_no;
 
-	byte* buf = log_sys.checkpoint_buf;
-	checkpoint_lsn_start = log_sys.log.get_lsn();
-	checkpoint_no_start = log_sys.next_checkpoint_no;
+		log_sys.log.read(max_cp_field, {buf, OS_FILE_LOG_BLOCK_SIZE});
 
-	log_sys.log.read(max_cp_field, {buf, OS_FILE_LOG_BLOCK_SIZE});
-
-	if (checkpoint_no_start != mach_read_from_8(buf + LOG_CHECKPOINT_NO)
-	    || checkpoint_lsn_start
-	    != mach_read_from_8(buf + LOG_CHECKPOINT_LSN)
-	    || log_sys.log.get_lsn_offset()
-	    != mach_read_from_8(buf + LOG_CHECKPOINT_OFFSET))
-		goto reread_log_header;
-
+		if (checkpoint_no_start
+		    != mach_read_from_8(buf + LOG_CHECKPOINT_NO)
+		    || checkpoint_lsn_start
+		    != mach_read_from_8(buf + LOG_CHECKPOINT_LSN)
+		    || log_sys.log.get_lsn_offset()
+		    != mach_read_from_8(buf + LOG_CHECKPOINT_OFFSET))
+			goto reread_log_header;
+	}
 	mysql_mutex_unlock(&log_sys.mutex);
+
+	if (err != DB_SUCCESS)
+		goto fail;
 
 	xtrabackup_init_datasinks();
 
@@ -6312,44 +6296,6 @@ static bool check_all_privileges()
 	return true;
 }
 
-static
-void
-xb_init_buffer_pool(const char * filename)
-{
-	if (filename &&
-#ifdef _WIN32
-		(filename[0] == '/'  ||
-		 filename[0] == '\\' ||
-		 strchr(filename, ':')))
-#else
-		filename[0] == FN_LIBCHAR)
-#endif
-	{
-		buffer_pool_filename = strdup(filename);
-	} else {
-		char filepath[FN_REFLEN];
-		char *dst_dir =
-			(innobase_data_home_dir && *innobase_data_home_dir) ?
-			 innobase_data_home_dir : mysql_data_home;
-		size_t dir_length;
-		if (dst_dir && *dst_dir) {
-			dir_length = strlen(dst_dir);
-			while (IS_TRAILING_SLASH(dst_dir, dir_length)) {
-				dir_length--;
-			}
-			memcpy(filepath, dst_dir, dir_length);
-		}
-		else {
-			filepath[0] = '.';
-			dir_length = 1;
-		}
-		snprintf(filepath + dir_length,
-			sizeof(filepath) - dir_length, "%c%s", FN_LIBCHAR,
-			filename ? filename : "ib_buffer_pool");
-		buffer_pool_filename = strdup(filepath);
-	}
-}
-
 bool
 xb_init()
 {
@@ -6415,15 +6361,10 @@ xb_init()
 			return(false);
 		}
 
-		xb_init_buffer_pool(buffer_pool_filename);
-
 		if (opt_check_privileges && !check_all_privileges()) {
 			return(false);
 		}
-
 		history_start_time = time(NULL);
-	} else {
-		xb_init_buffer_pool(innobase_buffer_pool_filename);
 	}
 
 	return(true);
@@ -6810,8 +6751,6 @@ int main(int argc, char **argv)
 	cleanup_errmsgs();
 	free_error_messages();
 	mysql_mutex_destroy(&LOCK_error_log);
-
-	free(buffer_pool_filename);
 
 	if (status == EXIT_SUCCESS) {
 		msg("completed OK!");

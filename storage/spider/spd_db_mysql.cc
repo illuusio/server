@@ -6695,16 +6695,6 @@ int spider_db_mbase_util::open_item_func(
       last_str = SPIDER_SQL_CLOSE_PAREN_STR;
       last_str_length = SPIDER_SQL_CLOSE_PAREN_LEN;
       break;
-#ifdef MARIADB_BASE_VERSION
-    case Item_func::XOR_FUNC:
-#else
-    case Item_func::COND_XOR_FUNC:
-#endif
-      if (str)
-        str->length(str->length() - SPIDER_SQL_OPEN_PAREN_LEN);
-      DBUG_RETURN(
-        spider_db_open_item_cond((Item_cond *) item_func, spider, str,
-          alias, alias_length, dbton_id, use_fields, fields));
     case Item_func::TRIG_COND_FUNC:
       DBUG_RETURN(ER_SPIDER_COND_SKIP_NUM);
     case Item_func::GUSERVAR_FUNC:
@@ -6789,6 +6779,7 @@ int spider_db_mbase_util::open_item_func(
     case Item_func::LE_FUNC:
     case Item_func::GE_FUNC:
     case Item_func::GT_FUNC:
+    case Item_func::XOR_FUNC:
       if (str)
       {
         LEX_CSTRING org_func_name= item_func->func_name_cstring();
@@ -7253,25 +7244,13 @@ int spider_db_mbase_util::append_table(
     } else if (*current_pos > 0 && !first)
     {
       DBUG_PRINT("info",("spider no condition"));
-      if (top_down)
+      if (str)
       {
-        if (str)
+        if (str->reserve(SPIDER_SQL_JOIN_LEN))
         {
-          if (str->reserve(SPIDER_SQL_JOIN_LEN))
-          {
-            DBUG_RETURN(HA_ERR_OUT_OF_MEM);
-          }
-          str->q_append(SPIDER_SQL_JOIN_STR, SPIDER_SQL_JOIN_LEN);
+          DBUG_RETURN(HA_ERR_OUT_OF_MEM);
         }
-      } else {
-        if (str)
-        {
-          if (str->reserve(SPIDER_SQL_COMMA_LEN))
-          {
-            DBUG_RETURN(HA_ERR_OUT_OF_MEM);
-          }
-          str->q_append(SPIDER_SQL_COMMA_STR, SPIDER_SQL_COMMA_LEN);
-        }
+        str->q_append(SPIDER_SQL_JOIN_STR, SPIDER_SQL_JOIN_LEN);
       }
     }
 
@@ -9809,7 +9788,6 @@ int spider_mbase_handler::append_insert(
   spider_string *str,
   int link_idx
 ) {
-  SPIDER_SHARE *share = spider->share;
   DBUG_ENTER("spider_mbase_handler::append_insert");
   direct_insert_kind = SPIDER_SQL_DIRECT_INSERT_KIND_INSERT;
   if (
@@ -9835,15 +9813,6 @@ int spider_mbase_handler::append_insert(
     if (str->reserve(SPIDER_SQL_LOW_PRIORITY_LEN))
       DBUG_RETURN(HA_ERR_OUT_OF_MEM);
     str->q_append(SPIDER_SQL_LOW_PRIORITY_STR, SPIDER_SQL_LOW_PRIORITY_LEN);
-  }
-  else if (spider->wide_handler->insert_delayed)
-  {
-    if (share->internal_delayed)
-    {
-      if (str->reserve(SPIDER_SQL_SQL_DELAYED_LEN))
-        DBUG_RETURN(HA_ERR_OUT_OF_MEM);
-      str->q_append(SPIDER_SQL_SQL_DELAYED_STR, SPIDER_SQL_SQL_DELAYED_LEN);
-    }
   }
   else if (
     spider->wide_handler->lock_type >= TL_WRITE &&
@@ -16824,12 +16793,6 @@ int spider_mbase_copy_table::append_insert_str(
     if (sql.reserve(SPIDER_SQL_LOW_PRIORITY_LEN))
       DBUG_RETURN(HA_ERR_OUT_OF_MEM);
     sql.q_append(SPIDER_SQL_LOW_PRIORITY_STR, SPIDER_SQL_LOW_PRIORITY_LEN);
-  }
-  else if (insert_flg & SPIDER_DB_INSERT_DELAYED)
-  {
-    if (sql.reserve(SPIDER_SQL_SQL_DELAYED_LEN))
-      DBUG_RETURN(HA_ERR_OUT_OF_MEM);
-    sql.q_append(SPIDER_SQL_SQL_DELAYED_STR, SPIDER_SQL_SQL_DELAYED_LEN);
   }
   else if (insert_flg & SPIDER_DB_INSERT_HIGH_PRIORITY)
   {

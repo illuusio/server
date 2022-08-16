@@ -41,6 +41,7 @@ Created 11/5/1995 Heikki Tuuri
 #include "os0file.h"
 #include "srv0start.h"
 #include "srv0srv.h"
+#include "log.h"
 
 /** If there are buf_pool.curr_size per the number below pending reads, then
 read-ahead is not done: this is to prevent flooding the buffer pool with
@@ -319,28 +320,17 @@ nothing_read:
 				       ? IORequest::READ_SYNC
 				       : IORequest::READ_ASYNC),
 			     page_id.page_no() * len, len, dst, bpage);
-	*err= fio.err;
+	*err = fio.err;
 
 	if (UNIV_UNLIKELY(fio.err != DB_SUCCESS)) {
-		if (!sync || fio.err == DB_TABLESPACE_DELETED
-		    || fio.err == DB_IO_ERROR) {
-			buf_pool.corrupted_evict(bpage);
-			return false;
-		}
-
-		ut_error;
-	}
-
-	if (sync) {
+		ut_d(auto n=) buf_pool.n_pend_reads--;
+		ut_ad(n > 0);
+		buf_pool.corrupted_evict(bpage, buf_page_t::READ_FIX);
+	} else if (sync) {
 		thd_wait_end(NULL);
-
 		/* The i/o was already completed in space->io() */
 		*err = bpage->read_complete(*fio.node);
 		space->release();
-
-		if (*err != DB_SUCCESS) {
-			return false;
-		}
 	}
 
 	return true;
@@ -487,26 +477,6 @@ void buf_read_page_background(fil_space_t *space, const page_id_t page_id,
 	if (buf_read_page_low(&err, space, false, BUF_READ_ANY_PAGE,
 			      page_id, zip_size, false)) {
 		srv_stats.buf_pool_reads.add(1);
-	}
-
-	switch (err) {
-	case DB_SUCCESS:
-	case DB_ERROR:
-		break;
-	case DB_TABLESPACE_DELETED:
-		ib::info() << "trying to read page " << page_id
-			<< " in the background"
-			" in a non-existing or being-dropped tablespace";
-		break;
-	case DB_PAGE_CORRUPTED:
-	case DB_DECRYPTION_FAILED:
-		ib::error()
-			<< "Background Page read failed to "
-			"read or decrypt " << page_id;
-		break;
-	default:
-		ib::fatal() << "Error " << err << " in background read of "
-			<< page_id;
 	}
 
 	/* We do not increment number of I/O operations used for LRU policy
@@ -685,6 +655,13 @@ failed:
   return count;
 }
 
+/** @return whether a page has been freed */
+inline bool fil_space_t::is_freed(uint32_t page)
+{
+  std::lock_guard<std::mutex> freed_lock(freed_range_mutex);
+  return freed_ranges.contains(page);
+}
+
 /** Issues read requests for pages which recovery wants to read in.
 @param[in]	space_id	tablespace id
 @param[in]	page_nos	array of page numbers to read, with the
@@ -704,7 +681,7 @@ void buf_read_recv_pages(ulint space_id, const uint32_t* page_nos, ulint n)
 	for (ulint i = 0; i < n; i++) {
 
 		/* Ignore if the page already present in freed ranges. */
-		if (space->freed_ranges.contains(page_nos[i])) {
+		if (space->is_freed(page_nos[i])) {
 			continue;
 		}
 
@@ -735,12 +712,13 @@ void buf_read_recv_pages(ulint space_id, const uint32_t* page_nos, ulint n)
 				  BUF_READ_ANY_PAGE, cur_page_id, zip_size,
 				  true);
 
-		if (err == DB_DECRYPTION_FAILED || err == DB_PAGE_CORRUPTED) {
-			ib::error() << "Recovery failed to read or decrypt "
-				<< cur_page_id;
+		if (err != DB_SUCCESS) {
+			sql_print_error("InnoDB: Recovery failed to read page "
+					UINT32PF " from %s",
+					cur_page_id.page_no(),
+					space->chain.start->name);
 		}
 	}
-
 
         DBUG_PRINT("ib_buf", ("recovery read (%u pages) for %s", n,
 			      space->chain.start->name));

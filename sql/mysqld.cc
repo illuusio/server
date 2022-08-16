@@ -388,7 +388,6 @@ my_bool opt_show_slave_auth_info;
 my_bool opt_log_slave_updates= 0;
 my_bool opt_replicate_annotate_row_events= 0;
 my_bool opt_mysql56_temporal_format=0, strict_password_validation= 1;
-my_bool opt_explicit_defaults_for_timestamp= 0;
 char *opt_slave_skip_errors;
 char *opt_slave_transaction_retry_errors;
 
@@ -1827,6 +1826,13 @@ extern "C" sig_handler print_signal_warning(int sig)
 #endif
 }
 
+#ifdef _WIN32
+typedef void (*report_svc_status_t)(DWORD current_state, DWORD win32_exit_code,
+                                    DWORD wait_hint);
+static void dummy_svc_status(DWORD, DWORD, DWORD) {}
+static report_svc_status_t my_report_svc_status= dummy_svc_status;
+#endif
+
 #ifndef EMBEDDED_LIBRARY
 extern "C" void unireg_abort(int exit_code)
 {
@@ -1871,13 +1877,6 @@ extern "C" void unireg_abort(int exit_code)
   DBUG_PRINT("quit",("done with cleanup in unireg_abort"));
   mysqld_exit(exit_code);
 }
-
-#ifdef _WIN32
-typedef void (*report_svc_status_t)(DWORD current_state, DWORD win32_exit_code,
-                                    DWORD wait_hint);
-static void dummy_svc_status(DWORD, DWORD, DWORD) {}
-static report_svc_status_t my_report_svc_status= dummy_svc_status;
-#endif
 
 static void mysqld_exit(int exit_code)
 {
@@ -4249,15 +4248,15 @@ static int init_common_variables()
   /* check log options and issue warnings if needed */
   if (opt_log && opt_logname && *opt_logname &&
       !(log_output_options & (LOG_FILE | LOG_NONE)))
-    sql_print_warning("Although a path was specified for the "
-                      "--log option, log tables are used. "
+    sql_print_warning("Although a general log file was specified, "
+                      "log tables are used. "
                       "To enable logging to files use the --log-output option.");
 
   if (global_system_variables.sql_log_slow && opt_slow_logname &&
       *opt_slow_logname &&
       !(log_output_options & (LOG_FILE | LOG_NONE)))
-    sql_print_warning("Although a path was specified for the "
-                      "--log-slow-queries option, log tables are used. "
+    sql_print_warning("Although a slow query log file was specified, "
+                      "log tables are used. "
                       "To enable logging to files use the --log-output=file option.");
 
   if (!opt_logname || !*opt_logname)
@@ -4564,6 +4563,7 @@ void ssl_acceptor_stats_update(int sslaccept_ret)
 
 static void init_ssl()
 {
+#if !defined(EMBEDDED_LIBRARY)
 /*
   Not need to check require_secure_transport on the Linux,
   because it always has Unix domain sockets that are secure:
@@ -4579,7 +4579,7 @@ static void init_ssl()
     unireg_abort(1);
   }
 #endif
-#if defined(HAVE_OPENSSL) && !defined(EMBEDDED_LIBRARY)
+#if defined(HAVE_OPENSSL)
   if (opt_use_ssl)
   {
     enum enum_ssl_init_error error= SSL_INITERR_NOERROR;
@@ -4620,7 +4620,8 @@ static void init_ssl()
   }
   if (des_key_file)
     load_des_key_file(des_key_file);
-#endif /* HAVE_OPENSSL && ! EMBEDDED_LIBRARY */
+#endif /* HAVE_OPENSSL */
+#endif /* !EMBEDDED_LIBRARY */
 }
 
 /* Reinitialize SSL (FLUSH SSL) */

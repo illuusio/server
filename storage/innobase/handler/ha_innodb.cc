@@ -1476,7 +1476,8 @@ static void innodb_drop_database(handlerton*, char *path)
     "WHILE 1 = 1 LOOP\n"
     "  FETCH tab INTO tid,name;\n"
     "  IF (SQL % NOTFOUND) THEN EXIT; END IF;\n"
-    "  IF SUBSTR(name, 0, LENGTH(:db)) <> :db THEN EXIT; END IF;\n"
+    "  IF TO_BINARY(SUBSTR(name, 0, LENGTH(:db))) <> TO_BINARY(:db)"
+    " THEN EXIT; END IF;\n"
     "  DELETE FROM SYS_COLUMNS WHERE TABLE_ID=tid;\n"
     "  DELETE FROM SYS_TABLES WHERE ID=tid;\n"
     "  OPEN idx;\n"
@@ -1533,20 +1534,27 @@ static void innodb_drop_database(handlerton*, char *path)
     we will "manually" purge the tablespaces that belong to the
     records that we delete-marked. */
 
-    mem_heap_t *heap= mem_heap_create(100);
-    dtuple_t *tuple= dtuple_create(heap, 1);
-    dfield_t *dfield= dtuple_get_nth_field(tuple, 0);
+    dfield_t dfield;
+    dtuple_t tuple{
+      0,1,1,&dfield,0,nullptr
+#ifdef UNIV_DEBUG
+      , DATA_TUPLE_MAGIC_N
+#endif
+    };
     dict_index_t* sys_index= UT_LIST_GET_FIRST(dict_sys.sys_tables->indexes);
     btr_pcur_t pcur;
     namebuf[len++]= '/';
-    dfield_set_data(dfield, namebuf, len);
-    dict_index_copy_types(tuple, sys_index, 1);
+    dfield_set_data(&dfield, namebuf, len);
+    dict_index_copy_types(&tuple, sys_index, 1);
     std::vector<pfs_os_file_t> to_close;
     mtr_t mtr;
     mtr.start();
-    for (btr_pcur_open_on_user_rec(sys_index, tuple, PAGE_CUR_GE,
+    err= btr_pcur_open_on_user_rec(sys_index, &tuple, PAGE_CUR_GE,
                                    BTR_SEARCH_LEAF, &pcur, &mtr);
-         btr_pcur_is_on_user_rec(&pcur);
+    if (err != DB_SUCCESS)
+      goto err_exit;
+
+    for (; btr_pcur_is_on_user_rec(&pcur);
          btr_pcur_move_to_next_user_rec(&pcur, &mtr))
     {
       const rec_t *rec= btr_pcur_get_rec(&pcur);
@@ -1587,8 +1595,8 @@ static void innodb_drop_database(handlerton*, char *path)
           to_close.emplace_back(detached);
       }
     }
+  err_exit:
     mtr.commit();
-    mem_heap_free(heap);
     for (pfs_os_file_t detached : to_close)
       os_file_close(detached);
     /* Any changes must be persisted before we return. */
@@ -2067,8 +2075,10 @@ static void drop_garbage_tables_after_restore()
   ut_d(purge_sys.stop_FTS());
 
   mtr.start();
-  btr_pcur_open_at_index_side(true, dict_sys.sys_tables->indexes.start,
-                              BTR_SEARCH_LEAF, &pcur, true, 0, &mtr);
+  if (btr_pcur_open_at_index_side(true, dict_sys.sys_tables->indexes.start,
+                                  BTR_SEARCH_LEAF, &pcur, true, 0, &mtr) !=
+      DB_SUCCESS)
+    goto all_fail;
   for (;;)
   {
     btr_pcur_move_to_next_user_rec(&pcur, &mtr);
@@ -2152,9 +2162,11 @@ fail:
       os_file_close(d);
 
     mtr.start();
-    pcur.restore_position(BTR_SEARCH_LEAF, &mtr);
+    if (pcur.restore_position(BTR_SEARCH_LEAF, &mtr) == btr_pcur_t::CORRUPTED)
+      break;
   }
 
+all_fail:
   mtr.commit();
   trx->free();
   ut_free(pcur.old_rec_buf);
@@ -2278,6 +2290,7 @@ convert_error_code_to_mysql(
 						code should be introduced */
 
 	case DB_CORRUPTION:
+	case DB_PAGE_CORRUPTED:
 		return(HA_ERR_CRASHED);
 
 	case DB_OUT_OF_FILE_SPACE:
@@ -6641,7 +6654,8 @@ innobase_mysql_fts_get_token(
 
 	ulint	mwc = 0;
 	ulint	length = 0;
-
+	bool	reset_token_str = false;
+reset:
 	token->f_str = const_cast<byte*>(doc);
 
 	while (doc < end) {
@@ -6651,6 +6665,9 @@ innobase_mysql_fts_get_token(
 		mbl = cs->ctype(&ctype, (uchar*) doc, (uchar*) end);
 		if (true_word_char(ctype, *doc)) {
 			mwc = 0;
+		} else if (*doc == '\'' && length == 1) {
+			/* Could be apostrophe */
+			reset_token_str = true;
 		} else if (!misc_word_char(*doc) || mwc) {
 			break;
 		} else {
@@ -6660,6 +6677,14 @@ innobase_mysql_fts_get_token(
 		++length;
 
 		doc += mbl > 0 ? mbl : (mbl < 0 ? -mbl : 1);
+		if (reset_token_str) {
+			/* Reset the token if the single character
+			followed by apostrophe */
+			mwc = 0;
+			length = 0;
+			reset_token_str = false;
+			goto reset;
+		}
 	}
 
 	token->f_len = (uint) (doc - token->f_str) - mwc;
@@ -7452,9 +7477,12 @@ ha_innobase::build_template(
 
 	ulint num_v = 0;
 
-	if ((active_index != MAX_KEY
-	     && active_index == pushed_idx_cond_keyno)
-	    || (pushed_rowid_filter && rowid_filter_is_active)) {
+	if (active_index != MAX_KEY
+	     && active_index == pushed_idx_cond_keyno) {
+		m_prebuilt->idx_cond = this;
+		goto icp;
+	} else if (pushed_rowid_filter && rowid_filter_is_active) {
+icp:
 		/* Push down an index condition or an end_range check. */
 		for (ulint i = 0; i < n_fields; i++) {
 			const Field* field = table->field[i];
@@ -7634,9 +7662,6 @@ ha_innobase::build_template(
 					num_v++;
 				}
 			}
-		}
-		if (active_index == pushed_idx_cond_keyno) {
-			m_prebuilt->idx_cond = this;
 		}
 	} else {
 no_icp:
@@ -15052,15 +15077,8 @@ inline int ha_innobase::defragment_table()
   for (dict_index_t *index= dict_table_get_first_index(m_prebuilt->table);
        index; index= dict_table_get_next_index(index))
   {
-    if (index->is_corrupted() || index->is_spatial())
+    if (!index->is_btree())
       continue;
-
-    if (index->page == FIL_NULL)
-    {
-      /* Do not defragment auxiliary tables related to FULLTEXT INDEX. */
-      ut_ad(index->type & DICT_FTS);
-      continue;
-    }
 
     if (btr_defragment_find_index(index))
     {
@@ -15171,7 +15189,6 @@ ha_innobase::check(
 	THD*		thd,		/*!< in: user thread handle */
 	HA_CHECK_OPT*	check_opt)	/*!< in: check options */
 {
-	dict_index_t*	index;
 	ulint		n_rows;
 	ulint		n_rows_in_table	= ULINT_UNDEFINED;
 	bool		is_ok		= true;
@@ -15212,30 +15229,6 @@ ha_innobase::check(
 
 	m_prebuilt->trx->op_info = "checking table";
 
-	if (m_prebuilt->table->corrupted) {
-		/* If some previous operation has marked the table as
-		corrupted in memory, and has not propagated such to
-		clustered index, we will do so here */
-		index = dict_table_get_first_index(m_prebuilt->table);
-
-		if (!index->is_corrupted()) {
-			dict_set_corrupted(index, "CHECK TABLE", false);
-		}
-
-		push_warning_printf(m_user_thd,
-				    Sql_condition::WARN_LEVEL_WARN,
-				    HA_ERR_INDEX_CORRUPT,
-				    "InnoDB: Index %s is marked as"
-				    " corrupted",
-				    index->name());
-
-		/* Now that the table is already marked as corrupted,
-		there is no need to check any index of this table */
-		m_prebuilt->trx->op_info = "";
-
-		DBUG_RETURN(HA_ADMIN_CORRUPT);
-	}
-
 	uint old_isolation_level = m_prebuilt->trx->isolation_level;
 
 	/* We must run the index record counts at an isolation level
@@ -15246,10 +15239,9 @@ ha_innobase::check(
 		? TRX_ISO_READ_UNCOMMITTED
 		: TRX_ISO_REPEATABLE_READ;
 
-	ut_ad(!m_prebuilt->table->corrupted);
-
-	for (index = dict_table_get_first_index(m_prebuilt->table);
-	     index != NULL;
+	for (dict_index_t* index
+	     = dict_table_get_first_index(m_prebuilt->table);
+	     index;
 	     index = dict_table_get_next_index(index)) {
 		/* If this is an index being created or dropped, skip */
 		if (!index->is_committed()) {
@@ -15265,25 +15257,13 @@ ha_innobase::check(
 			if (err != DB_SUCCESS) {
 				is_ok = false;
 
-				if (err == DB_DECRYPTION_FAILED) {
-					push_warning_printf(
-						thd,
-						Sql_condition::WARN_LEVEL_WARN,
-						ER_NO_SUCH_TABLE,
-						"Table %s is encrypted but encryption service or"
-						" used key_id is not available. "
-						" Can't continue checking table.",
-						index->table->name.m_name);
-				} else {
-					push_warning_printf(
-						thd,
-						Sql_condition::WARN_LEVEL_WARN,
-						ER_NOT_KEYFILE,
-						"InnoDB: The B-tree of"
-						" index %s is corrupted.",
-						index->name());
-				}
-
+				push_warning_printf(
+					thd,
+					Sql_condition::WARN_LEVEL_WARN,
+					ER_NOT_KEYFILE,
+					"InnoDB: The B-tree of"
+					" index %s is corrupted.",
+					index->name());
 				continue;
 			}
 		}
@@ -15301,8 +15281,7 @@ ha_innobase::check(
 			if (!index->is_primary()) {
 				m_prebuilt->index_usable = FALSE;
 				dict_set_corrupted(index,
-						   "dict_set_index_corrupted",
-						   false);
+						   "dict_set_index_corrupted");
 			});
 
 		if (UNIV_UNLIKELY(!m_prebuilt->index_usable)) {
@@ -15364,8 +15343,7 @@ ha_innobase::check(
 				" index %s is corrupted.",
 				index->name());
 			is_ok = false;
-			dict_set_corrupted(index, "CHECK TABLE-check index",
-					   false);
+			dict_set_corrupted(index, "CHECK TABLE-check index");
 		}
 
 
@@ -15380,8 +15358,7 @@ ha_innobase::check(
 				" entries, should be " ULINTPF ".",
 				index->name(), n_rows, n_rows_in_table);
 			is_ok = false;
-			dict_set_corrupted(index, "CHECK TABLE; Wrong count",
-					   false);
+			dict_set_corrupted(index, "CHECK TABLE; Wrong count");
 		}
 	}
 

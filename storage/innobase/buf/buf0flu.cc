@@ -576,9 +576,12 @@ static void buf_tmp_reserve_compression_buf(buf_tmp_buffer_t* slot)
   buffer be bigger than input buffer. Adjust the allocated size. */
   ulint size= srv_page_size;
 #ifdef HAVE_LZO
-  size+= LZO1X_1_15_MEM_COMPRESS;
+  size= size + LZO1X_1_15_MEM_COMPRESS;
 #elif defined HAVE_SNAPPY
   size= snappy_max_compressed_length(size);
+#endif
+#if defined HAVE_ALIGNED_ALLOC && (defined HAVE_LZO || defined HAVE_SNAPPY)
+  size= MY_ALIGN(size, srv_page_size);
 #endif
   slot->comp_buf= static_cast<byte*>(aligned_malloc(size, srv_page_size));
 }
@@ -625,7 +628,6 @@ static byte *buf_page_encrypt(fil_space_t* space, buf_page_t* bpage, byte* s,
   ut_ad(space->id == bpage->id().space());
   ut_ad(!*slot);
 
-  ut_d(fil_page_type_validate(space, s));
   const uint32_t page_no= bpage->id().page_no();
 
   switch (page_no) {
@@ -722,7 +724,6 @@ not_compressed:
 
     /* Workaround for MDEV-15527. */
     memset(tmp + len, 0 , srv_page_size - len);
-    ut_d(fil_page_type_validate(space, tmp));
 
     if (encrypted)
       tmp= fil_space_encrypt(space, page_no, tmp, d);
@@ -737,7 +738,6 @@ not_compressed:
     d= tmp;
   }
 
-  ut_d(fil_page_type_validate(space, d));
   (*slot)->out_buf= d;
   return d;
 }
@@ -1002,63 +1002,58 @@ static page_id_t buf_flush_check_neighbors(const fil_space_t &space,
   return i;
 }
 
-MY_ATTRIBUTE((nonnull, warn_unused_result))
-/** Write punch-hole or zeroes of the freed ranges when
-innodb_immediate_scrub_data_uncompressed from the freed ranges.
-@param space    tablespace which may contain ranges of freed pages
-@param writable whether the tablespace is writable
+MY_ATTRIBUTE((warn_unused_result))
+/** Apply freed_ranges to the file.
+@param writable whether the file is writable
 @return number of pages written or hole-punched */
-static uint32_t buf_flush_freed_pages(fil_space_t *space, bool writable)
+uint32_t fil_space_t::flush_freed(bool writable)
 {
-  const bool punch_hole= space->chain.start->punch_hole == 1;
+  const bool punch_hole= chain.start->punch_hole == 1;
   if (!punch_hole && !srv_immediate_scrub_data_uncompressed)
     return 0;
 
   mysql_mutex_assert_not_owner(&buf_pool.flush_list_mutex);
   mysql_mutex_assert_not_owner(&buf_pool.mutex);
 
-  space->freed_range_mutex.lock();
-  if (space->freed_ranges.empty() ||
-      log_sys.get_flushed_lsn() < space->get_last_freed_lsn())
+  freed_range_mutex.lock();
+  if (freed_ranges.empty() || log_sys.get_flushed_lsn() < get_last_freed_lsn())
   {
-    space->freed_range_mutex.unlock();
+    freed_range_mutex.unlock();
     return 0;
   }
 
-  const unsigned physical_size{space->physical_size()};
+  const unsigned physical{physical_size()};
 
-  range_set freed_ranges= std::move(space->freed_ranges);
+  range_set freed= std::move(freed_ranges);
   uint32_t written= 0;
 
   if (!writable);
   else if (punch_hole)
   {
-    for (const auto &range : freed_ranges)
+    for (const auto &range : freed)
     {
       written+= range.last - range.first + 1;
-      space->reacquire();
-      space->io(IORequest(IORequest::PUNCH_RANGE),
-                          os_offset_t{range.first} * physical_size,
-                          (range.last - range.first + 1) * physical_size,
-                          nullptr);
+      reacquire();
+      io(IORequest(IORequest::PUNCH_RANGE),
+         os_offset_t{range.first} * physical,
+         (range.last - range.first + 1) * physical, nullptr);
     }
   }
   else
   {
-    for (const auto &range : freed_ranges)
+    for (const auto &range : freed)
     {
       written+= range.last - range.first + 1;
       for (os_offset_t i= range.first; i <= range.last; i++)
       {
-        space->reacquire();
-        space->io(IORequest(IORequest::WRITE_ASYNC),
-                  i * physical_size, physical_size,
-                  const_cast<byte*>(field_ref_zero));
+        reacquire();
+        io(IORequest(IORequest::WRITE_ASYNC), i * physical, physical,
+           const_cast<byte*>(field_ref_zero));
       }
     }
   }
 
-  space->freed_range_mutex.unlock();
+  freed_range_mutex.unlock();
   return written;
 }
 
@@ -1186,7 +1181,7 @@ static ulint buf_free_from_unzip_LRU_list_batch(ulint max)
 static std::pair<fil_space_t*, uint32_t> buf_flush_space(const uint32_t id)
 {
   if (fil_space_t *space= fil_space_t::get(id))
-    return {space, buf_flush_freed_pages(space, true)};
+    return {space, space->flush_freed(true)};
   return {nullptr, 0};
 }
 
@@ -1248,7 +1243,6 @@ static void buf_flush_LRU_list_batch(ulint max, flush_counters_t *n)
          n->flushed + n->evicted < max) ||
         recv_recovery_is_on()); ++scanned)
   {
-  retry:
     buf_page_t *prev= UT_LIST_GET_PREV(LRU, bpage);
     const lsn_t oldest_modification= bpage->oldest_modification();
     buf_pool.lru_hp.set(prev);
@@ -1284,7 +1278,6 @@ static void buf_flush_LRU_list_batch(ulint max, flush_counters_t *n)
           mysql_mutex_lock(&buf_pool.mutex);
           if (p.second)
             buf_pool.stat.n_pages_written+= p.second;
-          bpage= buf_pool.lru_hp.get();
           goto retry;
         }
         else
@@ -1316,6 +1309,7 @@ reacquire_mutex:
     must_skip:
       /* Can't evict or dispatch this block. Go to previous. */
       ut_ad(buf_pool.lru_hp.is_hp(prev));
+  retry:
     bpage= buf_pool.lru_hp.get();
   }
 
@@ -1568,7 +1562,7 @@ bool buf_flush_list_space(fil_space_t *space, ulint *n_flushed)
 
   bool acquired= space->acquire();
   {
-    const uint32_t written{buf_flush_freed_pages(space, acquired)};
+    const uint32_t written{space->flush_freed(acquired)};
     mysql_mutex_lock(&buf_pool.mutex);
     if (written)
       buf_pool.stat.n_pages_written+= written;

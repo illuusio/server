@@ -966,6 +966,26 @@ const char innobase_index_reserve_name[] = "GEN_CLUST_INDEX";
 /** Data structure for an index.  Most fields will be
 initialized to 0, NULL or FALSE in dict_mem_index_create(). */
 struct dict_index_t {
+  /** Columns whose character-set collation is being changed */
+  struct col_info
+  {
+    /** number of columns whose charset-collation is being changed */
+    unsigned n_cols;
+    /** columns with changed charset-collation */
+    dict_col_t *cols;
+
+    /** Add a column with changed collation. */
+    dict_col_t *add(mem_heap_t *heap, const dict_col_t &col, unsigned offset)
+    {
+      ut_ad(offset < n_cols);
+      if (!cols)
+        cols= static_cast<dict_col_t*>
+          (mem_heap_alloc(heap, n_cols * sizeof col));
+      new (&cols[offset]) dict_col_t(col);
+      return &cols[offset];
+    }
+  };
+
   /** Maximum number of fields */
   static constexpr unsigned MAX_N_FIELDS= (1U << 10) - 1;
 
@@ -1051,6 +1071,16 @@ struct dict_index_t {
 	It should use heap from dict_index_t. It should be freed
 	while removing the index from table. */
 	dict_add_v_col_info* new_vcol_info;
+
+	/** During ALTER TABLE, columns that a being-added index depends on
+	and whose encoding or collation is being changed to something
+	that is compatible with the clustered index.
+	Allocated from dict_index_t::heap.
+
+	@see rollback_inplace_alter_table()
+	@see ha_innobase_inplace_ctx::col_collations */
+	col_info* change_col_info;
+
 	UT_LIST_NODE_T(dict_index_t)
 			indexes;/*!< list of indexes of the table */
 #ifdef BTR_CUR_ADAPT
@@ -1145,6 +1175,7 @@ public:
 	{
 		ut_ad(!to_be_dropped);
 		ut_ad(committed || !(type & DICT_CLUSTERED));
+		ut_ad(!committed || !change_col_info);
 		uncommitted = !committed;
 	}
 
@@ -1186,6 +1217,13 @@ public:
 
 	/** @return whether this index requires locking */
 	bool has_locking() const { return !is_ibuf(); }
+
+	/** @return whether this is a normal B-tree index
+        (not the change buffer, not SPATIAL or FULLTEXT) */
+	bool is_btree() const {
+		return UNIV_LIKELY(!(type & (DICT_IBUF | DICT_SPATIAL
+					     | DICT_FTS | DICT_CORRUPT)));
+	}
 
 	/** @return whether the index includes virtual columns */
 	bool has_virtual() const { return type & DICT_VIRTUAL; }
@@ -1303,6 +1341,16 @@ public:
   ulint get_new_n_vcol() const
   { return new_vcol_info ? new_vcol_info->n_v_col : 0; }
 
+  /** Assign the number of collation change fields as a part of the index
+  @param  n_cols   number of columns whose collation is changing */
+  void init_change_cols(unsigned n_cols)
+  {
+    ut_ad(n_fields > n_cols);
+    change_col_info= static_cast<col_info*>
+      (mem_heap_zalloc(heap, sizeof(col_info)));
+    change_col_info->n_cols= n_cols;
+  }
+
   /** Reconstruct the clustered index fields.
   @return whether metadata is incorrect */
   inline bool reconstruct_fields();
@@ -1400,8 +1448,9 @@ public:
 
   /** Clear the index tree and reinitialize the root page, in the
   rollback of TRX_UNDO_EMPTY. The BTR_SEG_LEAF is freed and reinitialized.
-  @param thr query thread */
-  void clear(que_thr_t *thr);
+  @param thr query thread
+  @return error code */
+  dberr_t clear(que_thr_t *thr);
 
   /** Check whether the online log is dummy value to indicate
   whether table undergoes active DDL.
@@ -1963,8 +2012,9 @@ struct dict_table_t {
                   char (&tbl_name)[NAME_LEN + 1],
                   size_t *db_name_len, size_t *tbl_name_len) const;
 
-  /** Clear the table when rolling back TRX_UNDO_EMPTY */
-  void clear(que_thr_t *thr);
+  /** Clear the table when rolling back TRX_UNDO_EMPTY
+  @return error code */
+  dberr_t clear(que_thr_t *thr);
 
 #ifdef UNIV_DEBUG
   /** @return whether the current thread holds the lock_mutex */
@@ -2015,7 +2065,7 @@ struct dict_table_t {
   @param new_name     name of the table
   @param replace      whether to replace the file with the new name
                       (as part of rolling back TRUNCATE) */
-  dberr_t rename_tablespace(const char *new_name, bool replace) const;
+  dberr_t rename_tablespace(span<const char> new_name, bool replace) const;
 
 private:
 	/** Initialize instant->field_map.
