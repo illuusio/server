@@ -6,6 +6,4 @@ fix-spelling-rocksdb.patch
 fix-reproducible-builds-rocksdb.patch
 mroonga-mrn-lib-dirs-path-reproducible-build.patch
 2006-kfreebsd-amd64.patch
-openssl-3-enable.patch
-openssl-3-compatibility.patch
 2129-new-script-wsrep-sst-backup-fixes.patch
