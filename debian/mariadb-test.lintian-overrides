@@ -6,15 +6,18 @@ incorrect-path-for-interpreter /usr/bin/env perl != /usr/bin/perl [usr/share/mys
 incorrect-path-for-interpreter /usr/bin/env perl != /usr/bin/perl [usr/share/mysql/mysql-test/lib/v1/mysql-test-run.pl]
 incorrect-path-for-interpreter /usr/bin/env perl != /usr/bin/perl [usr/share/mysql/mysql-test/mysql-stress-test.pl]
 incorrect-path-for-interpreter /usr/bin/env perl != /usr/bin/perl [usr/share/mysql/mysql-test/mysql-test-run.pl]
+# OK, these files are part of test suite and only used for a test
+arch-dependent-file-in-usr-share [usr/share/mysql/mysql-test/lib/My/SafeProcess/my_safe_process]
+arch-dependent-file-in-usr-share [usr/share/mysql/mysql-test/lib/My/SafeProcess/wsrep_check_version]
 # myisam stopwords and other variable names that cannot be changed and spelling errors remain
-spelling-error-in-binary usr/bin/* AfE Safe
-spelling-error-in-binary usr/bin/* yuR your
-spelling-error-in-binary usr/bin/* no one
-spelling-error-in-binary usr/bin/* that's
-spelling-error-in-binary usr/bin/* theres there's
-spelling-error-in-binary usr/lib/mysql/plugin/qa_auth_interface.so userA users
+spelling-error-in-binary AfE Safe [usr/bin/*]
+spelling-error-in-binary yuR your [usr/bin/*]
+spelling-error-in-binary no one [usr/bin/*]
+spelling-error-in-binary that's [usr/bin/*]
+spelling-error-in-binary theres there's [usr/bin/*]
+spelling-error-in-binary userA users [usr/lib/mysql/plugin/qa_auth_interface.so]
 # Valid reason for documentation in context in directory
-package-contains-documentation-outside-usr-share-doc usr/share/mysql/mysql-test/README*
+package-contains-documentation-outside-usr-share-doc [usr/share/mysql/mysql-test/README*]
 # Test plugins intentionally not fully featured
-shared-library-lacks-prerequisites usr/lib/mysql/plugin/auth_0x0100.so
-shared-library-lacks-prerequisites usr/lib/mysql/plugin/debug_key_management.so
+shared-library-lacks-prerequisites [usr/lib/mysql/plugin/auth_0x0100.so]
+shared-library-lacks-prerequisites [usr/lib/mysql/plugin/debug_key_management.so]
