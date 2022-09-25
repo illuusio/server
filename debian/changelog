@@ -1,8 +1,12 @@
-mariadb-10.6 (1:10.6.9-2) UNRELEASED; urgency=medium
+mariadb-10.6 (1:10.6.10-1) UNRELEASED; urgency=medium
 
+  [ Otto Kekäläinen ]
   * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  * Update Lintian overrides syntax to follow latest Lintian 2.115
+    - Biggest change in Lintian 2.115 is a new syntax to use brackets in file
+      paths.
 
- -- Otto Kekäläinen <otto@debian.org>  Wed, 17 Aug 2022 07:43:46 -0700
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 25 Sep 2022 15:43:39 -0700
 
 mariadb-10.6 (1:10.6.9-1) unstable; urgency=medium
 

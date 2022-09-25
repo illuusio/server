@@ -7,4 +7,3 @@ fix-reproducible-builds-rocksdb.patch
 mroonga-mrn-lib-dirs-path-reproducible-build.patch
 2006-kfreebsd-amd64.patch
 2129-new-script-wsrep-sst-backup-fixes.patch
-MDEV-29321-percona--xtradb-5.7-upgrade.patch
