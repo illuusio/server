@@ -1444,9 +1444,13 @@ struct ha_innobase_inplace_ctx : public inplace_alter_handler_ctx
       for (unsigned i= 0, j= 0; i < index->n_fields; i++)
       {
         const dict_col_t *col= index->fields[i].col;
-        if (change_col_collate.find(col->ind) == collate_end)
+        auto it= change_col_collate.find(col->ind);
+        if (it != collate_end)
+        {
+          ut_ad(it->second == col);
           index->fields[i].col=
             index->change_col_info->add(index->heap, *col, j++);
+        }
       }
     }
   }
@@ -9877,7 +9881,7 @@ innobase_update_foreign_cache(
 	dict_names_t	fk_tables;
 
 	err = dict_load_foreigns(user_table->name.m_name,
-				 ctx->col_names, 1, true,
+				 ctx->col_names, false, 1, true,
 				 DICT_ERR_IGNORE_NONE,
 				 fk_tables);
 
@@ -9888,7 +9892,7 @@ innobase_update_foreign_cache(
 		loaded with "foreign_key checks" off,
 		so let's retry the loading with charset_check is off */
 		err = dict_load_foreigns(user_table->name.m_name,
-					 ctx->col_names, 1, false,
+					 ctx->col_names, false, 1, false,
 					 DICT_ERR_IGNORE_NONE,
 					 fk_tables);
 

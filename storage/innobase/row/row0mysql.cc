@@ -66,11 +66,6 @@ Created 9/17/2000 Heikki Tuuri
 #include <vector>
 #include <thread>
 
-#ifdef WITH_WSREP
-#include "mysql/service_wsrep.h"
-#include "wsrep.h"
-#include "wsrep_mysqld.h"
-#endif
 
 /*******************************************************************//**
 Delays an INSERT, DELETE or UPDATE operation if the purge is lagging. */
@@ -2874,7 +2869,7 @@ row_rename_table_for_mysql(
 		dict_names_t	fk_tables;
 
 		err = dict_load_foreigns(
-			new_name, nullptr, trx->id,
+			new_name, nullptr, false, trx->id,
 			!old_is_tmp || trx->check_foreigns,
 			use_fk
 			? DICT_ERR_IGNORE_NONE

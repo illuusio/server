@@ -2477,11 +2477,11 @@ xb_write_delta_metadata(const char *filename, const xb_delta_info_t *info)
 /* ================= backup ================= */
 void xtrabackup_io_throttling()
 {
-  if (!xtrabackup_backup)
+  if (!xtrabackup_backup || !xtrabackup_throttle)
     return;
 
   mysql_mutex_lock(&log_sys.mutex);
-  if (xtrabackup_throttle && (io_ticket--) < 0)
+  if (io_ticket-- < 0)
     mysql_cond_wait(&wait_throttle, &log_sys.mutex);
   mysql_mutex_unlock(&log_sys.mutex);
 }
@@ -6263,22 +6263,28 @@ static bool check_all_privileges()
 	}
 
 	/* KILL ... */
-	if ((!opt_no_lock && (opt_kill_long_queries_timeout || opt_lock_ddl_per_table))
-		/* START SLAVE SQL_THREAD */
-		/* STOP SLAVE SQL_THREAD */
-		|| opt_safe_slave_backup) {
+	if (!opt_no_lock && (opt_kill_long_queries_timeout || opt_kill_long_query_type)) {
 		check_result |= check_privilege(
 			granted_privileges,
-			"SUPER", "*", "*",
+			"CONNECTION ADMIN", "*", "*",
+			PRIVILEGE_WARNING);
+	}
+
+	/* START SLAVE SQL_THREAD */
+	/* STOP SLAVE SQL_THREAD */
+	if (opt_safe_slave_backup) {
+		check_result |= check_privilege(
+			granted_privileges,
+			"REPLICATION SLAVE ADMIN", "*", "*",
 			PRIVILEGE_WARNING);
 	}
 
 	/* SHOW MASTER STATUS */
 	/* SHOW SLAVE STATUS */
 	if (opt_galera_info || opt_slave_info
-		|| (opt_no_lock && opt_safe_slave_backup)) {
+		|| opt_safe_slave_backup) {
 		check_result |= check_privilege(granted_privileges,
-			"REPLICATION CLIENT", "*", "*",
+			"SLAVE MONITOR", "*", "*",
 			PRIVILEGE_WARNING);
 	}
 

@@ -12839,7 +12839,7 @@ int create_table_info_t::create_table(bool create_fk)
 	if (err == DB_SUCCESS) {
 		/* Check that also referencing constraints are ok */
 		dict_names_t	fk_tables;
-		err = dict_load_foreigns(m_table_name, nullptr,
+		err = dict_load_foreigns(m_table_name, nullptr, false,
 					 m_trx->id, true,
 					 DICT_ERR_IGNORE_NONE, fk_tables);
 		while (err == DB_SUCCESS && !fk_tables.empty()) {
@@ -13497,11 +13497,12 @@ int ha_innobase::delete_table(const char *name)
 
   if (table->is_temporary())
   {
-    dict_sys.remove(table, false, true);
     dict_sys.unlock();
     parent_trx->mod_tables.erase(table); /* CREATE...SELECT error handling */
     btr_drop_temporary_table(*table);
-    dict_mem_table_free(table);
+    dict_sys.lock(SRW_LOCK_CALL);
+    dict_sys.remove(table);
+    dict_sys.unlock();
     DBUG_RETURN(0);
   }
 
@@ -14845,9 +14846,11 @@ ha_innobase::info_low(
 			stats.index_file_length
 				= ulonglong(stat_sum_of_other_index_sizes)
 				* size;
+			space->s_lock();
 			stats.delete_length = 1024
 				* fsp_get_available_space_in_free_extents(
 					*space);
+			space->s_unlock();
 		}
 		stats.check_time = 0;
 		stats.mrr_length_per_rec= (uint)ref_length +  8; // 8 = max(sizeof(void *));

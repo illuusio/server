@@ -66,7 +66,8 @@ void set_thd_stage_info(void *thd,
 #include "my_apc.h"
 #include "rpl_gtid.h"
 
-#include "wsrep_mysqld.h"
+#include "wsrep.h"
+#include "wsrep_on.h"
 #ifdef WITH_WSREP
 #include <inttypes.h>
 /* wsrep-lib */
@@ -76,6 +77,11 @@ void set_thd_stage_info(void *thd,
 #include "wsrep_condition_variable.h"
 
 class Wsrep_applier_service;
+enum wsrep_consistency_check_mode {
+    NO_CONSISTENCY_CHECK,
+    CONSISTENCY_CHECK_DECLARED,
+    CONSISTENCY_CHECK_RUNNING,
+};
 #endif /* WITH_WSREP */
 
 class Reprepare_observer;
@@ -3610,6 +3616,8 @@ public:
   /*
     In case of a slave, set to the error code the master got when executing
     the query. 0 if no error on the master.
+    The stored into variable master error code may get reset inside
+    execution stack when the event turns out to be ignored.
   */
   int	     slave_expected_error;
   enum_sql_command last_sql_command;  // Last sql_command exceuted in mysql_execute_command()
@@ -6721,6 +6729,7 @@ class select_max_min_finder_subselect :public select_subselect
   bool (select_max_min_finder_subselect::*op)();
   bool fmax;
   bool is_all;
+  void set_op(const Type_handler *ha);
 public:
   select_max_min_finder_subselect(THD *thd_arg, Item_subselect *item_arg,
                                   bool mx, bool all):
@@ -6733,6 +6742,7 @@ public:
   bool cmp_decimal();
   bool cmp_str();
   bool cmp_time();
+  bool cmp_native();
 };
 
 /* EXISTS subselect interface class */
