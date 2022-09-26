@@ -1,7 +1,9 @@
-mariadb-10.6 (1:10.6.10-1) UNRELEASED; urgency=medium
+mariadb-10.6 (1:10.6.10-1) unstable; urgency=medium
 
   [ Otto Kekäläinen ]
-  * Open new changelog entry. This will be replaced by 'gbp dch -avR'.
+  * New upstream version 10.6.10. Includes several important fixes for
+    issues that regressed in previous release. See details in:
+    https://mariadb.org/regressions-in-recent-mariadb-server-releases/
   * Update Lintian overrides syntax to follow latest Lintian 2.115
     - Biggest change in Lintian 2.115 is a new syntax to use brackets in file
       paths.
