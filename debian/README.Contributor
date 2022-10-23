@@ -273,17 +273,15 @@ on an install or upgrade with an error message like:
     E: Unable to correct problems, you have held broken packages.
 
 To make apt show debug information on what it tried to resolve and how it failed
-add `Debug::pkgProblemResolver "true";` to a file in `/etc/apt/apt.conf.d/` or
-alternatively append `-o Debug::pkgProblemResolver=1` to the `apt` commands:
+enable debug features by addin a file in `/etc/apt/apt.conf.d/` with:
+
+   Debug::pkgProblemResolver 1;
+   Debug::pkgDepCache::AutoInstall 1;
+   Debug::pkgDepCache::Marker 1;
+
+>lternatively append options directly to `apt` commands:
 
     apt dist-upgrade -o Debug::pkgProblemResolver=1
-
-To have maximum verbosity add more `Debug` options:
-
-    apt-get upgrade -o Debug::pkgProblemResolver=1 -o Debug::pkgDepCache::AutoInstall=1 -o Debug::pkgDepCache::Marker=1
-
-The examples above also illustrate that these debug options apply for both
-`apt-get` and `apt` and to all install/upgrade commands.
 
 It can be also quite annoying to rebuild the entire package to debug small
 changes in the `debian/control` file. To have a much faster change->test->change
@@ -328,6 +326,7 @@ only be tested with an installation from an actual apt repository. The fastest
 way to get a directory with deb files served via a local repository is to run:
 
     apt install apt-utils
+    apt-ftparchive packages . > Packages
     apt-ftparchive release . > Release
     echo 'deb [trusted=yes] file:/build/mariadb-bionic ./' >> /etc/apt/sources.list
     apt update
