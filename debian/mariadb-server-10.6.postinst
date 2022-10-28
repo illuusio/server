@@ -169,10 +169,12 @@ EOF
     # handle things.
     # Debian: beware of the bashisms...
     # Debian: can safely run on upgrades with existing databases
+    # Workaround for Debian Bug #1022994: failure to create database when
+    # working with libpam-tmpdir (by setting TMPDIR to empty value).
     set +e
-    bash /usr/bin/mysql_install_db --rpm --cross-bootstrap --user=mysql \
-                                   --disable-log-bin  --skip-test-db 2>&1 | \
-                                   $ERR_LOGGER
+    TMPDIR= bash /usr/bin/mysql_install_db --rpm --cross-bootstrap \
+                                           --user=mysql --disable-log-bin \
+                                           --skip-test-db 2>&1 | $ERR_LOGGER
     set -e
 
     # On new installations root user can connect via unix_socket.
