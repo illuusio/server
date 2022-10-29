@@ -533,8 +533,16 @@ mysql-8.0 Sid to mariadb-10.6 upgrade:
     - apt-get install -y procps mysql-server 'libmysqlc*'
     - *test-verify-initial
     - *test-install
-    - service mysql status
+    # Due to some (currently unknown) changes in MySQL 8.0 packaging or apt
+    # behaviour changes, a system with a previous installation of MySQL 8.0 will
+    # on upgrades to MariaDB first fully remove MySQL, including the
+    # /etc/init.d/mysql file, so previous techniques in
+    # mariadb-server-10.6.postinst to maintain backwards compatibility with
+    # 'service mysql status' after installing MariaDB on top MySQL no longer
+    # works. Thus the step to test it now intentionally has a fallback to use
+    # the service name 'mariadb' instead, and the fallback is always used.
     - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
+    - service mysql status || service mariadb status
     - *test-verify-final
   variables:
     GIT_STRATEGY: none
