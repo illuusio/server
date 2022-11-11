@@ -451,6 +451,7 @@ void thd_storage_lock_wait(THD *thd, long long value)
 extern "C"
 void *thd_get_ha_data(const THD *thd, const struct handlerton *hton)
 {
+  DBUG_ASSERT(thd == current_thd ||  mysql_mutex_is_owner(&thd->LOCK_thd_data));
   return thd->ha_data[hton->slot].ha_ptr;
 }
 
@@ -1537,6 +1538,8 @@ void THD::cleanup(void)
     wsrep_cs().cleanup();
   wsrep_client_thread= false;
 #endif /* WITH_WSREP */
+
+  DEBUG_SYNC(this, "THD_cleanup_after_set_killed");
 
   mysql_ha_cleanup(this);
   locked_tables_list.unlock_locked_tables(this);
@@ -3734,8 +3737,10 @@ int select_max_min_finder_subselect::send_data(List<Item> &items)
     {
       cache= val_item->get_cache(thd);
       set_op(val_item->type_handler());
+      cache->setup(thd, val_item);
     }
-    cache->store(val_item);
+    else
+      cache->store(val_item);
     it->store(0, cache);
   }
   it->assigned(1);
@@ -3952,6 +3957,7 @@ Statement::Statement(LEX *lex_arg, MEM_ROOT *mem_root_arg,
   lex(lex_arg),
   db(null_clex_str)
 {
+  hr_prepare_time.val= 0,
   name= null_clex_str;
 }
 
@@ -3968,6 +3974,7 @@ void Statement::set_statement(Statement *stmt)
   column_usage=   stmt->column_usage;
   lex=            stmt->lex;
   query_string=   stmt->query_string;
+  hr_prepare_time=    stmt->hr_prepare_time;
 }
 
 
@@ -5122,11 +5129,21 @@ void reset_thd(MYSQL_THD thd)
   before writing response to client, to provide durability
   guarantees, in other words, server can't send OK packet
   before modified data is durable in redo log.
-*/
-extern "C" void thd_increment_pending_ops(MYSQL_THD thd)
+
+  NOTE: system THD (those that are not associated with client
+        connection) do not allows async operations yet.
+
+  @param thd  a THD
+  @return thd
+  @retval nullptr   if this is system THD */
+extern "C" MYSQL_THD thd_increment_pending_ops(MYSQL_THD thd)
 {
+  if (!thd || thd->system_thread != NON_SYSTEM_THREAD)
+    return nullptr;
   thd->async_state.inc_pending_ops();
+  return thd;
 }
+
 
 /**
   This function can be used by plugin/engine to indicate
@@ -5138,6 +5155,8 @@ extern "C" void thd_increment_pending_ops(MYSQL_THD thd)
 extern "C" void thd_decrement_pending_ops(MYSQL_THD thd)
 {
   DBUG_ASSERT(thd);
+  DBUG_ASSERT(thd->system_thread == NON_SYSTEM_THREAD);
+
   thd_async_state::enum_async_state state;
   if (thd->async_state.dec_pending_ops(&state) == 0)
   {
@@ -7390,7 +7409,7 @@ int THD::binlog_flush_pending_rows_event(bool stmt_end, bool is_transactional)
 }
 
 
-#if !defined(DBUG_OFF) && !defined(_lint)
+#if defined(DBUG_TRACE) && !defined(_lint)
 static const char *
 show_query_type(THD::enum_binlog_query_type qtype)
 {
