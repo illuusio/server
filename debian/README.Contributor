@@ -346,45 +346,53 @@ repositories one needs to run:
 
     docker run -it -v ${PWD}:/build -w /build debian:sid bash
     apt update
+    apt install --yes python3-junit.xml python3-debian apt-file
+    curl -O https://salsa.debian.org/salsa-ci-team/pipeline/-/raw/master/images/scripts/check_for_missing_breaks_replaces.py
+    chmod +x check_for_missing_breaks_replaces.py
     apt install --no-install-recommends --yes gpg gpg-agent dirmngr ca-certificates curl debian-archive-keyring
     curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 871920D1991BC93C 3B4FE6ACC0B21F32 CBF8D6FD518E17E1 7638D0442B90D010 8C718D3B5072E1F5 9334A25F8507EFA5 CBCB082A1BB943DB 467B942D3A79BD29
-    cat > /etc/apt/sources.list <<EOF
-    deb http://deb.debian.org/debian sid main
+    gpg --list-keys # Initialize default keyring
+    gpg --no-default-keyring --keyring gnupg-ring:/etc/apt/trusted.gpg.d/mariadb.gpg --keyserver hkps://keyserver.ubuntu.com:443 --recv-keys 871920D1991BC93C 3B4FE6ACC0B21F32 CBF8D6FD518E17E1 7638D0442B90D010 8C718D3B5072E1F5 9334A25F8507EFA5 CBCB082A1BB943DB 467B942D3A79BD29
+    chmod 644 /etc/apt/trusted.gpg.d/mariadb.gpg
+    cat > /etc/apt/sources.list.d/mariadb.list <<EOF
     deb http://deb.debian.org/debian bullseye main
     deb http://deb.debian.org/debian buster main
     deb http://deb.debian.org/debian stretch main
-    deb http://deb.debian.org/debian jessie main
+    deb [trusted=yes] http://deb.debian.org/debian jessie main
+    deb http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse
     deb http://archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse
     deb http://archive.ubuntu.com/ubuntu/ bionic main restricted universe multiverse
     deb http://archive.ubuntu.com/ubuntu/ xenial main restricted universe multiverse
     deb http://archive.ubuntu.com/ubuntu/ trusty main restricted universe multiverse
-    deb https://deb.mariadb.org/10.8/debian bullseye main
-    deb https://deb.mariadb.org/10.7/debian bullseye main
-    deb https://deb.mariadb.org/10.6/debian buster main
-    deb https://deb.mariadb.org/10.5/debian buster main
-    deb https://deb.mariadb.org/10.4/debian buster main
-    deb https://deb.mariadb.org/10.3/debian buster main
-    deb https://deb.mariadb.org/10.2/debian buster main
-    deb https://deb.mariadb.org/10.1/debian stretch main
-    deb [trusted=yes] https://deb.mariadb.org/10.0/debian jessie main
-    deb [trusted=yes] https://deb.mariadb.org/5.5/debian wheezy main
+    deb https://archive.mariadb.org/mariadb-10.11/repo/debian bullseye main
+    deb https://archive.mariadb.org/mariadb-10.10/repo/debian bullseye main
+    deb https://archive.mariadb.org/mariadb-10.9/repo/debian bullseye main
+    deb https://archive.mariadb.org/mariadb-10.8/repo/debian bullseye main
+    deb https://archive.mariadb.org/mariadb-10.7/repo/debian bullseye main
+    deb https://archive.mariadb.org/mariadb-10.6/repo/debian buster main
+    deb https://archive.mariadb.org/mariadb-10.5/repo/debian buster main
+    deb https://archive.mariadb.org/mariadb-10.4/repo/debian buster main
+    deb https://archive.mariadb.org/mariadb-10.3/repo/debian buster main
+    deb https://archive.mariadb.org/mariadb-10.2/repo/debian buster main
+    deb https://archive.mariadb.org/mariadb-10.1/repo/debian stretch main
+    deb [trusted=yes] https://archive.mariadb.org/mariadb-10.0/repo/debian jessie main
+    deb [trusted=yes] https://archive.mariadb.org/mariadb-5.5/repo/debian wheezy main
+    deb https://repo.mysql.com/apt/ubuntu/ jammy mysql-8.0
+    deb https://repo.mysql.com/apt/ubuntu/ focal mysql-8.0
     deb https://repo.mysql.com/apt/debian/ buster mysql-8.0
     deb https://repo.mysql.com/apt/debian/ buster mysql-5.7
     deb https://repo.mysql.com/apt/debian/ buster mysql-5.6
     deb https://repo.mysql.com/apt/debian/ buster mysql-cluster-8.0
-    deb https://repo.mysql.com/apt/debian/ buster mysql-tools
     deb https://repo.mysql.com/apt/debian/ buster mysql-cluster-7.6
     deb https://repo.mysql.com/apt/debian/ buster mysql-cluster-7.5
+    deb https://repo.mysql.com/apt/debian/ buster mysql-tools
+    deb https://repo.percona.com/apt/ bullseye main
     deb https://repo.percona.com/apt/ buster main
     deb https://repo.percona.com/apt/ stretch main
     deb https://repo.percona.com/apt/ jessie main
     deb https://repo.percona.com/apt/ wheezy main
     EOF
-    apt install --yes python3-junit.xml python3-debian apt-file
     apt-file update
-    curl -O https://salsa.debian.org/salsa-ci-team/pipeline/-/raw/master/images/scripts/check_for_missing_breaks_replaces.py
-    chmod +x check_for_missing_breaks_replaces.py
     ./check_for_missing_breaks_replaces.py --changes-file mariadb-*.changes --debug
 
 ## Check reverse dependencies

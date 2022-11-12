@@ -25,9 +25,9 @@ This can be done by using dgit. The example command below will fetch the latest
 mariadb-10.1 package available in Ubuntu 18.04 (Bionic) base archive, security
 archive or updates archive (whichever has a newer version):
 
-    dgit -d ubuntu clone mariadb-10.1 bionic,-security,-updates
-    cp -ra mariadb-10.1/* .
-    rm -rf mariadb-10.1
+    dgit -d ubuntu clone mariadb-10.6 jammy,-security,-updates
+    cp -ra mariadb-10.6/* .
+    rm -rf mariadb-10.6
 
 You can then compare these two directories with a recursive diff or `git diff`.
 
@@ -36,8 +36,8 @@ Another option is to manually check on packages.debian.org or packages.ubuntu.co
 what is the latest version, and download and extract it on top of the existing
 debian/ directory with:
 
-    curl -SL http://archive.ubuntu.com/ubuntu/pool/universe/m/mariadb-10.1/\
-    mariadb-10.1_10.1.44-0ubuntu0.18.04.1.debian.tar.xz -o - | tar xv --xz
+    curl -SL https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/mariadb-10.6/\
+    1:10.6.7-2ubuntu1.1/mariadb-10.6_10.6.7-2ubuntu1.1.debian.tar.xz -o - | tar xv --xz
 
 You can simply run `git diff` to see the report on differences.
 
@@ -66,9 +66,9 @@ Download new source package:
 
     git checkout 10.6
     git pull --tags upstream 10.6
-    git tag -v mariadb-10.6.5
+    git tag -v mariadb-10.6.12
     git checkout debian/latest
-    git merge -v mariadb-10.6.5
+    git merge -v mariadb-10.6.12
 
 Refresh patches:
 
@@ -152,20 +152,14 @@ needs to be tested on the Ubuntu release which most closely matches the Debian
 release in question. The following matrix maps what package should be tested
 where:
 
-- 10.6 for sid on Launchpad impish
-- 10.5 for hirsute on Launchpad hirsute
-- 10.5 for groovy on Launchpad groovy
-- 10.5 for bullseye on Launchpad hirsute
-- 10.3 for groovy on Launchpad groovy
+- 10.6 for sid on Launchpad lunar
+- 10.6 for kinetic on Launchpad kinetic
+- 10.6 for jammy on Launchpad jammy
+- 10.5 for bullseye on Launchpad hirsute (not available anymore)
 - 10.3 for focal on Launchpad focal
 - 10.3 for buster on Launchpad disco (not available anymore)
 - 10.1 for bionic on Launchpad bionic
 - 10.1 for stretch on Launchpad xenial (not available anymore)
-
-NOTE! As long as Launchpad builders are running an older kernel, the MariaDB
-10.6 built with liburing will fail to start on them. See
-- https://jira.mariadb.org/browse/MDEV-26569
-- https://bugs.launchpad.net/launchpad/+bug/1943292
 
 ## Uploading security releases to Debian
 
@@ -185,23 +179,19 @@ regressions before they spread out to too many users.
 
 Upload priority for 10.6
 - debian sid
+- ubuntu-22.10 kinetic
+- ubuntu-22.04 jammy
 
 Upload priority for 10.5
-- debian bullseye
-- ubuntu-21.10
-- ubuntu-21.04
+- debian-11 bullseye
 
 Upload priority for 10.3
-- ubuntu-20.10 groovy
 - ubuntu-20.04 focal
 - debian-10 buster
 
 for 10.1 (only in case there are extra releases after official EOL)
 - ubuntu-18.04 bionic
 - debian-9 stretch
-
-for 10.0 (only in case there are extra releases after official EOL)
-- ubuntu-16.04 xenial
 
 ## Comparison to other distributions
 
