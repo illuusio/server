@@ -1,10 +1,9 @@
-mariadb-10.6 (1:10.6.11-1) UNRELEASED; urgency=medium
+mariadb-10.6 (1:10.6.11-1) unstable; urgency=medium
 
   * New upstream version 10.6.11.
   * Align with upstream 10.6 debian/ contents
-  * Deb: Use archive.mariadb.org for upgrade testing in Salsa-CI
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 25 Sep 2022 21:07:22 -0700
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 13 Nov 2022 22:27:08 -0800
 
 mariadb-10.6 (1:10.6.10-1) unstable; urgency=medium
 
