@@ -116,13 +116,13 @@ blhc:
   # Avoid the warnings of "debconf: unable to initialize frontend: Dialog"
   echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
   # Prime the apt cache so later apt commands can run
-  apt-get update
+  apt-get update -qq
 
 # Readline was removed from Debian Sid (and Bullseye) in Feb 2021. To be able to install older
 # versions of MariaDB that depend on it, fetch and install it from Buster.
 .test-install-readline-in-sid-for-backwards-compat: &test-install-readline-in-sid-for-backwards-compat |
-  curl -O http://ftp.de.debian.org/debian/pool/main/r/readline5/libreadline5_5.2+dfsg-3+b13_amd64.deb
-  apt install -y ./libreadline5_5.2+dfsg-3+b13_amd64.deb
+  curl -sS -O http://ftp.de.debian.org/debian/pool/main/r/readline5/libreadline5_5.2+dfsg-3+b13_amd64.deb
+  apt-get -qq install --no-install-recommends --yes ./libreadline5_5.2+dfsg-3+b13_amd64.deb
 
 .test-verify-initial: &test-verify-initial |
   dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
@@ -137,7 +137,7 @@ blhc:
   # Replace any old repos with just Sid
   - echo 'deb http://deb.debian.org/debian sid main' > /etc/apt/sources.list
   # Upgrade minimal stack first
-  - apt-get update
+  - apt-get update -qq
   # Next step will fail on https://bugs.debian.org/993755
   #   /usr/bin/perl: error while loading shared libraries: libcrypt.so.1: cannot
   #     open shared object file: No such file or directory
@@ -163,7 +163,7 @@ blhc:
   Pin: release n=bullseye-*
   Pin-Priority: 500
   EOF
-  apt-get update
+  apt-get update -qq
 
 .test-enable-buster-backports-repos: &test-enable-buster-backports-repos |
   # Enable buster-backports (assumes environment already Debian Buster)
@@ -174,7 +174,7 @@ blhc:
   Pin: release n=buster-*
   Pin-Priority: 500
   EOF
-  apt-get update
+  apt-get update -qq
 
 .test-install: &test-install |
   # Install MariaDB built in this commit
@@ -686,13 +686,13 @@ upgrade from mysql-8.0 from Ubuntu 20.04 with Buster backports:
     - apt-get install --no-install-recommends --yes gpg gpg-agent dirmngr ca-certificates # Bare minimal (<4MB) for apt-key to work
     - apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 871920D1991BC93C 3B4FE6ACC0B21F32
     - echo "deb http://archive.ubuntu.com/ubuntu/ focal main restricted" > /etc/apt/sources.list.d/ubuntu.list
-    - apt-get update
+    - apt-get update -qq
     # First install often fail due to bug in mysql-8.0
     - apt-get install -y mysql-server 'libmysqlc*' || true
     - sleep 10 && apt-get install -f
     - *test-verify-initial
     # Enable backports to make galera-4 available
-    - echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sources.list.d/backports.list && apt-get update
+    - echo "deb http://deb.debian.org/debian buster-backports main" > /etc/apt/sources.list.d/backports.list && apt-get update -qq
     - *test-install
     - service mysql status
     - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
@@ -715,10 +715,10 @@ upgrade from mariadb.org-10.6:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    - apt install -y curl
+    - apt-get -qq install --no-install-recommends --yes ca-certificates curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo "deb https://deb.mariadb.org/10.6/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update
+    - apt-get update -qq
     # Package libmariadbclient-dev from mariadb.org conflicts with libmariadb-dev in Sid, so cannot use wildcard that would include it
     # Enable this line when there is a way to install them only from the mariadb.org repo
     # - apt-get install -y 'mariadb*' libmariadb3 'libmariadb-*' 'libmariadbd*'
@@ -750,10 +750,10 @@ upgrade from mariadb.org-10.5:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    - apt install -y curl
+    - apt-get -qq install --no-install-recommends --yes ca-certificates curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo "deb https://archive.mariadb.org/mariadb-10.5/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update
+    - apt-get update -qq
     - apt-get install -y mariadb-server-10.5
     - *test-verify-initial
     # Install MariaDB built in this commit
@@ -780,10 +780,10 @@ upgrade from mariadb.org-10.4:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    - apt install -y curl systemctl # systemctl shim needed on platforms that don't have systemd
+    - apt-get -qq install --no-install-recommends --yes ca-certificates curl systemctl # systemctl shim needed on platforms that don't have systemd
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo "deb https://archive.mariadb.org/mariadb-10.4/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update
+    - apt-get update -qq
     - *test-install-readline-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.4
     # MariaDB.org version of 10.4 and early 10.5 do not install an init file, so
@@ -813,10 +813,10 @@ upgrade from mariadb.org-10.3:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    - apt install -y curl
+    - apt-get -qq install --no-install-recommends --yes ca-certificates curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo "deb https://archive.mariadb.org/mariadb-10.3/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update
+    - apt-get update -qq
     - *test-install-readline-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.3
     - *test-verify-initial
@@ -844,10 +844,10 @@ upgrade from mariadb.org-10.2:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    - apt install -y curl
+    - apt-get -qq install --no-install-recommends --yes ca-certificates curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo "deb https://archive.mariadb.org/mariadb-10.2/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update
+    - apt-get update -qq
     - *test-install-readline-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.2
     # Verify initial state before upgrade
@@ -887,11 +887,11 @@ upgrade from mysql.com-5.7 with Buster backports:
       apt-get install --no-install-recommends --yes gpg gpg-agent dirmngr ca-certificates # Bare minimal (<4MB) for apt-key to work
       apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 467B942D3A79BD29
       echo "deb https://repo.mysql.com/apt/debian/ buster mysql-5.7" > /etc/apt/sources.list.d/mysql.list
-      apt-get update
+      apt-get update -qq
       apt-get install -y 'mysql*' 'libmysqlc*'
     - *test-verify-initial
     # Enable backports to make galera-4 available
-    - echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list.d/backports.list && apt-get update
+    - echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list.d/backports.list && apt-get update -qq
     - *test-install
     - service mysql status
     - sleep 15 # Give the mysql_upgrade a bit of extra time to complete with MySQL 5.7 before querying the server
@@ -918,12 +918,12 @@ upgrade from percona-xtradb-5.7 with Buster backports:
       apt-get install --no-install-recommends --yes gpg gpg-agent dirmngr ca-certificates # Bare minimal (<4MB) for apt-key to work
       apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 9334A25F8507EFA5
       echo "deb https://repo.percona.com/apt/ buster main" > /etc/apt/sources.list.d/mysql.list
-      apt-get update
+      apt-get update -qq
       apt-get install -y percona-xtradb-cluster-full-57 percona-xtrabackup-24 percona-toolkit pmm2-client
     - service mysql status
     - *test-verify-initial
     # Enable backports to make galera-4 available
-    - echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list.d/backports.list && apt-get update
+    - echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list.d/backports.list && apt-get update -qq
     - *test-install
     - service mysql status
     - sleep 15 # Give the mysql_upgrade a bit of extra time to complete with MySQL 5.7 before querying the server
