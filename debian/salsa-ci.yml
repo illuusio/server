@@ -713,6 +713,45 @@ upgrade from mysql-8.0 from Ubuntu 22.04 with Bullseye backports:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
+# Upgrading from MySQL 8.0 with datadir in place is not possible. Users need to do a data dump.
+# The Debian maintainer scripts detect this situation and simply moves old datadir aside and start fresh.
+upgrade from mysql-community-cluster-8.0 from MySQL.com with Bullseye backports:
+  stage: upgrade MariaDB variant
+  needs:
+    - job: build bullseye-backports
+  image: debian:bullseye
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    - apt-get install --no-install-recommends --yes ca-certificates curl systemctl
+    - curl -sS "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x859be8d7c586f538430b19c2467b942d3a79bd29" -o /etc/apt/trusted.gpg.d/mysql.asc
+    - echo "deb https://repo.mysql.com/apt/debian/ bullseye mysql-cluster-8.0" > /etc/apt/sources.list.d/mysql.list
+    - apt-get update -qq
+    - apt-get install -y mysql-cluster-community-server
+    - sed 's/ExecStartPre=+/ExecStartPre=/' -i /lib/systemd/system/mysql.service # Hack to make file compatible with systemctl shim
+    - systemctl start mysql
+    - dpkg -l | grep -iE 'maria|mysql|galera'
+    - systemctl status mysql; mysql -e 'SELECT VERSION()'
+    - systemctl stop mysql # Stop manually as maintainer scripts don't handle this with systemctl shim
+    # Enable backports to make galera-4 available
+    - echo "deb http://deb.debian.org/debian bullseye-backports main" > /etc/apt/sources.list.d/backports.list && apt-get update -qq
+    - *test-install
+    # Ignore systemctl shim result as MariaDB systemd file is incompatible with it and yields:
+    #   ERROR:systemctl:the ExecStartPre control process exited with error code
+    - systemctl status mysql || true
+    - mysql -e 'SELECT VERSION()' || true
+    - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
 upgrade from mariadb.org-10.6:
   stage: upgrade MariaDB variant
   needs:
