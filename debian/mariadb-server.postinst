@@ -3,16 +3,13 @@ set -e
 
 . /usr/share/debconf/confmodule
 
-# Automatically set version to ease maintenance of this file
-MAJOR_VER="${DPKG_MAINTSCRIPT_PACKAGE#mariadb-server-}"
-
 if [ -n "$DEBIAN_SCRIPT_DEBUG" ]; then set -v -x; DEBIAN_SCRIPT_TRACE=1; fi
 ${DEBIAN_SCRIPT_TRACE:+ echo "#42#DEBUG# RUNNING $0 $*" 1>&2 }
 
 export PATH=$PATH:/sbin:/usr/sbin:/bin:/usr/bin
 
 # This command can be used as pipe to syslog. With "-s" it also logs to stderr.
-ERR_LOGGER="logger -p daemon.err -t mariadb-server-$MAJOR_VER.postinst -i"
+ERR_LOGGER="logger -p daemon.err -t mariadb-server.postinst -i"
 # Specify syslog tag name so it is clear the entry came from this postinst script.
 # This will make an error in a logged command immediately apparent by aborting
 # the install, rather than failing silently and leaving a broken install.
@@ -161,7 +158,9 @@ EOF
     # Clean up old flags before setting new one
     rm -f $mysql_datadir/debian-*.flag
     # Flag data dir to avoid downgrades
-    touch "$mysql_datadir/debian-$MAJOR_VER.flag"
+    # @TODO: Rewrite this to use the new upstream /var/lib/mysql_upgrade_info file
+    # instead of the legacy /var/lib/debian-XX.X.flag file
+    touch "$mysql_datadir/debian-__MARIADB_MAJOR_VER__.flag"
 
     # initiate databases. Output is not allowed by debconf :-(
     # This will fail if we are upgrading an existing database; in this case
