@@ -124,6 +124,13 @@ blhc:
   curl -sS -O http://ftp.de.debian.org/debian/pool/main/r/readline5/libreadline5_5.2+dfsg-3+b13_amd64.deb
   apt-get -qq install --no-install-recommends --yes ./libreadline5_5.2+dfsg-3+b13_amd64.deb
 
+# OpenSSL 1.1 was Debian Sid in Dec 2022 (as Bookworm will ship with OpenSSL 3.0
+# only). To be able to install versions of MariaDB that depend on OpenSSL 1.1,
+# fetch and install it manually.
+.test-install-openssl1-in-sid-for-backwards-compat: &test-install-openssl1-in-sid-for-backwards-compat |
+  curl -sS -O https://snapshot.debian.org/archive/debian/20220507T034236Z/pool/main/o/openssl/libssl1.1_1.1.1o-1_amd64.deb
+  apt-get -qq install --no-install-recommends --yes ./libssl1.1_1.1.1o-1_amd64.deb
+
 .test-verify-initial: &test-verify-initial |
   dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
   service mysql status || service mariadb status # Early MariaDB 10.5 only had 'mariadb'
@@ -738,6 +745,7 @@ upgrade from mariadb.org-10.6:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
+# archive.mariadb.org for Debian Sid latest is 10.5.13
 upgrade from mariadb.org-10.5:
   stage: upgrade MariaDB variant
   needs:
@@ -754,6 +762,7 @@ upgrade from mariadb.org-10.5:
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo "deb https://archive.mariadb.org/mariadb-10.5/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
     - apt-get update -qq
+    - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.5
     - *test-verify-initial
     # Install MariaDB built in this commit
@@ -768,6 +777,7 @@ upgrade from mariadb.org-10.5:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
+# archive.mariadb.org for Debian Sid latest is 10.4.17
 upgrade from mariadb.org-10.4:
   stage: upgrade MariaDB variant
   needs:
@@ -785,6 +795,7 @@ upgrade from mariadb.org-10.4:
     - echo "deb https://archive.mariadb.org/mariadb-10.4/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
     - apt-get update -qq
     - *test-install-readline-in-sid-for-backwards-compat
+    - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.4
     # MariaDB.org version of 10.4 and early 10.5 do not install an init file, so
     # it must be installed here manually
@@ -801,6 +812,7 @@ upgrade from mariadb.org-10.4:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
+# archive.mariadb.org for Debian Sid latest is 10.3.27
 upgrade from mariadb.org-10.3:
   stage: upgrade MariaDB variant
   needs:
@@ -818,6 +830,7 @@ upgrade from mariadb.org-10.3:
     - echo "deb https://archive.mariadb.org/mariadb-10.3/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
     - apt-get update -qq
     - *test-install-readline-in-sid-for-backwards-compat
+    - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.3
     - *test-verify-initial
     - *test-install
@@ -832,6 +845,7 @@ upgrade from mariadb.org-10.3:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
+# archive.mariadb.org for Debian Sid latest is 10.2.21
 upgrade from mariadb.org-10.2:
   stage: upgrade MariaDB variant
   needs:
@@ -849,6 +863,7 @@ upgrade from mariadb.org-10.2:
     - echo "deb https://archive.mariadb.org/mariadb-10.2/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
     - apt-get update -qq
     - *test-install-readline-in-sid-for-backwards-compat
+    - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.2
     # Verify initial state before upgrade
     - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
