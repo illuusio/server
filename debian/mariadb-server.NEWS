@@ -1,3 +1,14 @@
+mariadb (1:10.11.1-1) unstable; urgency=medium
+
+  Version suffixed packages (e.g. mariadb-server-10.6) have now been deprecated
+  as it made maintenance complicated and there was no known use cases or users
+  of the naming scheme, as multiple different major version MariaDB server
+  packages could not be co-installed anyway and source or the 'mariadb-server'
+  and 'mariadb-client' packages is easiest controlled by repositories and
+  package versioning, not versions in package *names*.
+
+ -- Otto Kekäläinen <otto@debian.org>  Mon, 02 Jan 2023 23:42:58 -0800
+
 mariadb-10.6 (1:10.6.4-1) unstable; urgency=medium
 
   Import new upstream release MariaDB 10.6.4
