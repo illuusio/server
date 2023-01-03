@@ -753,6 +753,166 @@ mysql-community-cluster-8.0 from MySQL.com with Bullseye backports upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
+mariadb.org-10.11 upgrade:
+  stage: upgrade MariaDB variant
+  needs:
+    - job: build
+  image: debian:${RELEASE}
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    - apt install -y curl
+    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
+    - echo "deb https://deb.mariadb.org/10.11/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
+    - apt-get update
+    - apt-get install -y mariadb-server
+    - *test-verify-initial
+    # Install MariaDB built in this commit
+    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.9.1-1 vs 1:10.9.1+mariadb~sid
+    - apt-get install -y --allow-downgrades ./*.deb
+    # Verify installation of MariaDB built in this commit
+    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
+    - mariadb --version # Client version
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
+mariadb.org-10.10 upgrade:
+  stage: upgrade MariaDB variant
+  needs:
+    - job: build
+  image: debian:${RELEASE}
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    - apt install -y curl
+    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
+    - echo "deb https://deb.mariadb.org/10.10/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
+    - apt-get update
+    - apt-get install -y mariadb-server
+    - *test-verify-initial
+    # Install MariaDB built in this commit
+    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.9.1-1 vs 1:10.9.1+mariadb~sid
+    - apt-get install -y --allow-downgrades ./*.deb
+    # Verify installation of MariaDB built in this commit
+    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
+    - mariadb --version # Client version
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
+mariadb.org-10.9 upgrade:
+  stage: upgrade MariaDB variant
+  needs:
+    - job: build
+  image: debian:${RELEASE}
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    - apt install -y curl
+    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
+    - echo "deb https://deb.mariadb.org/10.9/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
+    - apt-get update
+    - apt-get install -y mariadb-server
+    - *test-verify-initial
+    # Install MariaDB built in this commit
+    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.9.1-1 vs 1:10.9.1+mariadb~sid
+    - apt-get install -y --allow-downgrades ./*.deb
+    # Verify installation of MariaDB built in this commit
+    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
+    - mariadb --version # Client version
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
+mariadb.org-10.8 upgrade:
+  stage: upgrade MariaDB variant
+  needs:
+    - job: build
+  image: debian:${RELEASE}
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    - apt install -y curl
+    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
+    - echo "deb https://deb.mariadb.org/10.8/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
+    - apt-get update
+    - apt-get install -y mariadb-server-10.8
+    - *test-verify-initial
+    # Install MariaDB built in this commit
+    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.9.1-1 vs 1:10.9.1+mariadb~sid
+    - apt-get install -y --allow-downgrades ./*.deb
+    # Verify installation of MariaDB built in this commit
+    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
+    - mariadb --version # Client version
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
+mariadb.org-10.7 upgrade:
+  stage: upgrade MariaDB variant
+  needs:
+    - job: build
+  image: debian:${RELEASE}
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    - apt install -y curl
+    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
+    - echo "deb https://deb.mariadb.org/10.7/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
+    - apt-get update
+    - apt-get install -y mariadb-server-10.7
+    - *test-verify-initial
+    # Install MariaDB built in this commit
+    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.9.1-1 vs 1:10.9.1+mariadb~sid
+    - apt-get install -y --allow-downgrades ./*.deb
+    # Verify installation of MariaDB built in this commit
+    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
+    - mariadb --version # Client version
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
 mariadb.org-10.6 upgrade:
   stage: upgrade MariaDB variant
   needs:
