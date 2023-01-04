@@ -12,20 +12,15 @@
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
-  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02111-1301 USA */
 
 #define MYSQL_SERVER 1
 #include <my_global.h>
 #include "mysql_version.h"
 #include "spd_environ.h"
-#if MYSQL_VERSION_ID < 50500
-#include "mysql_priv.h"
-#include <mysql/plugin.h>
-#else
 #include "sql_priv.h"
 #include "probes_mysql.h"
 #include "sql_class.h"
-#endif
 #include "sql_common.h"
 #include <mysql.h>
 #include <errmsg.h>
@@ -45,7 +40,6 @@ spider_db_result::spider_db_result(
   DBUG_VOID_RETURN;
 }
 
-#ifdef HA_HAS_CHECKSUM_EXTENDED
 int spider_db_result::fetch_table_checksum(
   ha_spider *spider
 ) {
@@ -53,7 +47,6 @@ int spider_db_result::fetch_table_checksum(
   DBUG_PRINT("info",("spider this=%p", this));
   DBUG_RETURN(0);
 }
-#endif
 
 uint spider_db_result::limit_mode()
 {
@@ -193,7 +186,6 @@ uint spider_db_util::limit_mode()
   DBUG_RETURN(0);
 }
 
-#ifdef HA_HAS_CHECKSUM_EXTENDED
 bool spider_db_share::checksum_support()
 {
   DBUG_ENTER("spider_db_share::checksum_support");
@@ -208,9 +200,7 @@ int spider_db_handler::checksum_table(
   DBUG_PRINT("info",("spider this=%p", this));
   DBUG_RETURN(0);
 }
-#endif
 
-#ifdef HANDLER_HAS_DIRECT_UPDATE_ROWS
 bool spider_db_handler::check_direct_update(
   st_select_lex *select_lex,
   longlong select_limit,
@@ -244,4 +234,3 @@ bool spider_db_handler::check_direct_delete(
   }
   DBUG_RETURN(FALSE);
 }
-#endif

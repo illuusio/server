@@ -56,4 +56,4 @@ drop table t1;
 --remove_files_wildcard $TMP *.txt
 --remove_files_wildcard $TMP *.sql
 
---source include/rpl_end.inc
+--source rpl_common.inc

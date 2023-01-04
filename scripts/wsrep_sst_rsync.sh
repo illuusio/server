@@ -591,7 +591,7 @@ FILTER="-f '- /lost+found'
         rsync ${STUNNEL:+--rsh="$STUNNEL"} \
               --owner --group --perms --links --specials \
               --ignore-times --inplace --dirs --delete --quiet \
-              $WHOLE_FILE_OPT -f '+ /ib_logfile[0-9]*' -f '+ /aria_log.*' \
+              $WHOLE_FILE_OPT -f '+ /ib_logfile0' -f '+ /aria_log.*' \
               -f '+ /aria_log_control' -f '- **' "$ib_log_dir/" \
               "rsync://$WSREP_SST_OPT_ADDR-log_dir" >&2 || RC=$?
 

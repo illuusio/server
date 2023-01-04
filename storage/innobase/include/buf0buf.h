@@ -321,16 +321,13 @@ buf_block_get_modify_clock(
 bool buf_is_zeroes(st_::span<const byte> buf);
 
 /** Check if a page is corrupt.
-@param[in]	check_lsn	whether the LSN should be checked
-@param[in]	read_buf	database page
-@param[in]	fsp_flags	tablespace flags
+@param check_lsn   whether FIL_PAGE_LSN should be checked
+@param read_buf    database page
+@param fsp_flags   contents of FIL_SPACE_FLAGS
 @return whether the page is corrupted */
-bool
-buf_page_is_corrupted(
-	bool			check_lsn,
-	const byte*		read_buf,
-	ulint			fsp_flags)
-	MY_ATTRIBUTE((warn_unused_result));
+bool buf_page_is_corrupted(bool check_lsn, const byte *read_buf,
+                           uint32_t fsp_flags)
+  MY_ATTRIBUTE((warn_unused_result));
 
 /** Read the key version from the page. In full crc32 format,
 key version is stored at {0-3th} bytes. In other format, it is
@@ -338,7 +335,8 @@ stored in 26th position.
 @param[in]	read_buf	database page
 @param[in]	fsp_flags	tablespace flags
 @return key version of the page. */
-inline uint32_t buf_page_get_key_version(const byte* read_buf, ulint fsp_flags)
+inline uint32_t buf_page_get_key_version(const byte* read_buf,
+                                         uint32_t fsp_flags)
 {
   static_assert(FIL_PAGE_FCRC32_KEY_VERSION == 0, "compatibility");
   return fil_space_t::full_crc32(fsp_flags)
@@ -353,7 +351,7 @@ stored in page type.
 @param[in]	read_buf	database page
 @param[in]	fsp_flags	tablespace flags
 @return true if page is compressed. */
-inline bool buf_page_is_compressed(const byte* read_buf, ulint fsp_flags)
+inline bool buf_page_is_compressed(const byte* read_buf, uint32_t fsp_flags)
 {
   uint16_t page_type= fil_page_get_type(read_buf);
   return fil_space_t::full_crc32(fsp_flags)
@@ -456,12 +454,10 @@ buf_pool_size_align(
 
 /** Verify that post encryption checksum match with the calculated checksum.
 This function should be called only if tablespace contains crypt data metadata.
-@param[in]	page		page frame
-@param[in]	fsp_flags	tablespace flags
-@return true if page is encrypted and OK, false otherwise */
-bool buf_page_verify_crypt_checksum(
-	const byte*	page,
-	ulint		fsp_flags);
+@param page       page frame
+@param fsp_flags  contents of FSP_SPACE_FLAGS
+@return whether the page is encrypted and valid */
+bool buf_page_verify_crypt_checksum(const byte *page, uint32_t fsp_flags);
 
 /** Calculate a ROW_FORMAT=COMPRESSED page checksum and update the page.
 @param[in,out]	page		page to update
@@ -661,6 +657,20 @@ public:
     access_time= 0;
   }
 
+  void set_os_unused()
+  {
+    MEM_NOACCESS(frame, srv_page_size);
+#ifdef MADV_FREE
+    madvise(frame, srv_page_size, MADV_FREE);
+#elif defined(_WIN32)
+    DiscardVirtualMemory(frame, srv_page_size);
+#endif
+  }
+
+  void set_os_used() const
+  {
+    MEM_MAKE_ADDRESSABLE(frame, srv_page_size);
+  }
 public:
   const page_id_t &id() const { return id_; }
   uint32_t state() const { return zip.fix; }
@@ -791,7 +801,7 @@ public:
   {
     ut_ad(fsp_is_system_temporary(id().space()));
     ut_ad(in_file());
-    ut_ad(!oldest_modification());
+    ut_ad(!oldest_modification() || oldest_modification() == 2);
     oldest_modification_= 2;
   }
 
@@ -1726,6 +1736,12 @@ public:
   FlushHp flush_hp;
   /** modified blocks (a subset of LRU) */
   UT_LIST_BASE_NODE_T(buf_page_t) flush_list;
+  /** number of blocks ever added to flush_list;
+  sometimes protected by flush_list_mutex */
+  size_t flush_list_requests;
+
+  TPOOL_SUPPRESS_TSAN void add_flush_list_requests(size_t size)
+  { ut_ad(size); flush_list_requests+= size; }
 private:
   /** whether the page cleaner needs wakeup from indefinite sleep */
   bool page_cleaner_is_idle;
@@ -1736,7 +1752,7 @@ public:
   pthread_cond_t do_flush_list;
 
   /** @return whether the page cleaner must sleep due to being idle */
-  bool page_cleaner_idle() const
+  bool page_cleaner_idle() const noexcept
   {
     mysql_mutex_assert_owner(&flush_list_mutex);
     return page_cleaner_is_idle;
@@ -1861,24 +1877,31 @@ public:
 
 private:
   /** Remove a block from the flush list. */
-  inline void delete_from_flush_list_low(buf_page_t *bpage);
+  inline void delete_from_flush_list_low(buf_page_t *bpage) noexcept;
   /** Remove a block from flush_list.
   @param bpage   buffer pool page
   @param clear   whether to invoke buf_page_t::clear_oldest_modification() */
-  void delete_from_flush_list(buf_page_t *bpage, bool clear);
+  void delete_from_flush_list(buf_page_t *bpage, bool clear) noexcept;
 public:
   /** Remove a block from flush_list.
   @param bpage   buffer pool page */
-  void delete_from_flush_list(buf_page_t *bpage)
+  void delete_from_flush_list(buf_page_t *bpage) noexcept
   { delete_from_flush_list(bpage, true); }
 
+  /** Prepare to insert a modified blcok into flush_list.
+  @param lsn start LSN of the mini-transaction
+  @return insert position for insert_into_flush_list() */
+  inline buf_page_t *prepare_insert_into_flush_list(lsn_t lsn) noexcept;
+
   /** Insert a modified block into the flush list.
+  @param prev     insert position (from prepare_insert_into_flush_list())
   @param block    modified block
   @param lsn      start LSN of the mini-transaction that modified the block */
-  void insert_into_flush_list(buf_block_t *block, lsn_t lsn);
+  inline void insert_into_flush_list(buf_page_t *prev, buf_block_t *block,
+                                     lsn_t lsn) noexcept;
 
   /** Free a page whose underlying file page has been freed. */
-  inline void release_freed_page(buf_page_t *bpage);
+  inline void release_freed_page(buf_page_t *bpage) noexcept;
 
 private:
   /** Temporary memory for page_compressed and encrypted I/O */

@@ -332,7 +332,9 @@ trx_purge_add_undo_to_history(const trx_t* trx, trx_undo_t*& undo, mtr_t* mtr)
 		/* Update the latest MySQL binlog name and offset info
 		in rollback segment header if MySQL binlogging is on
 		or the database server is a MySQL replication save. */
-		trx_rseg_update_binlog_offset(rseg_header, trx, mtr);
+		trx_rseg_update_binlog_offset(
+			rseg_header, trx->mysql_log_file_name,
+			trx->mysql_log_offset, mtr);
 	}
 
 	/* Add the log as the first in the history list */
@@ -653,11 +655,11 @@ TRANSACTIONAL_TARGET static void trx_purge_truncate_history()
     {
       const ulint threshold=
         ulint(srv_max_undo_log_size >> srv_page_size_shift);
-      for (ulint i= purge_sys.truncate.last
+      for (uint32_t i= purge_sys.truncate.last
            ? purge_sys.truncate.last->id - srv_undo_space_id_start : 0,
            j= i;; )
       {
-        const auto space_id= srv_undo_space_id_start + i;
+        const uint32_t space_id= srv_undo_space_id_start + i;
         ut_ad(srv_is_undo_tablespace(space_id));
         fil_space_t *space= fil_space_get(space_id);
         ut_a(UT_LIST_GET_LEN(space->chain) == 1);

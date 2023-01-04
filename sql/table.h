@@ -77,6 +77,7 @@ class derived_handler;
 class Pushdown_derived;
 struct Name_resolution_context;
 class Table_function_json_table;
+class Open_table_context;
 
 /*
   Used to identify NESTED_JOIN structures within a join (applicable only to
@@ -300,6 +301,7 @@ typedef struct st_grant_info
    */
   GRANT_TABLE *grant_table_user;
   GRANT_TABLE *grant_table_role;
+  GRANT_TABLE *grant_public;
   /**
      @brief Used for cache invalidation when caching privilege information.
 
@@ -346,6 +348,14 @@ typedef struct st_grant_info
     want_privilege(NO_ACL),
     orig_want_privilege(NO_ACL)
   { }
+
+  void read(const Security_context *sctx, const char *db,
+            const char *table);
+
+  inline void refresh(const Security_context *sctx, const char *db,
+                     const char *table);
+  inline privilege_t aggregate_privs();
+  inline privilege_t aggregate_cols();
 } GRANT_INFO;
 
 enum tmp_table_type
@@ -694,16 +704,21 @@ class TABLE_STATISTICS_CB
 public:
   MEM_ROOT  mem_root; /* MEM_ROOT to allocate statistical data for the table */
   Table_statistics *table_stats; /* Structure to access the statistical data */
-  ulong total_hist_size;         /* Total size of all histograms */
+
+  /*
+    Whether the table has histograms.
+    (If the table has none, histograms_are_ready() can finish sooner)
+  */
+  bool have_histograms;
 
   bool histograms_are_ready() const
   {
-    return !total_hist_size || hist_state.is_ready();
+    return !have_histograms || hist_state.is_ready();
   }
 
   bool start_histograms_load()
   {
-    return total_hist_size && hist_state.start_load();
+    return have_histograms && hist_state.start_load();
   }
 
   void end_histograms_load() { hist_state.end_load(); }
@@ -924,6 +939,13 @@ struct TABLE_SHARE
   vers_kind_t versioned;
   period_info_t vers;
   period_info_t period;
+  /*
+      Protect multiple threads from repeating partition auto-create over
+      single share.
+
+      TODO: remove it when partitioning metadata will be in TABLE_SHARE.
+  */
+  bool          vers_skip_auto_create;
 
   bool init_period_from_extra2(period_info_t *period, const uchar *data,
                                const uchar *end);
@@ -1701,6 +1723,30 @@ public:
   Field **field_to_fill();
   bool validate_default_values_of_unset_fields(THD *thd) const;
 
+  // Check if the value list is assignable to the explicit field list
+  static bool check_assignability_explicit_fields(List<Item> fields,
+                                                  List<Item> values,
+                                                  bool ignore);
+  // Check if the value list is assignable to all visible fields
+  bool check_assignability_all_visible_fields(List<Item> &values,
+                                              bool ignore) const;
+  /*
+    Check if the value list is assignable to:
+    - The explicit field list if fields.elements > 0, e.g.
+        INSERT INTO t1 (a,b) VALUES (1,2);
+    - All visible fields, if fields.elements==0, e.g.
+        INSERT INTO t1 VALUES (1,2);
+  */
+  bool check_assignability_opt_fields(List<Item> fields,
+                                      List<Item> values,
+                                      bool ignore) const
+  {
+    DBUG_ASSERT(values.elements);
+    return fields.elements ?
+           check_assignability_explicit_fields(fields, values, ignore) :
+           check_assignability_all_visible_fields(values, ignore);
+  }
+
   bool insert_all_rows_into_tmp_table(THD *thd, 
                                       TABLE *tmp_table,
                                       TMP_TABLE_PARAM *tmp_table_param,
@@ -1788,6 +1834,10 @@ public:
 
   ulonglong vers_start_id() const;
   ulonglong vers_end_id() const;
+#ifdef WITH_PARTITION_STORAGE_ENGINE
+  bool vers_switch_partition(THD *thd, TABLE_LIST *table_list,
+                             Open_table_context *ot_ctx);
+#endif
 
   int update_generated_fields();
   int period_make_insert(Item *src, Field *dst);
@@ -1797,7 +1847,7 @@ public:
   static bool check_period_overlaps(const KEY &key, const uchar *lhs, const uchar *rhs);
   int delete_row();
   /* Used in majority of DML (called from fill_record()) */
-  void vers_update_fields();
+  bool vers_update_fields();
   /* Used in DELETE, DUP REPLACE and insert history row */
   void vers_update_end();
   void find_constraint_correlated_indexes();
@@ -2588,6 +2638,13 @@ struct TABLE_LIST
   bool          merged;
   bool          merged_for_insert;
   bool          sequence;  /* Part of NEXTVAL/CURVAL/LASTVAL */
+  /*
+      Protect single thread from repeating partition auto-create over
+      multiple share instances (as the share is closed on backoff action).
+
+      Skips auto-create only for one given query id.
+  */
+  query_id_t    vers_skip_create;
 
   /*
     Items created by create_view_field and collected to change them in case
@@ -3106,6 +3163,7 @@ typedef struct st_nested_join
   table_map         sj_depends_on;
   /* Outer non-trivially correlated tables */
   table_map         sj_corr_tables;
+  table_map         direct_children_map;
   List<Item_ptr>    sj_outer_expr_list;
   /**
      True if this join nest node is completely covered by the query execution

@@ -35,6 +35,7 @@
 #include "sql_handler.h"                        // mysql_ha_cleanup_no_free
 #include <my_sys.h>
 #include <strfunc.h>                           // strconvert()
+#include "wsrep_mysqld.h"
 #ifdef WITH_WSREP
 #include "wsrep_server_state.h"
 #endif /* WITH_WSREP */
@@ -402,6 +403,9 @@ bool backup_end(THD *thd)
     if (WSREP_NNULL(thd) && thd->wsrep_desynced_backup_stage)
     {
       Wsrep_server_state &server_state= Wsrep_server_state::instance();
+      THD_STAGE_INFO(thd, stage_waiting_flow);
+      WSREP_DEBUG("backup_end: waiting for flow control for %s",
+                  wsrep_thd_query(thd));
       server_state.resume_and_resync();
       thd->wsrep_desynced_backup_stage= false;
     }
@@ -553,7 +557,7 @@ static char *add_id_to_buffer(char *ptr, const LEX_CUSTRING *from)
 
   tmp.str= buff;
   tmp.length= MY_UUID_STRING_LENGTH;
-  my_uuid2str(from->str, buff);
+  my_uuid2str(from->str, buff, 1);
   return add_str_to_buffer(ptr, &tmp);
 }
 

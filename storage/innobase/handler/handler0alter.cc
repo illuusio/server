@@ -3804,6 +3804,8 @@ innobase_create_index_field_def(
 		index_field->col_no = key_part->fieldnr - num_v;
 	}
 
+	index_field->descending= !!(key_part->key_part_flag & HA_REVERSE_SORT);
+
 	if (DATA_LARGE_MTYPE(col_type)
 	    || (key_part->length < field->pack_length()
 		&& field->type() != MYSQL_TYPE_VARCHAR)
@@ -3905,6 +3907,7 @@ innobase_create_index_def(
 		index->fields[0].col_no = key->key_part[0].fieldnr - num_v;
 		index->fields[0].prefix_len = 0;
 		index->fields[0].is_v_col = false;
+		index->fields[0].descending = false;
 
 		/* Currently, the spatial index cannot be created
 		on virtual columns. It is blocked in the SQL layer. */
@@ -3960,6 +3963,8 @@ innobase_fts_check_doc_id_index(
 
 			if ((key.flags & HA_NOSAME)
 			    && key.user_defined_key_parts == 1
+			    && !(key.key_part[0].key_part_flag
+				 & HA_REVERSE_SORT)
 			    && !strcmp(key.name.str, FTS_DOC_ID_INDEX_NAME)
 			    && !strcmp(key.key_part[0].field->field_name.str,
 				       FTS_DOC_ID_COL_NAME)) {
@@ -3989,7 +3994,7 @@ innobase_fts_check_doc_id_index(
 		}
 
 		if (!dict_index_is_unique(index)
-		    || dict_index_get_n_unique(index) > 1
+		    || dict_index_get_n_unique(index) != 1
 		    || strcmp(index->name, FTS_DOC_ID_INDEX_NAME)) {
 			return(FTS_INCORRECT_DOC_ID_INDEX);
 		}
@@ -4000,6 +4005,7 @@ innobase_fts_check_doc_id_index(
 
 		/* The column would be of a BIGINT data type */
 		if (strcmp(field->name, FTS_DOC_ID_COL_NAME) == 0
+		    && !field->descending
 		    && field->col->mtype == DATA_INT
 		    && field->col->len == 8
 		    && field->col->prtype & DATA_NOT_NULL
@@ -4041,6 +4047,7 @@ innobase_fts_check_doc_id_index_in_def(
 		named as "FTS_DOC_ID_INDEX" and on column "FTS_DOC_ID" */
 		if (!(key->flags & HA_NOSAME)
 		    || key->user_defined_key_parts != 1
+		    || (key->key_part[0].key_part_flag & HA_REVERSE_SORT)
 		    || strcmp(key->name.str, FTS_DOC_ID_INDEX_NAME)
 		    || strcmp(key->key_part[0].field->field_name.str,
 			      FTS_DOC_ID_COL_NAME)) {
@@ -4238,6 +4245,7 @@ created_clustered:
 		index->n_fields = 1;
 		index->fields->col_no = fts_doc_id_col;
 		index->fields->prefix_len = 0;
+		index->fields->descending = false;
 		index->fields->is_v_col = false;
 		index->ind_type = DICT_UNIQUE;
 		ut_ad(!rebuild
@@ -4847,7 +4855,8 @@ columns are removed from the PK;
 (3) Changing the order of existing PK columns;
 (4) Decreasing the prefix length just like removing existing PK columns
 follows rule(1), Increasing the prefix length just like adding existing
-PK columns follows rule(2).
+PK columns follows rule(2);
+(5) Changing the ASC/DESC attribute of the existing PK columns.
 @param[in]	col_map		mapping of old column numbers to new ones
 @param[in]	ha_alter_info	Data used during in-place alter
 @param[in]	old_clust_index	index to be compared
@@ -4940,10 +4949,16 @@ innobase_pk_order_preserved(
 			continue;
 		}
 
+		const dict_field_t &of = old_clust_index->fields[old_field];
+		const dict_field_t &nf = new_clust_index->fields[new_field];
+
+		if (of.descending != nf.descending) {
+			return false;
+		}
+
 		/* Check prefix length change. */
 		const lint	prefix_change = innobase_pk_col_prefix_compare(
-			new_clust_index->fields[new_field].prefix_len,
-			old_clust_index->fields[old_field].prefix_len);
+			nf.prefix_len, of.prefix_len);
 
 		if (prefix_change < 0) {
 			/* If a column's prefix length is decreased, it should
@@ -9137,7 +9152,7 @@ innobase_rename_column_try(
 	const char*			to)
 {
 	dberr_t		error;
-	bool clust_has_prefixes = false;
+	bool clust_has_wide_format = false;
 
 	DBUG_ENTER("innobase_rename_column_try");
 
@@ -9158,10 +9173,11 @@ innobase_rename_column_try(
 	     index != NULL;
 	     index = dict_table_get_next_index(index)) {
 
-		bool has_prefixes = false;
+		bool wide_format = false;
 		for (size_t i = 0; i < dict_index_get_n_fields(index); i++) {
-			if (dict_index_get_nth_field(index, i)->prefix_len) {
-				has_prefixes = true;
+			dict_field_t* field= dict_index_get_nth_field(index, i);
+			if (field->prefix_len || field->descending) {
+				wide_format = true;
 				break;
 			}
 		}
@@ -9176,8 +9192,10 @@ innobase_rename_column_try(
 			}
 
 			pars_info_t* info = pars_info_create();
-			ulint pos = has_prefixes ? i << 16 | f.prefix_len : i;
-
+			ulint pos = wide_format
+				    ? i << 16 | f.prefix_len
+				      | !!f.descending << 15
+				    : i;
 			pars_info_add_ull_literal(info, "indexid", index->id);
 			pars_info_add_int4_literal(info, "nth", pos);
 			pars_info_add_str_literal(info, "new", to);
@@ -9197,15 +9215,16 @@ innobase_rename_column_try(
 				goto err_exit;
 			}
 
-			if (!has_prefixes || !clust_has_prefixes
-			    || f.prefix_len) {
+			if (!wide_format || !clust_has_wide_format
+			    || f.prefix_len || f.descending) {
 				continue;
 			}
 
 			/* For secondary indexes, the
-			has_prefixes check can be 'polluted'
-			by PRIMARY KEY column prefix. Try also
-			the simpler encoding of SYS_FIELDS.POS. */
+			wide_format check can be 'polluted'
+			by PRIMARY KEY column prefix or descending
+			field. Try also the simpler encoding
+			of SYS_FIELDS.POS. */
 			info = pars_info_create();
 
 			pars_info_add_ull_literal(info, "indexid", index->id);
@@ -9227,7 +9246,7 @@ innobase_rename_column_try(
 		}
 
 		if (index == dict_table_get_first_index(ctx.old_table)) {
-			clust_has_prefixes = has_prefixes;
+			clust_has_wide_format = wide_format;
 		}
 	}
 
@@ -10652,8 +10671,8 @@ commit_cache_norebuild(
 				space->flags
 					|= FSP_FLAGS_MASK_PAGE_COMPRESSION;
 			} else if (!space->is_compressed()) {
-				space->flags
-					|= innodb_compression_algorithm
+				space->flags |= static_cast<uint32_t>(
+					innodb_compression_algorithm)
 					<< FSP_FLAGS_FCRC32_POS_COMPRESSED_ALGO;
 			}
 			mysql_mutex_unlock(&fil_system.mutex);

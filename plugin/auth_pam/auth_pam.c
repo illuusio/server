@@ -15,6 +15,7 @@
    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02111-1301 USA */
 
 
+#include <my_global.h>
 #include <config_auth_pam.h>
 #include <unistd.h>
 #include <string.h>
@@ -23,7 +24,6 @@
 #include <spawn.h>
 #include <mysql/plugin_auth.h>
 #include "auth_pam_tool.h"
-#include <my_global.h>
 
 #ifndef DBUG_OFF
 static char pam_debug = 0;

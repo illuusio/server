@@ -1,7 +1,7 @@
 /*****************************************************************************
 
 Copyright (c) 2013, 2016, Oracle and/or its affiliates. All Rights Reserved.
-Copyright (c) 2017, 2021, MariaDB Corporation.
+Copyright (c) 2017, 2022, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -304,8 +304,8 @@ Datafile::read_first_page(bool read_only_mode)
 					      + m_first_page);
 		m_flags = fsp_header_get_flags(m_first_page);
 		if (!fil_space_t::is_valid_flags(m_flags, m_space_id)) {
-			ulint cflags = fsp_flags_convert_from_101(m_flags);
-			if (cflags == ULINT_UNDEFINED) {
+			uint32_t cflags = fsp_flags_convert_from_101(m_flags);
+			if (cflags == UINT32_MAX) {
 				ib::error()
 					<< "Invalid flags " << ib::hex(m_flags)
 					<< " in " << m_filepath;
@@ -342,8 +342,7 @@ in order for this function to validate it.
 @param[in]	flags		The expected tablespace flags.
 @retval DB_SUCCESS if tablespace is valid, DB_ERROR if not.
 m_is_valid is also set true on success, else false. */
-dberr_t
-Datafile::validate_to_dd(ulint space_id, ulint flags)
+dberr_t Datafile::validate_to_dd(uint32_t space_id, uint32_t flags)
 {
 	dberr_t err;
 
@@ -354,7 +353,7 @@ Datafile::validate_to_dd(ulint space_id, ulint flags)
 	/* Validate this single-table-tablespace with the data dictionary,
 	but do not compare the DATA_DIR flag, in case the tablespace was
 	remotely located. */
-	err = validate_first_page(0);
+	err = validate_first_page();
 	if (err != DB_SUCCESS) {
 		return(err);
 	}
@@ -397,7 +396,7 @@ Datafile::validate_for_recovery()
 	ut_ad(is_open());
 	ut_ad(!srv_read_only_mode);
 
-	err = validate_first_page(0);
+	err = validate_first_page();
 
 	switch (err) {
 	case DB_TABLESPACE_EXISTS:
@@ -433,7 +432,7 @@ Datafile::validate_for_recovery()
 			}
 		}
 
-		if (m_space_id == ULINT_UNDEFINED) {
+		if (m_space_id == UINT32_MAX) {
 			return DB_SUCCESS; /* empty file */
 		}
 
@@ -444,7 +443,7 @@ Datafile::validate_for_recovery()
 		/* Free the previously read first page and then re-validate. */
 		free_first_page();
 		m_defer = false;
-		err = validate_first_page(0);
+		err = validate_first_page();
 	}
 
 	return(err);
@@ -454,11 +453,10 @@ Datafile::validate_for_recovery()
 tablespace is opened.  This occurs before the fil_space_t is created
 so the Space ID found here must not already be open.
 m_is_valid is set true on success, else false.
-@param[out]	flush_lsn	contents of FIL_PAGE_FILE_FLUSH_LSN
 @retval DB_SUCCESS on if the datafile is valid
 @retval DB_CORRUPTION if the datafile is not readable
 @retval DB_TABLESPACE_EXISTS if there is a duplicate space_id */
-dberr_t Datafile::validate_first_page(lsn_t *flush_lsn)
+dberr_t Datafile::validate_first_page()
 {
 	const char*	error_txt = NULL;
 
@@ -468,14 +466,6 @@ dberr_t Datafile::validate_first_page(lsn_t *flush_lsn)
 	    && read_first_page(srv_read_only_mode) != DB_SUCCESS) {
 
 		error_txt = "Cannot read first page";
-	} else {
-		ut_ad(m_first_page);
-
-		if (flush_lsn != NULL) {
-
-			*flush_lsn = mach_read_from_8(
-				m_first_page + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION);
-		}
 	}
 
 	if (error_txt != NULL) {
@@ -626,15 +616,15 @@ Datafile::find_space_id()
 	     page_size <<= 1) {
 		/* map[space_id] = count of pages */
 		typedef std::map<
-			ulint,
-			ulint,
-			std::less<ulint>,
-			ut_allocator<std::pair<const ulint, ulint> > >
+			uint32_t,
+			uint32_t,
+			std::less<uint32_t>,
+			ut_allocator<std::pair<const uint32_t, uint32_t> > >
 			Pages;
 
 		Pages	verify;
-		ulint	page_count = 64;
-		ulint	valid_pages = 0;
+		uint32_t page_count = 64;
+		uint32_t valid_pages = 0;
 
 		/* Adjust the number of pages to analyze based on file size */
 		while ((page_count * page_size) > file_size) {
@@ -648,14 +638,14 @@ Datafile::find_space_id()
 		byte*	page = static_cast<byte*>(
 			aligned_malloc(page_size, page_size));
 
-		ulint fsp_flags;
+		uint32_t fsp_flags;
 		/* provide dummy value if the first os_file_read() fails */
 		switch (srv_checksum_algorithm) {
 		case SRV_CHECKSUM_ALGORITHM_STRICT_FULL_CRC32:
 		case SRV_CHECKSUM_ALGORITHM_FULL_CRC32:
 			fsp_flags = 1U << FSP_FLAGS_FCRC32_POS_MARKER
 				| FSP_FLAGS_FCRC32_PAGE_SSIZE()
-				| innodb_compression_algorithm
+				| uint(innodb_compression_algorithm)
 				       << FSP_FLAGS_FCRC32_POS_COMPRESSED_ALGO;
 			break;
 		default:
@@ -695,7 +685,7 @@ Datafile::find_space_id()
 
 			if (noncompressed_ok || compressed_ok) {
 
-				ulint	space_id = mach_read_from_4(page
+				uint32_t space_id = mach_read_from_4(page
 					+ FIL_PAGE_SPACE_ID);
 
 				if (space_id > 0) {
@@ -773,14 +763,14 @@ Datafile::restore_from_doublewrite()
 		return(true);
 	}
 
-	ulint	flags = mach_read_from_4(
+	uint32_t flags = mach_read_from_4(
 		FSP_HEADER_OFFSET + FSP_SPACE_FLAGS + page);
 
 	if (!fil_space_t::is_valid_flags(flags, m_space_id)) {
 		flags = fsp_flags_convert_from_101(flags);
 		/* recv_dblwr_t::validate_page() inside find_page()
 		checked this already. */
-		ut_ad(flags != ULINT_UNDEFINED);
+		ut_ad(flags != UINT32_MAX);
 		/* The flags on the page should be converted later. */
 	}
 
@@ -791,7 +781,7 @@ Datafile::restore_from_doublewrite()
 	ib::info() << "Restoring page " << page_id
 		<< " of datafile '" << m_filepath
 		<< "' from the doublewrite buffer. Writing "
-		<< physical_size << " bytes into file '"
+		<< ib::bytes_iec{physical_size} << " into file '"
 		<< m_filepath << "'";
 
 	return(os_file_write(

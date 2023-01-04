@@ -12,22 +12,17 @@
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
-  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02111-1301 USA */
 
 #define MYSQL_SERVER 1
 #include <my_global.h>
 #include "mysql_version.h"
 #include "spd_environ.h"
-#if MYSQL_VERSION_ID < 50500
-#include "mysql_priv.h"
-#include <mysql/plugin.h>
-#else
 #include "sql_priv.h"
 #include "probes_mysql.h"
 #include "sql_class.h"
 #include "sql_partition.h"
 #include "ha_partition.h"
-#endif
 #include "sql_common.h"
 #include <errmsg.h>
 #include "spd_err.h"
@@ -1169,7 +1164,6 @@ int spider_fields::ping_table_mon_from_table(
   DBUG_RETURN(error_num);
 }
 
-#ifdef SPIDER_HAS_GROUP_BY_HANDLER
 spider_group_by_handler::spider_group_by_handler(
   THD *thd_arg,
   Query *query_arg,
@@ -1243,14 +1237,8 @@ int spider_group_by_handler::init_scan()
 
   spider_db_free_one_result_for_start_next(spider);
 
-  spider->sql_kinds = SPIDER_SQL_KIND_SQL;
-  for (link_idx = 0; link_idx < (int) share->link_count; ++link_idx)
-    spider->sql_kind[link_idx] = SPIDER_SQL_KIND_SQL;
-
-#ifdef HANDLER_HAS_DIRECT_UPDATE_ROWS
   spider->do_direct_update = FALSE;
   spider->direct_update_kinds = 0;
-#endif
   spider_get_select_limit(spider, &select_lex, &select_limit, &offset_limit);
   direct_order_limit = spider_param_direct_order_limit(thd,
     share->direct_order_limit);
@@ -1262,9 +1250,7 @@ int spider_group_by_handler::init_scan()
   ) {
     result_list->internal_limit = select_limit /* + offset_limit */;
     result_list->split_read = select_limit /* + offset_limit */;
-#ifndef WITHOUT_SPIDER_BG_SEARCH
     result_list->bgs_split_read = select_limit /* + offset_limit */;
-#endif
 
     result_list->split_read_base = 9223372036854775807LL;
     result_list->semi_split_read = 0;
@@ -1275,10 +1261,8 @@ int spider_group_by_handler::init_scan()
   }
   result_list->semi_split_read_base = 0;
   result_list->set_split_read = TRUE;
-#ifndef WITHOUT_SPIDER_BG_SEARCH
   if ((error_num = spider_set_conn_bg_param(spider)))
     DBUG_RETURN(error_num);
-#endif
   DBUG_PRINT("info",("spider result_list.finish_flg = FALSE"));
   result_list->finish_flg = FALSE;
   result_list->record_num = 0;
@@ -1386,7 +1370,6 @@ int spider_group_by_handler::init_scan()
     link_idx = link_idx_holder->link_idx;
     dbton_hdl = spider->dbton_handler[conn->dbton_id];
     spider->link_idx_chain = link_idx_chain;
-#ifndef WITHOUT_SPIDER_BG_SEARCH
     if (result_list->bgs_phase > 0)
     {
       if ((error_num = spider_check_and_init_casual_read(trx->thd, spider,
@@ -1410,7 +1393,6 @@ int spider_group_by_handler::init_scan()
         DBUG_RETURN(error_num);
       }
     } else {
-#endif
       pthread_mutex_assert_not_owner(&conn->mta_conn_mutex);
       if (dbton_hdl->need_lock_before_set_sql_for_exec(
         SPIDER_SQL_TYPE_SELECT_SQL))
@@ -1516,9 +1498,7 @@ int spider_group_by_handler::init_scan()
         SPIDER_CLEAR_FILE_POS(&conn->mta_conn_mutex_file_pos);
         pthread_mutex_unlock(&conn->mta_conn_mutex);
       }
-#ifndef WITHOUT_SPIDER_BG_SEARCH
     }
-#endif
   }
 
   first = TRUE;
@@ -1557,7 +1537,6 @@ int spider_group_by_handler::next_row()
           table->status = STATUS_NOT_FOUND;
         DBUG_RETURN(spider->store_error_num);
       }
-#ifndef WITHOUT_SPIDER_BG_SEARCH
       if (spider->result_list.bgs_phase > 0)
       {
         fields->set_pos_to_first_link_idx_chain();
@@ -1586,7 +1565,6 @@ int spider_group_by_handler::next_row()
           }
         }
       }
-#endif
       spider->use_pre_call = FALSE;
     }
   } else if (offset_limit)
@@ -1646,7 +1624,6 @@ group_by_handler *spider_create_group_by_handler(
       break;
   }
 
-#ifdef WITH_PARTITION_STORAGE_ENGINE
   from = query->from;
   do {
     DBUG_PRINT("info",("spider from=%p", from));
@@ -1655,23 +1632,16 @@ group_by_handler *spider_create_group_by_handler(
     if (from->table->part_info)
     {
       DBUG_PRINT("info",("spider partition handler"));
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
       partition_info *part_info = from->table->part_info;
       uint bits = bitmap_bits_set(&part_info->read_partitions);
       DBUG_PRINT("info",("spider bits=%u", bits));
       if (bits != 1)
       {
         DBUG_PRINT("info",("spider using multiple partitions is not supported by this feature yet"));
-#else
-        DBUG_PRINT("info",("spider partition is not supported by this feature yet"));
-#endif
         DBUG_RETURN(NULL);
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
       }
-#endif
     }
   } while ((from = from->next_local));
-#endif
 
   table_idx = 0;
   from = query->from;
@@ -1684,7 +1654,6 @@ group_by_handler *spider_create_group_by_handler(
     /* all tables are const_table */
     DBUG_RETURN(NULL);
   }
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
   if (from->table->part_info)
   {
     partition_info *part_info = from->table->part_info;
@@ -1693,11 +1662,8 @@ group_by_handler *spider_create_group_by_handler(
     handler **handlers = partition->get_child_handlers();
     spider = (ha_spider *) handlers[part];
   } else {
-#endif
     spider = (ha_spider *) from->table->file;
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
   }
-#endif
   share = spider->share;
   spider->idx_for_direct_join = table_idx;
   ++table_idx;
@@ -1716,7 +1682,6 @@ group_by_handler *spider_create_group_by_handler(
   {
     if (from->table->const_table)
       continue;
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
     if (from->table->part_info)
     {
       partition_info *part_info = from->table->part_info;
@@ -1725,11 +1690,8 @@ group_by_handler *spider_create_group_by_handler(
       handler **handlers = partition->get_child_handlers();
       spider = (ha_spider *) handlers[part];
     } else {
-#endif
       spider = (ha_spider *) from->table->file;
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
     }
-#endif
     share = spider->share;
     spider->idx_for_direct_join = table_idx;
     ++table_idx;
@@ -1755,7 +1717,6 @@ group_by_handler *spider_create_group_by_handler(
   do {
     if (from->table->const_table)
       continue;
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
     if (from->table->part_info)
     {
       partition_info *part_info = from->table->part_info;
@@ -1764,11 +1725,8 @@ group_by_handler *spider_create_group_by_handler(
       handler **handlers = partition->get_child_handlers();
       spider = (ha_spider *) handlers[part];
     } else {
-#endif
       spider = (ha_spider *) from->table->file;
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
     }
-#endif
     share = spider->share;
     if (spider_param_skip_default_condition(thd,
       share->skip_default_condition))
@@ -1911,7 +1869,6 @@ group_by_handler *spider_create_group_by_handler(
   {
     from = from->next_local;
   }
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
   if (from->table->part_info)
   {
     partition_info *part_info = from->table->part_info;
@@ -1920,11 +1877,8 @@ group_by_handler *spider_create_group_by_handler(
     handler **handlers = partition->get_child_handlers();
     spider = (ha_spider *) handlers[part];
   } else {
-#endif
     spider = (ha_spider *) from->table->file;
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
   }
-#endif
   share = spider->share;
   lock_mode = spider_conn_lock_mode(spider);
   if (lock_mode)
@@ -1956,16 +1910,6 @@ group_by_handler *spider_create_group_by_handler(
       spider->conn_link_idx, roop_count, share->link_count,
       tgt_link_status)
   ) {
-    if (spider_param_use_handler(thd, share->use_handlers[roop_count]))
-    {
-      DBUG_PRINT("info",("spider direct_join does not support use_handler"));
-      if (lock_mode)
-      {
-        delete fields;
-        DBUG_RETURN(NULL);
-      }
-      continue;
-    }
     conn = spider->conns[roop_count];
     DBUG_PRINT("info",("spider roop_count=%d", roop_count));
     DBUG_PRINT("info",("spider conn=%p", conn));
@@ -2006,7 +1950,6 @@ group_by_handler *spider_create_group_by_handler(
       continue;
     fields->clear_conn_holder_from_conn();
 
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
     if (from->table->part_info)
     {
       partition_info *part_info = from->table->part_info;
@@ -2015,11 +1958,8 @@ group_by_handler *spider_create_group_by_handler(
       handler **handlers = partition->get_child_handlers();
       spider = (ha_spider *) handlers[part];
     } else {
-#endif
       spider = (ha_spider *) from->table->file;
-#if defined(PARTITION_HAS_GET_CHILD_HANDLERS)
     }
-#endif
     share = spider->share;
     if (!fields->add_table(spider))
     {
@@ -2045,16 +1985,6 @@ group_by_handler *spider_create_group_by_handler(
         tgt_link_status)
     ) {
       DBUG_PRINT("info",("spider roop_count=%d", roop_count));
-      if (spider_param_use_handler(thd, share->use_handlers[roop_count]))
-      {
-        DBUG_PRINT("info",("spider direct_join does not support use_handler"));
-        if (lock_mode)
-        {
-          delete fields;
-          DBUG_RETURN(NULL);
-        }
-        continue;
-      }
       conn = spider->conns[roop_count];
       DBUG_PRINT("info",("spider conn=%p", conn));
       if (!fields->check_conn_same_conn(conn))
@@ -2143,4 +2073,3 @@ group_by_handler *spider_create_group_by_handler(
   query->order_by = NULL;
   DBUG_RETURN(group_by_handler);
 }
-#endif

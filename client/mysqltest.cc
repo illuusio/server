@@ -3288,6 +3288,47 @@ static int replace(DYNAMIC_STRING *ds_str,
   return 0;
 }
 
+#ifdef _WIN32
+/**
+  Check if background execution of command was requested.
+  Like in Unix shell, we assume background execution of the last
+  character in command is a ampersand (we do not tokenize though)
+*/
+static bool is_background_command(const DYNAMIC_STRING *ds)
+{
+  for (size_t i= ds->length - 1; i > 1; i--)
+  {
+    char c= ds->str[i];
+    if (!isspace(c))
+      return (c == '&');
+  }
+  return false;
+}
+
+/**
+  Execute OS command in background. We assume that the last character
+  is ampersand, i.e is_background_command() returned
+*/
+#include <string>
+static int execute_in_background(char *cmd)
+{
+  STARTUPINFO s{};
+  PROCESS_INFORMATION pi{};
+  char *end= strrchr(cmd, '&');
+  DBUG_ASSERT(end);
+  *end =0;
+  std::string scmd("cmd /c ");
+  scmd.append(cmd);
+  BOOL ok=
+   CreateProcess(0, (char *)scmd.c_str(), 0, 0, 0, CREATE_NO_WINDOW, 0, 0, &s, &pi);
+  *end= '&';
+  if (!ok)
+    return (int) GetLastError();
+  CloseHandle(pi.hProcess);
+  CloseHandle(pi.hThread);
+  return 0;
+}
+#endif
 
 /*
   Execute given command.
@@ -3362,6 +3403,14 @@ void do_exec(struct st_command *command)
   DBUG_PRINT("info", ("Executing '%s' as '%s'",
                       command->first_argument, ds_cmd.str));
 
+#ifdef _WIN32
+  if (is_background_command(&ds_cmd))
+  {
+    error= execute_in_background(ds_cmd.str);
+    goto end;
+  }
+#endif
+
   if (!(res_file= my_popen(ds_cmd.str, "r")))
   {
     dynstr_free(&ds_cmd);
@@ -3388,7 +3437,9 @@ void do_exec(struct st_command *command)
     dynstr_append_sorted(&ds_res, &ds_sorted, 0);
     dynstr_free(&ds_sorted);
   }
-
+#ifdef _WIN32
+end:
+#endif
   if (error)
   {
     uint status= WEXITSTATUS(error);
@@ -3683,8 +3734,7 @@ void do_remove_file(struct st_command *command)
 void do_remove_files_wildcard(struct st_command *command)
 {
   int error= 0, sys_errno= 0;
-  uint i;
-  size_t directory_length;
+  size_t i, directory_length;
   MY_DIR *dir_info;
   FILEINFO *file;
   char dir_separator[2];
@@ -3723,7 +3773,7 @@ void do_remove_files_wildcard(struct st_command *command)
   /* Set default wild chars for wild_compare, is changed in embedded mode */
   set_wild_chars(1);
   
-  for (i= 0; i < (uint) dir_info->number_of_files; i++)
+  for (i= 0; i < dir_info->number_of_files; i++)
   {
     file= dir_info->dir_entry + i;
     /* Remove only regular files, i.e. no directories etc. */
@@ -3997,7 +4047,7 @@ void do_rmdir(struct st_command *command)
 static int get_list_files(DYNAMIC_STRING *ds, const DYNAMIC_STRING *ds_dirname,
                           const DYNAMIC_STRING *ds_wild)
 {
-  uint i;
+  size_t i;
   MY_DIR *dir_info;
   FILEINFO *file;
   DBUG_ENTER("get_list_files");
@@ -4006,7 +4056,7 @@ static int get_list_files(DYNAMIC_STRING *ds, const DYNAMIC_STRING *ds_dirname,
   if (!(dir_info= my_dir(ds_dirname->str, MYF(MY_WANT_SORT))))
     DBUG_RETURN(1);
   set_wild_chars(1);
-  for (i= 0; i < (uint) dir_info->number_of_files; i++)
+  for (i= 0; i < dir_info->number_of_files; i++)
   {
     file= dir_info->dir_entry + i;
     if (ds_wild && ds_wild->length &&
@@ -5744,6 +5794,7 @@ void safe_connect(MYSQL* mysql, const char *name, const char *host,
   con               - connection structure to be used
   host, user, pass, - connection parameters
   db, port, sock
+  default_db        - 0 if db was explicitly passed
 
   DESCRIPTION
   This function will try to establish a connection to server and handle
@@ -5761,7 +5812,8 @@ void safe_connect(MYSQL* mysql, const char *name, const char *host,
 int connect_n_handle_errors(struct st_command *command,
                             MYSQL* con, const char* host,
                             const char* user, const char* pass,
-                            const char* db, int port, const char* sock)
+                            const char* db, int port, const char* sock,
+                            my_bool default_db)
 {
   DYNAMIC_STRING *ds;
   int failed_attempts= 0;
@@ -5802,8 +5854,10 @@ int connect_n_handle_errors(struct st_command *command,
 
   mysql_options(con, MYSQL_OPT_CONNECT_ATTR_RESET, 0);
   mysql_options4(con, MYSQL_OPT_CONNECT_ATTR_ADD, "program_name", "mysqltest");
-  while (!mysql_real_connect(con, host, user, pass, db, port, sock ? sock: 0,
-                          CLIENT_MULTI_STATEMENTS))
+  while (!mysql_real_connect(con, host, user, pass,
+                             (default_db ? "" : db),
+                             port, (sock ? sock : 0),
+                             CLIENT_MULTI_STATEMENTS))
   {
     /*
       If we have used up all our connections check whether this
@@ -5842,6 +5896,13 @@ do_handle_error:
 		 mysql_sqlstate(con), ds);
     return 0; /* Not connected */
   }
+
+  if (default_db && db && db[0] != '\0')
+  {
+    mysql_select_db(con, db);
+    // Ignore errors intentionally
+  }
+
 
   var_set_errno(0);
   handle_no_error(command);
@@ -5896,6 +5957,7 @@ void do_connect(struct st_command *command)
   int connect_timeout= 0;
   char *csname=0;
   struct st_connection* con_slot;
+  my_bool default_db;
 
   static DYNAMIC_STRING ds_connection_name;
   static DYNAMIC_STRING ds_host;
@@ -6074,12 +6136,8 @@ void do_connect(struct st_command *command)
     mysql_options(con_slot->mysql, MYSQL_OPT_SSL_CRL, opt_ssl_crl);
     mysql_options(con_slot->mysql, MYSQL_OPT_SSL_CRLPATH, opt_ssl_crlpath);
     mysql_options(con_slot->mysql, MARIADB_OPT_TLS_VERSION, opt_tls_version);
-#if MYSQL_VERSION_ID >= 50000
-    /* Turn on ssl_verify_server_cert only if host is "localhost" */
-    opt_ssl_verify_server_cert= !strcmp(ds_host.str, "localhost");
     mysql_options(con_slot->mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
                   &opt_ssl_verify_server_cert);
-#endif
   }
 #endif
 
@@ -6106,7 +6164,12 @@ void do_connect(struct st_command *command)
 
   /* Use default db name */
   if (ds_database.length == 0)
+  {
     dynstr_set(&ds_database, opt_db);
+    default_db= 1;
+  }
+  else
+    default_db= 0;
 
   if (opt_plugin_dir && *opt_plugin_dir)
     mysql_options(con_slot->mysql, MYSQL_PLUGIN_DIR, opt_plugin_dir);
@@ -6121,7 +6184,7 @@ void do_connect(struct st_command *command)
   if (connect_n_handle_errors(command, con_slot->mysql,
                               ds_host.str,ds_user.str,
                               ds_password.str, ds_database.str,
-                              con_port, ds_sock.str))
+                              con_port, ds_sock.str, default_db))
   {
     DBUG_PRINT("info", ("Inserting connection %s in connection pool",
                         ds_connection_name.str));
@@ -9814,12 +9877,8 @@ int main(int argc, char **argv)
 		  opt_ssl_capath, opt_ssl_cipher);
     mysql_options(con->mysql, MYSQL_OPT_SSL_CRL, opt_ssl_crl);
     mysql_options(con->mysql, MYSQL_OPT_SSL_CRLPATH, opt_ssl_crlpath);
-#if MYSQL_VERSION_ID >= 50000
-    /* Turn on ssl_verify_server_cert only if host is "localhost" */
-    opt_ssl_verify_server_cert= opt_host && !strcmp(opt_host, "localhost");
     mysql_options(con->mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
                   &opt_ssl_verify_server_cert);
-#endif
   }
 #endif
 

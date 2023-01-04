@@ -36,10 +36,11 @@ Created 11/5/1995 Heikki Tuuri
 #include "mach0data.h"
 #include "buf0buf.h"
 #include "buf0checksum.h"
-#include "ut0crc32.h"
 #include <string.h>
 
-#ifndef UNIV_INNOCHECKSUM
+#ifdef UNIV_INNOCHECKSUM
+#include "my_sys.h"
+#else
 #include "my_cpu.h"
 #include "mem0mem.h"
 #include "btr0btr.h"
@@ -374,8 +375,8 @@ static bool buf_tmp_page_decrypt(byte* tmp_frame, byte* src_frame)
 			  src_frame + srv_page_size - FIL_PAGE_FCRC32_CHECKSUM,
 			  FIL_PAGE_FCRC32_CHECKSUM);
 
-	memcpy_aligned<OS_FILE_LOG_BLOCK_SIZE>(src_frame, tmp_frame,
-					       srv_page_size);
+	memcpy_aligned<UNIV_PAGE_SIZE_MIN>(src_frame, tmp_frame,
+					   srv_page_size);
 	srv_stats.pages_decrypted.inc();
 	srv_stats.n_temp_blocks_decrypted.inc();
 
@@ -563,15 +564,12 @@ bool buf_is_zeroes(span<const byte> buf)
 }
 
 /** Check if a page is corrupt.
-@param[in]	check_lsn	whether the LSN should be checked
-@param[in]	read_buf	database page
-@param[in]	fsp_flags	tablespace flags
+@param check_lsn   whether FIL_PAGE_LSN should be checked
+@param read_buf    database page
+@param fsp_flags   contents of FIL_SPACE_FLAGS
 @return whether the page is corrupted */
-bool
-buf_page_is_corrupted(
-	bool			check_lsn,
-	const byte*		read_buf,
-	ulint			fsp_flags)
+bool buf_page_is_corrupted(bool check_lsn, const byte *read_buf,
+                           uint32_t fsp_flags)
 {
 	if (fil_space_t::full_crc32(fsp_flags)) {
 		bool compressed = false, corrupted = false;
@@ -596,8 +594,8 @@ buf_page_is_corrupted(
 			}
 		});
 
-		if (crc32 != ut_crc32(read_buf,
-				      size - FIL_PAGE_FCRC32_CHECKSUM)) {
+		if (crc32 != my_crc32c(0, read_buf,
+				       size - FIL_PAGE_FCRC32_CHECKSUM)) {
 			return true;
 		}
 		static_assert(FIL_PAGE_FCRC32_KEY_VERSION == 0, "alignment");
@@ -768,17 +766,9 @@ buf_madvise_do_dump()
 
 	/* mirrors allocation in log_t::create() */
 	if (log_sys.buf) {
-		ret += madvise(log_sys.buf,
-			       srv_log_buffer_size,
+		ret += madvise(log_sys.buf, log_sys.buf_size, MADV_DODUMP);
+		ret += madvise(log_sys.flush_buf, log_sys.buf_size,
 			       MADV_DODUMP);
-		ret += madvise(log_sys.flush_buf,
-			       srv_log_buffer_size,
-			       MADV_DODUMP);
-	}
-	/* mirrors recv_sys_t::create() */
-	if (recv_sys.buf)
-	{
-		ret+= madvise(recv_sys.buf, recv_sys.len, MADV_DODUMP);
 	}
 
 	mysql_mutex_lock(&buf_pool.mutex);
@@ -964,7 +954,7 @@ inline const buf_block_t *buf_pool_t::chunk_t::not_freed() const
       {
         /* The page cleaner is disabled in read-only mode.  No pages
         can be dirtied, so all of them must be clean. */
-        ut_ad(lsn == 0 || lsn == recv_sys.recovered_lsn ||
+        ut_ad(lsn == 0 || lsn == recv_sys.lsn ||
               srv_force_recovery == SRV_FORCE_NO_LOG_REDO);
         break;
       }
@@ -1062,7 +1052,11 @@ bool buf_pool_t::create()
   while (++chunk < chunks + n_chunks);
 
   ut_ad(is_initialised());
+#if defined(__aarch64__)
   mysql_mutex_init(buf_pool_mutex_key, &mutex, MY_MUTEX_INIT_FAST);
+#else
+  mysql_mutex_init(buf_pool_mutex_key, &mutex, nullptr);
+#endif
 
   UT_LIST_INIT(LRU, &buf_page_t::LRU);
   UT_LIST_INIT(withdraw, &buf_page_t::list);
@@ -1204,7 +1198,7 @@ inline bool buf_pool_t::realloc(buf_block_t *block)
 	hash_lock.lock();
 
 	if (block->page.can_relocate()) {
-		memcpy_aligned<OS_FILE_LOG_BLOCK_SIZE>(
+		memcpy_aligned<UNIV_PAGE_SIZE_MIN>(
 			new_block->page.frame, block->page.frame,
 			srv_page_size);
 		mysql_mutex_lock(&buf_pool.flush_list_mutex);
@@ -1325,8 +1319,8 @@ inline bool buf_pool_t::withdraw_blocks()
 	buf_block_t*	block;
 	ulint		loop_count = 0;
 
-	ib::info() << "start to withdraw the last "
-		<< withdraw_target << " blocks";
+	ib::info() << "Start to withdraw the last "
+		<< withdraw_target << " blocks.";
 
 	while (UT_LIST_GET_LEN(withdraw) < withdraw_target) {
 
@@ -1409,15 +1403,15 @@ realloc_frame:
 		mysql_mutex_unlock(&mutex);
 
 		buf_resize_status(
-			"withdrawing blocks. (" ULINTPF "/" ULINTPF ")",
+			"Withdrawing blocks. (" ULINTPF "/" ULINTPF ").",
 			UT_LIST_GET_LEN(withdraw),
 			withdraw_target);
 
-		ib::info() << "withdrew "
+		ib::info() << "Withdrew "
 			<< count1 << " blocks from free list."
-			<< " Tried to relocate " << count2 << " pages ("
+			<< " Tried to relocate " << count2 << " blocks ("
 			<< UT_LIST_GET_LEN(withdraw) << "/"
-			<< withdraw_target << ")";
+			<< withdraw_target << ").";
 
 		if (++loop_count >= 10) {
 			/* give up for now.
@@ -1440,8 +1434,8 @@ realloc_frame:
 		}
 	}
 
-	ib::info() << "withdrawn target: " << UT_LIST_GET_LEN(withdraw)
-		   << " blocks";
+	ib::info() << "Withdrawn target: " << UT_LIST_GET_LEN(withdraw)
+		   << " blocks.";
 
 	return(false);
 }
@@ -1519,11 +1513,15 @@ inline void buf_pool_t::resize()
 	ut_ad(srv_buf_pool_chunk_unit > 0);
 
 	ulint new_instance_size = srv_buf_pool_size >> srv_page_size_shift;
+	std::ostringstream str_old_size, str_new_size, str_chunk_size;
+	str_old_size << ib::bytes_iec{srv_buf_pool_old_size};
+	str_new_size << ib::bytes_iec{srv_buf_pool_size};
+	str_chunk_size << ib::bytes_iec{srv_buf_pool_chunk_unit};
 
-	buf_resize_status("Resizing buffer pool from " ULINTPF " to "
-			  ULINTPF " (unit=" ULINTPF ").",
-			  srv_buf_pool_old_size, srv_buf_pool_size,
-			  srv_buf_pool_chunk_unit);
+	buf_resize_status("Resizing buffer pool from %s to %s (unit = %s).",
+			  str_old_size.str().c_str(),
+			  str_new_size.str().c_str(),
+			  str_chunk_size.str().c_str());
 
 #ifdef BTR_CUR_HASH_ADAPT
 	/* disable AHI if needed */
@@ -1618,7 +1616,7 @@ withdraw_retry:
 		goto withdraw_retry;
 	}
 
-	buf_resize_status("Latching whole of buffer pool.");
+	buf_resize_status("Latching entire buffer pool.");
 
 #ifndef DBUG_OFF
 	{
@@ -1642,15 +1640,15 @@ withdraw_retry:
 	/* Indicate critical path */
 	resizing.store(true, std::memory_order_relaxed);
 
-  mysql_mutex_lock(&mutex);
-  page_hash.write_lock_all();
+	mysql_mutex_lock(&mutex);
+	page_hash.write_lock_all();
 
 	chunk_t::map_reg = UT_NEW_NOKEY(chunk_t::map());
 
 	/* add/delete chunks */
 
-	buf_resize_status("buffer pool resizing with chunks "
-			  ULINTPF " to " ULINTPF ".",
+	buf_resize_status("Resizing buffer pool from "
+			  ULINTPF " chunks to " ULINTPF " chunks.",
 			  n_chunks, n_chunks_new);
 
 	if (is_shrinking()) {
@@ -1691,7 +1689,7 @@ withdraw_retry:
 		withdraw_target = 0;
 
 		ib::info() << n_chunks - n_chunks_new
-			   << " chunks (" << sum_freed
+			   << " Chunks (" << sum_freed
 			   << " blocks) were freed.";
 
 		n_chunks = n_chunks_new;
@@ -1808,18 +1806,18 @@ calc_buf_pool_size:
 	if (!warning && new_size_too_diff) {
 		srv_buf_pool_base_size = srv_buf_pool_size;
 
-		buf_resize_status("Resizing also other hash tables.");
+		buf_resize_status("Resizing other hash tables.");
 
 		srv_lock_table_size = 5
 			* (srv_buf_pool_size >> srv_page_size_shift);
 		lock_sys.resize(srv_lock_table_size);
 		dict_sys.resize();
 
-		ib::info() << "Resized hash tables at lock_sys,"
+		ib::info() << "Resized hash tables: lock_sys,"
 #ifdef BTR_CUR_HASH_ADAPT
 			" adaptive hash index,"
 #endif /* BTR_CUR_HASH_ADAPT */
-			" dictionary.";
+			" and dictionary.";
 	}
 
 	/* normalize ibuf.max_size */
@@ -1827,9 +1825,8 @@ calc_buf_pool_size:
 
 	if (srv_buf_pool_old_size != srv_buf_pool_size) {
 
-		ib::info() << "Completed to resize buffer pool from "
-			<< srv_buf_pool_old_size
-			<< " to " << srv_buf_pool_size << ".";
+	        buf_resize_status("Completed resizing buffer pool from %zu to %zu bytes."
+			    ,srv_buf_pool_old_size, srv_buf_pool_size);
 		srv_buf_pool_old_size = srv_buf_pool_size;
 	}
 
@@ -1841,16 +1838,8 @@ calc_buf_pool_size:
 	}
 #endif /* BTR_CUR_HASH_ADAPT */
 
-	char	now[32];
-
-	ut_sprintf_timestamp(now);
-	if (!warning) {
-		buf_resize_status("Completed resizing buffer pool at %s.",
-			now);
-	} else {
-		buf_resize_status("Resizing buffer pool failed,"
-			" finished resizing at %s.", now);
-	}
+	if (warning)
+		buf_resize_status("Resizing buffer pool failed");
 
 	ut_d(validate());
 
@@ -3102,6 +3091,7 @@ void buf_block_t::initialise(const page_id_t page_id, ulint zip_size,
   ut_ad(!page.in_file());
   buf_block_init_low(this);
   page.init(fix, page_id);
+  page.set_os_used();
   page_zip_set_size(&page.zip, zip_size);
 }
 
@@ -4142,10 +4132,10 @@ buf_print_io(
 
 /** Verify that post encryption checksum match with the calculated checksum.
 This function should be called only if tablespace contains crypt data metadata.
-@param[in]	page		page frame
-@param[in]	fsp_flags	tablespace flags
-@return true if true if page is encrypted and OK, false otherwise */
-bool buf_page_verify_crypt_checksum(const byte* page, ulint fsp_flags)
+@param page       page frame
+@param fsp_flags  contents of FSP_SPACE_FLAGS
+@return whether the page is encrypted and valid */
+bool buf_page_verify_crypt_checksum(const byte *page, uint32_t fsp_flags)
 {
 	if (!fil_space_t::full_crc32(fsp_flags)) {
 		return fil_space_verify_crypt_checksum(

@@ -12,7 +12,7 @@
 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
-  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
+  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02111-1301 USA */
 
 /*
   This SQL script creates system tables for SPIDER
@@ -224,12 +224,7 @@ static LEX_STRING spider_init_queries[] = {
   {C_STRING_WITH_LEN(
     "create procedure mysql.spider_fix_system_tables()"
     "begin"
-    "  select substring_index(substring_index(version(), '-', 2), '-', -1)"
-    "    into @server_name;"
-    "  if @server_name regexp '^[0-9]+$' then"
-    "    select substring_index(substring_index(version(), '-', 3), '-', -1)"
-    "      into @server_name;"
-    "  end if;"
+    "  select 'MariaDB' into @server_name;"
     "  select substring_index(version(), '.', 1)"
     "    into @server_major_version;"
     "  select substring_index(substring_index(version(), '.', 2), '.', -1)"
@@ -548,7 +543,7 @@ static LEX_STRING spider_init_queries[] = {
     "      @server_major_version > 10 or"
     "      ("
     "        @server_major_version = 10 and"
-    "        @server_minor_version >= 7"
+    "        @server_minor_version >= 999"
     "      )"
     "    )"
     "  then"
@@ -808,7 +803,7 @@ static LEX_STRING spider_init_queries[] = {
     "      @server_major_version > 10 or"
     "      ("
     "        @server_major_version = 10 and"
-    "        @server_minor_version >= 7"
+    "        @server_minor_version >= 999"
     "      )"
     "    )"
     "  then"

@@ -385,7 +385,7 @@ start_log:
 
 		/* If encryption is enabled encrypt buffer before writing it
 		to file system. */
-		if (log_tmp_is_encrypted()) {
+		if (srv_encrypt_log) {
 			if (!log_tmp_block_encrypt(
 				    buf, srv_sort_buf_size,
 				    log->crypt_tail, byte_offset)) {
@@ -520,7 +520,7 @@ row_log_table_close_func(
 
 		/* If encryption is enabled encrypt buffer before writing it
 		to file system. */
-		if (log_tmp_is_encrypted()) {
+		if (srv_encrypt_log) {
 			if (!log_tmp_block_encrypt(
 				    log->tail.block, srv_sort_buf_size,
 				    log->crypt_tail, byte_offset,
@@ -2606,7 +2606,7 @@ all_done:
 			goto corruption;
 		}
 
-		if (log_tmp_is_encrypted()) {
+		if (srv_encrypt_log) {
 			if (!log_tmp_block_decrypt(
 				    buf, srv_sort_buf_size,
 				    index->online_log->crypt_head, ofs)) {
@@ -2959,7 +2959,7 @@ row_log_allocate(
 
 	dict_index_set_online_status(index, ONLINE_INDEX_CREATION);
 
-	if (log_tmp_is_encrypted()) {
+	if (srv_encrypt_log) {
 		log->crypt_head_size = log->crypt_tail_size = srv_sort_buf_size;
 		log->crypt_head = static_cast<byte *>(
 			my_large_malloc(&log->crypt_head_size, MYF(MY_WME)));
@@ -3525,7 +3525,7 @@ all_done:
 			goto corruption;
 		}
 
-		if (log_tmp_is_encrypted()) {
+		if (srv_encrypt_log) {
 			if (!log_tmp_block_decrypt(
 				    buf, srv_sort_buf_size,
 				    index->online_log->crypt_head, ofs)) {

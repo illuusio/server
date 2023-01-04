@@ -971,9 +971,8 @@ longlong Item_func_month::val_int()
 }
 
 
-bool Item_func_monthname::fix_length_and_dec()
+bool Item_func_monthname::fix_length_and_dec(THD *thd)
 {
-  THD* thd= current_thd;
   CHARSET_INFO *cs= thd->variables.collation_connection;
   locale= thd->variables.lc_time_names;
   collation.set(cs, DERIVATION_COERCIBLE, locale->repertoire());
@@ -1116,9 +1115,8 @@ longlong Item_func_weekday::val_int()
   return dt.weekday(odbc_type) + MY_TEST(odbc_type);
 }
 
-bool Item_func_dayname::fix_length_and_dec()
+bool Item_func_dayname::fix_length_and_dec(THD *thd)
 {
-  THD* thd= current_thd;
   CHARSET_INFO *cs= thd->variables.collation_connection;
   locale= thd->variables.lc_time_names;  
   collation.set(cs, DERIVATION_COERCIBLE, locale->repertoire());
@@ -1511,7 +1509,7 @@ bool Item_func_from_days::get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fuzz
 void Item_func_curdate_local::store_now_in_TIME(THD *thd, MYSQL_TIME *now_time)
 {
   thd->variables.time_zone->gmt_sec_to_TIME(now_time, thd->query_start());
-  thd->time_zone_used= 1;
+  thd->used |= THD::TIME_ZONE_USED;
 }
 
 
@@ -1551,7 +1549,7 @@ bool Item_func_curtime::fix_fields(THD *thd, Item **items)
 {
   if (decimals > TIME_SECOND_PART_DIGITS)
   {
-    my_error(ER_TOO_BIG_PRECISION, MYF(0), static_cast<ulonglong>(decimals),
+    my_error(ER_TOO_BIG_PRECISION, MYF(0),
              func_name(), TIME_SECOND_PART_DIGITS);
     return 1;
   }
@@ -1603,7 +1601,7 @@ void Item_func_curtime_local::store_now_in_TIME(THD *thd, MYSQL_TIME *now_time)
   now_time->year= now_time->month= now_time->day= 0;
   now_time->time_type= MYSQL_TIMESTAMP_TIME;
   set_sec_part(thd->query_start_sec_part(), now_time, this);
-  thd->time_zone_used= 1;
+  thd->used|= THD::TIME_ZONE_USED;
 }
 
 
@@ -1627,7 +1625,7 @@ bool Item_func_now::fix_fields(THD *thd, Item **items)
 {
   if (decimals > TIME_SECOND_PART_DIGITS)
   {
-    my_error(ER_TOO_BIG_PRECISION, MYF(0), static_cast<ulonglong>(decimals),
+    my_error(ER_TOO_BIG_PRECISION, MYF(0),
              func_name(), TIME_SECOND_PART_DIGITS);
     return 1;
   }
@@ -1669,7 +1667,7 @@ void Item_func_now_local::store_now_in_TIME(THD *thd, MYSQL_TIME *now_time)
 {
   thd->variables.time_zone->gmt_sec_to_TIME(now_time, thd->query_start());
   set_sec_part(thd->query_start_sec_part(), now_time, this);
-  thd->time_zone_used= 1;
+  thd->used|= THD::TIME_ZONE_USED;
 }
 
 
@@ -1712,7 +1710,7 @@ void Item_func_sysdate_local::store_now_in_TIME(THD *thd, MYSQL_TIME *now_time)
   my_hrtime_t now= my_hrtime();
   thd->variables.time_zone->gmt_sec_to_TIME(now_time, hrtime_to_my_time(now));
   set_sec_part(hrtime_sec_part(now), now_time, this);
-  thd->time_zone_used= 1;
+  thd->used|= THD::TIME_ZONE_USED;
 }
 
 
@@ -1735,9 +1733,8 @@ bool Item_func_sec_to_time::get_date(THD *thd, MYSQL_TIME *ltime, date_mode_t fu
   return false;
 }
 
-bool Item_func_date_format::fix_length_and_dec()
+bool Item_func_date_format::fix_length_and_dec(THD *thd)
 {
-  THD* thd= current_thd;
   if (!is_time_format)
   {
     if (arg_count < 3)
@@ -2617,9 +2614,8 @@ err_exit:
 }
 
 
-bool Item_func_tochar::fix_length_and_dec()
+bool Item_func_tochar::fix_length_and_dec(THD *thd)
 {
-  thd= current_thd;
   CHARSET_INFO *cs= thd->variables.collation_connection;
   Item *arg1= args[1]->this_item();
   my_repertoire_t repertoire= arg1->collation.repertoire;
@@ -2683,6 +2679,7 @@ bool Item_func_tochar::fix_length_and_dec()
 
 String *Item_func_tochar::val_str(String* str)
  {
+  THD *thd= current_thd;
   StringBuffer<64> format_buffer;
   String *format;
   MYSQL_TIME l_time;
@@ -2733,10 +2730,9 @@ null_date:
 }
 
 
-bool Item_func_from_unixtime::fix_length_and_dec()
+bool Item_func_from_unixtime::fix_length_and_dec(THD *thd)
 {
-  THD *thd= current_thd;
-  thd->time_zone_used= 1;
+  thd->used|= THD::TIME_ZONE_USED;
   tz= thd->variables.time_zone;
   Type_std_attributes::set(
     Type_temporal_attributes_not_fixed_dec(MAX_DATETIME_WIDTH,
@@ -2818,7 +2814,7 @@ void Item_func_convert_tz::cleanup()
 }
 
 
-bool Item_date_add_interval::fix_length_and_dec()
+bool Item_date_add_interval::fix_length_and_dec(THD *thd)
 {
   enum_field_types arg0_field_type;
 
@@ -2947,7 +2943,7 @@ bool Item_extract::check_arguments() const
 }
 
 
-bool Item_extract::fix_length_and_dec()
+bool Item_extract::fix_length_and_dec(THD *thd)
 {
   set_maybe_null(); // If wrong date
   uint32 daylen= args[0]->cmp_type() == TIME_RESULT ? 2 :
@@ -3441,7 +3437,7 @@ err:
 }
 
 
-bool Item_func_add_time::fix_length_and_dec()
+bool Item_func_add_time::fix_length_and_dec(THD *thd)
 {
   enum_field_types arg0_field_type;
 
@@ -3852,7 +3848,7 @@ get_date_time_result_type(const char *format, uint length)
 }
 
 
-bool Item_func_str_to_date::fix_length_and_dec()
+bool Item_func_str_to_date::fix_length_and_dec(THD *thd)
 {
   if (!args[0]->type_handler()->is_traditional_scalar_type() ||
       !args[1]->type_handler()->is_traditional_scalar_type())

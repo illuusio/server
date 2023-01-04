@@ -336,7 +336,7 @@ dberr_t ibuf_merge_or_delete_for_page(buf_block_t *block,
 /** Delete all change buffer entries for a tablespace,
 in DISCARD TABLESPACE, IMPORT TABLESPACE, or crash recovery.
 @param[in]	space		missing or to-be-discarded tablespace */
-void ibuf_delete_for_discarded_space(ulint space);
+void ibuf_delete_for_discarded_space(uint32_t space);
 
 /** Contract the change buffer by reading pages to the buffer pool.
 @return a lower limit for the combined size in bytes of entries which

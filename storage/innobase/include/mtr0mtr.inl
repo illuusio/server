@@ -107,9 +107,8 @@ mtr_t::sx_latch_at_savepoint(
 	mtr_memo_slot_t* slot = m_memo.at<mtr_memo_slot_t*>(savepoint);
 
 	ut_ad(slot->object == block);
-
-	/* == RW_NO_LATCH */
-	ut_a(slot->type == MTR_MEMO_BUF_FIX);
+	ut_ad(slot->type == MTR_MEMO_BUF_FIX); /* == RW_NO_LATCH */
+	slot->type = MTR_MEMO_PAGE_SX_FIX;
 
 	block->page.lock.u_lock();
 	ut_ad(!block->page.is_io_fixed());
@@ -117,8 +116,6 @@ mtr_t::sx_latch_at_savepoint(
 	if (!m_made_dirty) {
 		m_made_dirty = is_block_dirtied(block);
 	}
-
-	slot->type = MTR_MEMO_PAGE_SX_FIX;
 }
 
 /**
@@ -141,9 +138,8 @@ mtr_t::x_latch_at_savepoint(
 	mtr_memo_slot_t* slot = m_memo.at<mtr_memo_slot_t*>(savepoint);
 
 	ut_ad(slot->object == block);
-
-	/* == RW_NO_LATCH */
-	ut_a(slot->type == MTR_MEMO_BUF_FIX);
+	ut_ad(slot->type == MTR_MEMO_BUF_FIX); /* == RW_NO_LATCH */
+	slot->type = MTR_MEMO_PAGE_X_FIX;
 
 	block->page.lock.x_lock();
 	ut_ad(!block->page.is_io_fixed());
@@ -151,8 +147,6 @@ mtr_t::x_latch_at_savepoint(
 	if (!m_made_dirty) {
 		m_made_dirty = is_block_dirtied(block);
 	}
-
-	slot->type = MTR_MEMO_PAGE_X_FIX;
 }
 
 /**

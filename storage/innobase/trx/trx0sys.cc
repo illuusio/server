@@ -212,7 +212,7 @@ TPOOL_SUPPRESS_TSAN size_t trx_sys_t::history_size_approx() const
 @param space_id   system or undo tablespace id
 @return pointer to new rollback segment
 @retval nullptr  on failure */
-static trx_rseg_t *trx_rseg_create(ulint space_id)
+static trx_rseg_t *trx_rseg_create(uint32_t space_id)
 {
   trx_rseg_t *rseg= nullptr;
   mtr_t mtr;
@@ -273,11 +273,11 @@ bool trx_sys_create_rsegs()
 	in the system tablespace. */
 	ut_a(srv_available_undo_logs > 0);
 
-	for (ulint i = 0; srv_available_undo_logs < TRX_SYS_N_RSEGS;
+	for (uint32_t i = 0; srv_available_undo_logs < TRX_SYS_N_RSEGS;
 	     i++, srv_available_undo_logs++) {
 		/* Tablespace 0 is the system tablespace.
 		Dedicated undo log tablespaces start from 1. */
-		ulint space = srv_undo_tablespaces > 0
+		uint32_t space = srv_undo_tablespaces > 0
 			? (i % srv_undo_tablespaces)
 			+ srv_undo_space_id_start
 			: TRX_SYS_SPACE;
@@ -291,10 +291,9 @@ bool trx_sys_create_rsegs()
 		/* Increase the number of active undo
 		tablespace in case new rollback segment
 		assigned to new undo tablespace. */
-		if (space > srv_undo_tablespaces_active) {
+		if (space > (srv_undo_space_id_start
+			     + srv_undo_tablespaces_active - 1)) {
 			srv_undo_tablespaces_active++;
-
-			ut_ad(srv_undo_tablespaces_active == space);
 		}
 	}
 

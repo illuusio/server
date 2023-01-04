@@ -612,11 +612,10 @@ dict_sys_tables_type_valid(ulint type, bool not_redundant)
 @param[in]	not_redundant	whether ROW_FORMAT=REDUNDANT is not used
 @return	table flags */
 static
-ulint
-dict_sys_tables_type_to_tf(ulint type, bool not_redundant)
+uint32_t dict_sys_tables_type_to_tf(uint32_t type, bool not_redundant)
 {
 	ut_ad(dict_sys_tables_type_valid(type, not_redundant));
-	ulint	flags = not_redundant ? 1 : 0;
+	uint32_t flags = not_redundant ? 1 : 0;
 
 	/* ZIP_SSIZE, ATOMIC_BLOBS, DATA_DIR, PAGE_COMPRESSION,
 	PAGE_COMPRESSION_LEVEL are the same. */
@@ -654,15 +653,14 @@ dict_sys_tables_rec_read(
 	bool			uncommitted,
 	mtr_t*			mtr,
 	table_id_t*		table_id,
-	ulint*			space_id,
-	ulint*			n_cols,
-	ulint*			flags,
-	ulint*			flags2,
+	uint32_t*		space_id,
+	uint32_t*		n_cols,
+	uint32_t*		flags,
+	uint32_t*		flags2,
 	trx_id_t*		trx_id)
 {
 	const byte*	field;
 	ulint		len;
-	ulint		type;
 	mem_heap_t*	heap = nullptr;
 
 	field = rec_get_nth_field_old(
@@ -720,7 +718,7 @@ dict_sys_tables_rec_read(
 	field = rec_get_nth_field_old(
 		rec, DICT_FLD__SYS_TABLES__TYPE, &len);
 	ut_a(len == 4);
-	type = mach_read_from_4(field);
+	uint32_t type = mach_read_from_4(field);
 
 	/* Handle MDEV-12873 InnoDB SYS_TABLES.TYPE incompatibility
 	for PAGE_COMPRESSED=YES in MariaDB 10.2.2 to 10.2.6.
@@ -811,8 +809,8 @@ dict_sys_tables_rec_read(
 	if (!dict_sys_tables_type_valid(type, not_redundant)) {
 		sql_print_error("InnoDB: Table %.*s in InnoDB"
 				" data dictionary contains invalid flags."
-				" SYS_TABLES.TYPE=" ULINTPF
-				" SYS_TABLES.N_COLS=" ULINTPF,
+				" SYS_TABLES.TYPE=" UINT32PF
+				" SYS_TABLES.N_COLS=" UINT32PF,
 				int(rec_get_field_start_offs(rec, 1)), rec,
 				type, *n_cols);
 err_exit:
@@ -842,8 +840,8 @@ err_exit:
 			sql_print_error("InnoDB: Table %.*s in InnoDB"
 					" data dictionary"
 					" contains invalid flags."
-					" SYS_TABLES.TYPE=" ULINTPF
-					" SYS_TABLES.MIX_LEN=" ULINTPF,
+					" SYS_TABLES.TYPE=" UINT32PF
+					" SYS_TABLES.MIX_LEN=" UINT32PF,
 					int(rec_get_field_start_offs(rec, 1)),
 					rec,
 					type, *flags2);
@@ -879,7 +877,7 @@ was needed and force_recovery is not set.
 We also scan the biggest space id, and store it to fil_system. */
 void dict_check_tablespaces_and_store_max_id()
 {
-	ulint		max_space_id = 0;
+	uint32_t	max_space_id = 0;
 	btr_pcur_t	pcur;
 	mtr_t		mtr;
 
@@ -894,10 +892,10 @@ void dict_check_tablespaces_and_store_max_id()
 	     rec; rec = dict_getnext_system_low(&pcur, &mtr)) {
 		ulint		len;
 		table_id_t	table_id;
-		ulint		space_id;
-		ulint		n_cols;
-		ulint		flags;
-		ulint		flags2;
+		uint32_t	space_id;
+		uint32_t	n_cols;
+		uint32_t	flags;
+		uint32_t	flags2;
 
 		/* If a table record is not useable, ignore it and continue
 		on to the next record. Error messages were logged. */
@@ -1535,6 +1533,7 @@ dict_load_field_low(
 	ulint		len;
 	unsigned	pos_and_prefix_len;
 	unsigned	prefix_len;
+	bool		descending;
 	bool		first_field;
 	ulint		position;
 
@@ -1587,10 +1586,12 @@ err_len:
 	}
 
 	if (first_field || pos_and_prefix_len > 0xFFFFUL) {
-		prefix_len = pos_and_prefix_len & 0xFFFFUL;
+		prefix_len = pos_and_prefix_len & 0x7FFFUL;
+		descending = (pos_and_prefix_len & 0x8000UL);
 		position = (pos_and_prefix_len & 0xFFFF0000UL)  >> 16;
 	} else {
 		prefix_len = 0;
+		descending = false;
 		position = pos_and_prefix_len & 0xFFFFUL;
 	}
 
@@ -1640,11 +1641,12 @@ err_len:
 	if (index) {
 		dict_mem_index_add_field(
 			index, mem_heap_strdupl(heap, (const char*) field, len),
-			prefix_len);
+			prefix_len, descending);
 	} else {
 		sys_field->name = mem_heap_strdupl(
 			heap, (const char*) field, len);
 		sys_field->prefix_len = prefix_len & ((1U << 12) - 1);
+		sys_field->descending = descending;
 		*pos = position;
 	}
 
@@ -2161,13 +2163,9 @@ const char *dict_load_table_low(mtr_t *mtr, bool uncommitted,
                                 const rec_t *rec, dict_table_t **table)
 {
 	table_id_t	table_id;
-	ulint		space_id;
-	ulint		n_cols;
-	ulint		t_num;
-	ulint		flags;
-	ulint		flags2;
+	uint32_t	space_id, t_num, flags, flags2;
+	ulint		n_cols, n_v_col;
 	trx_id_t	trx_id;
-	ulint		n_v_col;
 
 	if (const char* error_text = dict_sys_tables_rec_check(rec)) {
 		*table = NULL;
@@ -3120,12 +3118,12 @@ loop:
 	following call does the comparison in the latin1_swedish_ci
 	charset-collation, in a case-insensitive way. */
 
-	if (0 != cmp_data_data(dfield_get_type(&dfield)->mtype,
-			       dfield_get_type(&dfield)->prtype,
-			       reinterpret_cast<const byte*>(table_name),
-			       dfield_get_len(&dfield),
-			       field, len)) {
-
+	if (cmp_data(dfield_get_type(&dfield)->mtype,
+		     dfield_get_type(&dfield)->prtype,
+		     false,
+		     reinterpret_cast<const byte*>(table_name),
+		     dfield_get_len(&dfield),
+		     field, len)) {
 		goto load_next_index;
 	}
 

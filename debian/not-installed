@@ -44,6 +44,7 @@ usr/share/man/man1/mysql-stress-test.pl.1
 usr/share/mysql/binary-configure
 usr/share/mysql/JavaWrappers.jar # These are only built if JNI/libjawt.so is installed from e.g. openjdk-8-jre-headless
 usr/share/mysql/JdbcInterface.jar # These are only built if JNI/libjawt.so is installed from e.g. openjdk-8-jre-headless
+usr/share/mysql/mariadb.logrotate
 usr/share/mysql/magic
 usr/share/mysql/maria_add_gis_sp.sql # mariadb-server-core.install has *_bootstrap.sql
 usr/share/mysql/Mongo2.jar

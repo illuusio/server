@@ -1207,6 +1207,7 @@ static
 void
 ibuf_print_ops(
 /*===========*/
+	const char*			op_name,/*!< in: operation name */
 	const Atomic_counter<ulint>*	ops,	/*!< in: operation counts */
 	FILE*				file)	/*!< in: file where to print */
 {
@@ -1215,11 +1216,11 @@ ibuf_print_ops(
 		"delete mark",
 		"delete"
 	};
-	ulint	i;
 
-	ut_a(UT_ARR_SIZE(op_names) == IBUF_OP_COUNT);
+	static_assert(array_elements(op_names) == IBUF_OP_COUNT, "");
+	fputs(op_name, file);
 
-	for (i = 0; i < IBUF_OP_COUNT; i++) {
+	for (ulint i = 0; i < IBUF_OP_COUNT; i++) {
 		fprintf(file, "%s " ULINTPF "%s", op_names[i],
 			ulint{ops[i]}, (i < (IBUF_OP_COUNT - 1)) ? ", " : "");
 	}
@@ -1632,6 +1633,7 @@ ibuf_entry_build(
 		dfield_copy(field, entry_field);
 
 		ifield = dict_index_get_nth_field(index, i);
+		ut_ad(!ifield->descending);
 		/* Prefix index columns of fixed-length columns are of
 		fixed length.  However, in the function call below,
 		dfield_get_type(entry_field) contains the fixed length
@@ -2273,7 +2275,7 @@ static void ibuf_read_merge_pages(const uint32_t* space_ids,
 #endif
 
 	for (ulint i = 0; i < n_stored; i++) {
-		const ulint space_id = space_ids[i];
+		const uint32_t space_id = space_ids[i];
 		fil_space_t* s = fil_space_t::get(space_id);
 		if (!s) {
 tablespace_deleted:
@@ -2621,7 +2623,7 @@ static bool ibuf_get_volume_buffered_hash(const rec_t *rec, ulint *hash,
   ut_ad(rec_get_n_fields_old(rec) > IBUF_REC_FIELD_USER);
   const ulint start= rec_get_field_start_offs(rec, IBUF_REC_FIELD_USER);
   const ulint len= rec_get_data_size_old(rec) - start;
-  const uint32_t fold= ut_crc32(rec + start, len);
+  const uint32_t fold= my_crc32c(0, rec + start, len);
   hash+= (fold / (CHAR_BIT * sizeof *hash)) % size;
   ulint bitmask= static_cast<ulint>(1) << (fold % (CHAR_BIT * sizeof(*hash)));
 
@@ -3544,7 +3546,7 @@ ibuf_insert(
 
 	ut_ad(dtuple_check_typed(entry));
 	ut_ad(page_id.space() != SRV_TMP_SPACE_ID);
-
+	ut_ad(index->is_btree());
 	ut_a(!dict_index_is_clust(index));
 	ut_ad(!index->table->is_temporary());
 
@@ -4463,7 +4465,7 @@ reset_bit:
 /** Delete all change buffer entries for a tablespace,
 in DISCARD TABLESPACE, IMPORT TABLESPACE, or crash recovery.
 @param[in]	space		missing or to-be-discarded tablespace */
-void ibuf_delete_for_discarded_space(ulint space)
+void ibuf_delete_for_discarded_space(uint32_t space)
 {
 	mem_heap_t*	heap;
 	btr_pcur_t	pcur;
@@ -4568,23 +4570,28 @@ ibuf_print(
 /*=======*/
 	FILE*	file)	/*!< in: file where to print */
 {
-	mysql_mutex_lock(&ibuf_mutex);
 
-	fprintf(file,
-		"Ibuf: size " ULINTPF ", free list len " ULINTPF ","
-		" seg size " ULINTPF ", " ULINTPF " merges\n",
-		ibuf.size,
-		ibuf.free_list_len,
-		ibuf.seg_size,
-		ulint{ibuf.n_merges});
+  mysql_mutex_lock(&ibuf_mutex);
+  if (ibuf.empty)
+  {
+    mysql_mutex_unlock(&ibuf_mutex);
+    return;
+  }
 
-	fputs("merged operations:\n ", file);
-	ibuf_print_ops(ibuf.n_merged_ops, file);
+  const ulint size= ibuf.size;
+  const ulint free_list_len= ibuf.free_list_len;
+  const ulint seg_size= ibuf.seg_size;
+  mysql_mutex_unlock(&ibuf_mutex);
 
-	fputs("discarded operations:\n ", file);
-	ibuf_print_ops(ibuf.n_discarded_ops, file);
-
-	mysql_mutex_unlock(&ibuf_mutex);
+  fprintf(file,
+          "-------------\n"
+          "INSERT BUFFER\n"
+          "-------------\n"
+          "size " ULINTPF ", free list len " ULINTPF ","
+          " seg size " ULINTPF ", " ULINTPF " merges\n",
+          size, free_list_len, seg_size, ulint{ibuf.n_merges});
+  ibuf_print_ops("merged operations:\n", ibuf.n_merged_ops, file);
+  ibuf_print_ops("discarded operations:\n", ibuf.n_discarded_ops, file);
 }
 
 /** Check the insert buffer bitmaps on IMPORT TABLESPACE.

@@ -32,6 +32,7 @@ Relay_Log_Pos	<relay_log_pos>
 Relay_Master_Log_File	master-bin.000001
 Slave_IO_Running	Yes
 Slave_SQL_Running	Yes
+Replicate_Rewrite_DB	
 Replicate_Do_DB	
 Replicate_Ignore_DB	
 Replicate_Do_Table	
@@ -62,7 +63,7 @@ Replicate_Ignore_Server_Ids
 Master_Server_Id	1
 Master_SSL_Crl	
 Master_SSL_Crlpath	
-Using_Gtid	No
+Using_Gtid	Slave_Pos
 Gtid_IO_Pos	
 Replicate_Do_Domain_Ids	
 Replicate_Ignore_Domain_Ids	
@@ -93,6 +94,7 @@ Relay_Log_Pos	<relay_log_pos>
 Relay_Master_Log_File	master-bin.000001
 Slave_IO_Running	Yes
 Slave_SQL_Running	Yes
+Replicate_Rewrite_DB	
 Replicate_Do_DB	
 Replicate_Ignore_DB	
 Replicate_Do_Table	
@@ -123,7 +125,7 @@ Replicate_Ignore_Server_Ids
 Master_Server_Id	2
 Master_SSL_Crl	
 Master_SSL_Crlpath	
-Using_Gtid	No
+Using_Gtid	Slave_Pos
 Gtid_IO_Pos	
 Replicate_Do_Domain_Ids	
 Replicate_Ignore_Domain_Ids	
@@ -148,7 +150,7 @@ CHANNEL_NAME	slave2
 HOST	127.0.0.1
 PORT	#
 USER	root
-USING_GTID	NO
+USING_GTID	SLAVE_POS
 SSL_ALLOWED	NO
 SSL_CA_FILE	
 SSL_CA_PATH	
@@ -168,7 +170,7 @@ CHANNEL_NAME	slave1
 HOST	127.0.0.1
 PORT	#
 USER	root
-USING_GTID	NO
+USING_GTID	SLAVE_POS
 SSL_ALLOWED	NO
 SSL_CA_FILE	
 SSL_CA_PATH	
@@ -219,6 +221,7 @@ Relay_Log_Pos	<relay_log_pos>
 Relay_Master_Log_File	master-bin.000001
 Slave_IO_Running	No
 Slave_SQL_Running	No
+Replicate_Rewrite_DB	
 Replicate_Do_DB	
 Replicate_Ignore_DB	
 Replicate_Do_Table	
@@ -249,7 +252,7 @@ Replicate_Ignore_Server_Ids
 Master_Server_Id	1
 Master_SSL_Crl	
 Master_SSL_Crlpath	
-Using_Gtid	No
+Using_Gtid	Slave_Pos
 Gtid_IO_Pos	
 Replicate_Do_Domain_Ids	
 Replicate_Ignore_Domain_Ids	
@@ -276,6 +279,7 @@ Relay_Log_Pos	<relay_log_pos>
 Relay_Master_Log_File	
 Slave_IO_Running	No
 Slave_SQL_Running	No
+Replicate_Rewrite_DB	
 Replicate_Do_DB	
 Replicate_Ignore_DB	
 Replicate_Do_Table	
@@ -306,7 +310,7 @@ Replicate_Ignore_Server_Ids
 Master_Server_Id	1
 Master_SSL_Crl	
 Master_SSL_Crlpath	
-Using_Gtid	No
+Using_Gtid	Slave_Pos
 Gtid_IO_Pos	
 Replicate_Do_Domain_Ids	
 Replicate_Ignore_Domain_Ids	
@@ -337,6 +341,7 @@ Relay_Log_Pos	<relay_log_pos>
 Relay_Master_Log_File	master-bin.000001
 Slave_IO_Running	Yes
 Slave_SQL_Running	Yes
+Replicate_Rewrite_DB	
 Replicate_Do_DB	
 Replicate_Ignore_DB	
 Replicate_Do_Table	
@@ -367,7 +372,7 @@ Replicate_Ignore_Server_Ids
 Master_Server_Id	2
 Master_SSL_Crl	
 Master_SSL_Crlpath	
-Using_Gtid	No
+Using_Gtid	Slave_Pos
 Gtid_IO_Pos	
 Replicate_Do_Domain_Ids	
 Replicate_Ignore_Domain_Ids	
@@ -400,6 +405,7 @@ Relay_Log_Pos	<relay_log_pos>
 Relay_Master_Log_File	master-bin.000001
 Slave_IO_Running	Yes
 Slave_SQL_Running	Yes
+Replicate_Rewrite_DB	
 Replicate_Do_DB	
 Replicate_Ignore_DB	
 Replicate_Do_Table	
@@ -430,7 +436,7 @@ Replicate_Ignore_Server_Ids
 Master_Server_Id	2
 Master_SSL_Crl	
 Master_SSL_Crlpath	
-Using_Gtid	No
+Using_Gtid	Slave_Pos
 Gtid_IO_Pos	
 Replicate_Do_Domain_Ids	
 Replicate_Ignore_Domain_Ids	
@@ -465,6 +471,7 @@ Relay_Log_Pos	<relay_log_pos>
 Relay_Master_Log_File	master-bin.000001
 Slave_IO_Running	No
 Slave_SQL_Running	No
+Replicate_Rewrite_DB	
 Replicate_Do_DB	
 Replicate_Ignore_DB	
 Replicate_Do_Table	
@@ -495,7 +502,7 @@ Replicate_Ignore_Server_Ids
 Master_Server_Id	2
 Master_SSL_Crl	
 Master_SSL_Crlpath	
-Using_Gtid	No
+Using_Gtid	Slave_Pos
 Gtid_IO_Pos	
 Replicate_Do_Domain_Ids	
 Replicate_Ignore_Domain_Ids	

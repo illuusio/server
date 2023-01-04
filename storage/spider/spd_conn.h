@@ -22,9 +22,7 @@
 #define SPIDER_SIMPLE_CONNECT             1
 #define SPIDER_SIMPLE_DISCONNECT          2
 #define SPIDER_SIMPLE_RECORDS             3
-#ifdef HA_HAS_CHECKSUM_EXTENDED
 #define SPIDER_SIMPLE_CHECKSUM_TABLE      4
-#endif
 
 #define SPIDER_LOP_CHK_QUEUED             (1 << 0)
 #define SPIDER_LOP_CHK_MERAGED            (1 << 1)
@@ -33,10 +31,8 @@
 typedef struct st_spider_conn_loop_check
 {
   uint               flag;
-#ifdef SPIDER_HAS_HASH_VALUE_TYPE
   my_hash_value_type hash_value_to;
   my_hash_value_type hash_value_full;
-#endif
   LEX_CSTRING        from_name;
   LEX_CSTRING        cur_name;
   LEX_CSTRING        to_name;
@@ -256,7 +252,6 @@ SPIDER_CONN *spider_tree_delete(
   SPIDER_CONN *top
 );
 
-#ifndef WITHOUT_SPIDER_BG_SEARCH
 int spider_set_conn_bg_param(
   ha_spider *spider
 );
@@ -353,7 +348,6 @@ void spider_free_mon_threads(
 void *spider_bg_mon_action(
   void *arg
 );
-#endif
 
 int spider_conn_first_link_idx(
   THD *thd,
@@ -394,18 +388,6 @@ int spider_conn_lock_mode(
 
 bool spider_conn_check_recovery_link(
   SPIDER_SHARE *share
-);
-
-bool spider_conn_use_handler(
-  ha_spider *spider,
-  int lock_mode,
-  int link_idx
-);
-
-bool spider_conn_need_open_handler(
-  ha_spider *spider,
-  uint idx,
-  int link_idx
 );
 
 SPIDER_IP_PORT_CONN *spider_create_ipport_conn(SPIDER_CONN *conn);

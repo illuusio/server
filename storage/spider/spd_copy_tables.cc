@@ -18,17 +18,12 @@
 #include <my_global.h>
 #include "mysql_version.h"
 #include "spd_environ.h"
-#if MYSQL_VERSION_ID < 50500
-#include "mysql_priv.h"
-#include <mysql/plugin.h>
-#else
 #include "sql_priv.h"
 #include "probes_mysql.h"
 #include "sql_class.h"
 #include "sql_base.h"
 #include "sql_partition.h"
 #include "transaction.h"
-#endif
 #include "spd_err.h"
 #include "spd_param.h"
 #include "spd_db_include.h"
@@ -73,10 +68,8 @@ int spider_udf_set_copy_tables_param_default(
     copy_tables->use_table_charset = 1;
   if (copy_tables->use_transaction == -1)
     copy_tables->use_transaction = 1;
-#ifndef WITHOUT_SPIDER_BG_SEARCH
   if (copy_tables->bg_mode == -1)
     copy_tables->bg_mode = 0;
-#endif
   DBUG_RETURN(0);
 }
 
@@ -226,9 +219,7 @@ int spider_udf_parse_copy_tables_param(
   copy_tables->bulk_insert_rows = -1;
   copy_tables->use_table_charset = -1;
   copy_tables->use_transaction = -1;
-#ifndef WITHOUT_SPIDER_BG_SEARCH
   copy_tables->bg_mode = -1;
-#endif
 
   if (param_length == 0)
     goto set_default;
@@ -281,9 +272,7 @@ int spider_udf_parse_copy_tables_param(
           goto error;
         continue;
       case 3:
-#ifndef WITHOUT_SPIDER_BG_SEARCH
         SPIDER_PARAM_INT_WITH_MAX("bgm", bg_mode, 0, 1);
-#endif
         SPIDER_PARAM_INT("bii", bulk_insert_interval, 0);
         SPIDER_PARAM_LONGLONG("bir", bulk_insert_rows, 1);
         SPIDER_PARAM_STR("dtb", database);
@@ -291,12 +280,10 @@ int spider_udf_parse_copy_tables_param(
         SPIDER_PARAM_INT_WITH_MAX("utr", use_transaction, 0, 1);
         error_num = param_string_parse.print_param_error();
         goto error;
-#ifndef WITHOUT_SPIDER_BG_SEARCH
       case 7:
         SPIDER_PARAM_INT_WITH_MAX("bg_mode", bg_mode, 0, 1);
         error_num = param_string_parse.print_param_error();
         goto error;
-#endif
       case 8:
         SPIDER_PARAM_STR("database", database);
         error_num = param_string_parse.print_param_error();
@@ -422,10 +409,8 @@ int spider_udf_get_copy_tgt_tables(
     if (
       (error_num = spider_set_connect_info_default(
         tmp_share,
-#ifdef WITH_PARTITION_STORAGE_ENGINE
         NULL,
         NULL,
-#endif
         NULL
       )) ||
       (error_num = spider_set_connect_info_default_db_table(
@@ -787,7 +772,6 @@ int spider_udf_copy_tables_create_table_list(
   DBUG_RETURN(0);
 }
 
-#ifndef WITHOUT_SPIDER_BG_SEARCH
 int spider_udf_bg_copy_exec_sql(
   SPIDER_COPY_TABLE_CONN *table_conn
 ) {
@@ -816,7 +800,6 @@ int spider_udf_bg_copy_exec_sql(
   conn->bg_caller_sync_wait = FALSE;
   DBUG_RETURN(0);
 }
-#endif
 
 long long spider_copy_tables_body(
   UDF_INIT *initid,
@@ -847,13 +830,8 @@ long long spider_copy_tables_body(
     thd->handler_tables_hash.records != 0 ||
     thd->derived_tables != 0 ||
     thd->lock != 0 ||
-#if MYSQL_VERSION_ID < 50500
-    thd->locked_tables != 0 ||
-    thd->prelocked_mode != NON_PRELOCKED
-#else
     thd->locked_tables_list.locked_tables() ||
     thd->locked_tables_mode != LTM_NONE
-#endif
   ) {
     if (thd->open_tables != 0)
     {
@@ -876,18 +854,6 @@ long long spider_copy_tables_body(
       my_printf_error(ER_SPIDER_UDF_CANT_USE_IF_OPEN_TABLE_NUM,
         ER_SPIDER_UDF_CANT_USE_IF_OPEN_TABLE_STR_WITH_PTR, MYF(0),
         "thd->lock", thd->lock);
-#if MYSQL_VERSION_ID < 50500
-    } else if (thd->locked_tables != 0)
-    {
-      my_printf_error(ER_SPIDER_UDF_CANT_USE_IF_OPEN_TABLE_NUM,
-        ER_SPIDER_UDF_CANT_USE_IF_OPEN_TABLE_STR_WITH_PTR, MYF(0),
-        "thd->locked_tables", thd->locked_tables);
-    } else if (thd->prelocked_mode != NON_PRELOCKED)
-    {
-      my_printf_error(ER_SPIDER_UDF_CANT_USE_IF_OPEN_TABLE_NUM,
-        ER_SPIDER_UDF_CANT_USE_IF_OPEN_TABLE_STR_WITH_NUM, MYF(0),
-        "thd->prelocked_mode", (longlong) thd->prelocked_mode);
-#else
     } else if (thd->locked_tables_list.locked_tables())
     {
       my_printf_error(ER_SPIDER_UDF_CANT_USE_IF_OPEN_TABLE_NUM,
@@ -899,7 +865,6 @@ long long spider_copy_tables_body(
       my_printf_error(ER_SPIDER_UDF_CANT_USE_IF_OPEN_TABLE_NUM,
         ER_SPIDER_UDF_CANT_USE_IF_OPEN_TABLE_STR_WITH_NUM, MYF(0),
         "thd->locked_tables_mode", (longlong) thd->locked_tables_mode);
-#endif
     }
     goto error;
   }
@@ -991,9 +956,7 @@ long long spider_copy_tables_body(
   copy_tables->trx->trx_start = TRUE;
   copy_tables->trx->updated_in_this_trx = FALSE;
   DBUG_PRINT("info",("spider trx->updated_in_this_trx=FALSE"));
-#if MYSQL_VERSION_ID < 50500
-  if (open_and_lock_tables(thd, table_list))
-#else
+
     MDL_REQUEST_INIT(&table_list->mdl_request,
     MDL_key::TABLE,
     SPIDER_TABLE_LIST_db_str(table_list),
@@ -1002,7 +965,6 @@ long long spider_copy_tables_body(
     MDL_TRANSACTION
   );
   if (open_and_lock_tables(thd, table_list, FALSE, 0))
-#endif
   {
     thd->m_reprepare_observer = reprepare_observer_backup;
     copy_tables->trx->trx_start = FALSE;
@@ -1038,8 +1000,7 @@ long long spider_copy_tables_body(
   else
     copy_tables->access_charset = system_charset_info;
 
-  bulk_insert_rows = spider_param_udf_ct_bulk_insert_rows(
-    copy_tables->bulk_insert_rows);
+  bulk_insert_rows= copy_tables->bulk_insert_rows;
   for (src_tbl_conn = copy_tables->table_conn[0]; src_tbl_conn;
     src_tbl_conn = src_tbl_conn->next)
   {
@@ -1223,11 +1184,7 @@ long long spider_copy_tables_body(
 */
   if (table_list->table)
   {
-#if MYSQL_VERSION_ID < 50500
-    ha_autocommit_or_rollback(thd, 0);
-#else
     (thd->is_error() ? trans_rollback_stmt(thd) : trans_commit_stmt(thd));
-#endif
     close_thread_tables(thd);
   }
   if (spider)
@@ -1285,11 +1242,7 @@ error:
   }
   if (table_list && table_list->table)
   {
-#if MYSQL_VERSION_ID < 50500
-    ha_autocommit_or_rollback(thd, 0);
-#else
     (thd->is_error() ? trans_rollback_stmt(thd) : trans_commit_stmt(thd));
-#endif
     close_thread_tables(thd);
   }
   if (spider)

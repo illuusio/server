@@ -162,7 +162,7 @@ SET(ignored
 SET(CPACK_RPM_server_USER_FILELIST
     ${ignored}
     "%config(noreplace) ${INSTALL_SYSCONF2DIR}/*"
-    "%config(noreplace) ${INSTALL_SYSCONFDIR}/logrotate.d/mysql"
+    "%config(noreplace) ${INSTALL_SYSCONFDIR}/logrotate.d/mariadb"
     )
 SET(CPACK_RPM_common_USER_FILELIST ${ignored} "%config(noreplace) ${INSTALL_SYSCONFDIR}/my.cnf")
 SET(CPACK_RPM_shared_USER_FILELIST ${ignored} "%config(noreplace) ${INSTALL_SYSCONF2DIR}/*")
@@ -226,6 +226,7 @@ IF(WITH_WSREP)
   SETA(CPACK_RPM_server_PACKAGE_REQUIRES
     "galera-4" "rsync" "lsof" "grep" "gawk" "iproute"
     "coreutils" "findutils" "tar")
+  SETA(CPACK_RPM_server_PACKAGE_RECOMMENDS "pv")
 ENDIF()
 
 SET(CPACK_RPM_server_PRE_INSTALL_SCRIPT_FILE ${CMAKE_SOURCE_DIR}/support-files/rpm/server-prein.sh)

@@ -581,6 +581,7 @@ static int hton_drop_table(handlerton *hton, const char *path)
 
 int ha_finalize_handlerton(st_plugin_int *plugin)
 {
+  int deinit_status= 0;
   handlerton *hton= (handlerton *)plugin->data;
   DBUG_ENTER("ha_finalize_handlerton");
 
@@ -595,18 +596,7 @@ int ha_finalize_handlerton(st_plugin_int *plugin)
     hton->panic(hton, HA_PANIC_CLOSE);
 
   if (plugin->plugin->deinit)
-  {
-    /*
-      Today we have no defined/special behavior for uninstalling
-      engine plugins.
-    */
-    DBUG_PRINT("info", ("Deinitializing plugin: '%s'", plugin->name.str));
-    if (plugin->plugin->deinit(NULL))
-    {
-      DBUG_PRINT("warning", ("Plugin '%s' deinit function returned error.",
-                             plugin->name.str));
-    }
-  }
+    deinit_status= plugin->plugin->deinit(NULL);
 
   free_sysvar_table_options(hton);
   update_discovery_counters(hton, -1);
@@ -627,7 +617,7 @@ int ha_finalize_handlerton(st_plugin_int *plugin)
   my_free(hton);
 
  end:
-  DBUG_RETURN(0);
+  DBUG_RETURN(deinit_status);
 }
 
 
@@ -1660,9 +1650,10 @@ int ha_commit_trans(THD *thd, bool all)
   DBUG_ASSERT(thd->transaction->stmt.ha_list == NULL ||
               trans == &thd->transaction->stmt);
 
+  DBUG_ASSERT(!thd->in_sub_stmt);
+
   if (thd->in_sub_stmt)
   {
-    DBUG_ASSERT(0);
     /*
       Since we don't support nested statement transactions in 5.0,
       we can't commit or rollback stmt transactions while we are inside
@@ -1761,6 +1752,13 @@ int ha_commit_trans(THD *thd, bool all)
       if (ha_info->ht()->prepare_commit_versioned)
       {
         trx_end_id= ha_info->ht()->prepare_commit_versioned(thd, &trx_start_id);
+
+        if (trx_end_id == ULONGLONG_MAX)
+        {
+          my_error(ER_ERROR_DURING_COMMIT, MYF(0), 1);
+          goto err;
+        }
+
         if (trx_end_id)
           break; // FIXME: use a common ID for cross-engine transactions
       }
@@ -4135,6 +4133,9 @@ void handler::get_auto_increment(ulonglong offset, ulonglong increment,
   int error;
   MY_BITMAP *old_read_set;
   bool rnd_inited= (inited ==  RND);
+  bool rev= table->key_info[table->s->next_number_index].
+              key_part[table->s->next_number_keypart].key_part_flag &
+                HA_REVERSE_SORT;
 
   if (rnd_inited && ha_rnd_end())
     return;
@@ -4156,7 +4157,8 @@ void handler::get_auto_increment(ulonglong offset, ulonglong increment,
 
   if (table->s->next_number_keypart == 0)
   {						// Autoincrement at key-start
-    error= ha_index_last(table->record[1]);
+    error= rev ? ha_index_first(table->record[1])
+               : ha_index_last(table->record[1]);
     /*
       MySQL implicitly assumes such method does locking (as MySQL decides to
       use nr+increment without checking again with the handler, in
@@ -4171,9 +4173,8 @@ void handler::get_auto_increment(ulonglong offset, ulonglong increment,
              table->key_info + table->s->next_number_index,
              table->s->next_number_key_offset);
     error= ha_index_read_map(table->record[1], key,
-                             make_prev_keypart_map(table->s->
-                                                   next_number_keypart),
-                             HA_READ_PREFIX_LAST);
+                          make_prev_keypart_map(table->s->next_number_keypart),
+                          rev ? HA_READ_KEY_EXACT : HA_READ_PREFIX_LAST);
     /*
       MySQL needs to call us for next row: assume we are inserting ("a",null)
       here, we return 3, and next this statement will want to insert
@@ -5813,7 +5814,8 @@ int handler::calculate_checksum()
         continue;
 
 
-      if (! thd->variables.old_mode && f->is_real_null(0))
+      if (! (thd->variables.old_behavior & OLD_MODE_COMPAT_5_1_CHECKSUM) &&
+            f->is_real_null(0))
       {
         flush_checksum(&row_crc, &checksum_start, &checksum_length);
         continue;
@@ -7936,24 +7938,6 @@ int ha_abort_transaction(THD *bf_thd, THD *victim_thd, my_bool signal)
 #endif /* WITH_WSREP */
 
 
-bool HA_CREATE_INFO::check_conflicting_charset_declarations(CHARSET_INFO *cs)
-{
-  if ((used_fields & HA_CREATE_USED_DEFAULT_CHARSET) &&
-      /* DEFAULT vs explicit, or explicit vs DEFAULT */
-      (((default_table_charset == NULL) != (cs == NULL)) ||
-      /* Two different explicit character sets */
-       (default_table_charset && cs &&
-        !my_charset_same(default_table_charset, cs))))
-  {
-    my_error(ER_CONFLICTING_DECLARATIONS, MYF(0),
-             "CHARACTER SET ", default_table_charset ?
-                               default_table_charset->cs_name.str : "DEFAULT",
-             "CHARACTER SET ", cs ? cs->cs_name.str : "DEFAULT");
-    return true;
-  }
-  return false;
-}
-
 /* Remove all indexes for a given table from global index statistics */
 
 static
@@ -8081,7 +8065,7 @@ static Create_field *vers_init_sys_field(THD *thd, const char *field_name, int f
   f->field_name.str= field_name;
   f->field_name.length= strlen(field_name);
   f->charset= system_charset_info;
-  f->flags= flags | NOT_NULL_FLAG;
+  f->flags= flags | NO_DEFAULT_VALUE_FLAG | NOT_NULL_FLAG;
   if (integer)
   {
     DBUG_ASSERT(0); // Not implemented yet
@@ -8094,7 +8078,7 @@ static Create_field *vers_init_sys_field(THD *thd, const char *field_name, int f
     f->set_handler(&type_handler_timestamp2);
     f->length= MAX_DATETIME_PRECISION;
   }
-  f->invisible= DBUG_EVALUATE_IF("sysvers_show", VISIBLE, INVISIBLE_SYSTEM);
+  f->invisible= DBUG_IF("sysvers_show") ? VISIBLE : INVISIBLE_SYSTEM;
 
   if (f->check(thd))
     return NULL;
@@ -8242,7 +8226,7 @@ bool Vers_parse_info::fix_alter_info(THD *thd, Alter_info *alter_info,
   if (!need_check(alter_info) && !share->versioned)
     return false;
 
-  if (DBUG_EVALUATE_IF("sysvers_force", 0, share->tmp_table))
+  if (!DBUG_IF("sysvers_force") && share->tmp_table)
   {
     my_error(ER_VERS_NOT_SUPPORTED, MYF(0), "CREATE TEMPORARY TABLE");
     return true;

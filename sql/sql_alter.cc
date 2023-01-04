@@ -19,6 +19,9 @@
 #include "sql_table.h"                       // mysql_alter_table,
                                              // mysql_exchange_partition
 #include "sql_alter.h"
+#include "rpl_mi.h"
+#include "slave.h"
+#include "debug_sync.h"
 #include "wsrep_mysqld.h"
 
 Alter_info::Alter_info(const Alter_info &rhs, MEM_ROOT *mem_root)
@@ -408,7 +411,7 @@ bool Sql_cmd_alter_table::execute(THD *thd)
     referenced from this structure will be modified.
     @todo move these into constructor...
   */
-  HA_CREATE_INFO create_info(lex->create_info);
+  Table_specification_st create_info(lex->create_info);
   Alter_info alter_info(lex->alter_info, thd->mem_root);
   create_info.alter_info= &alter_info;
   privilege_t priv(NO_ACL);
@@ -427,6 +430,8 @@ bool Sql_cmd_alter_table::execute(THD *thd)
     as for RENAME TO, as being done by SQLCOM_RENAME_TABLE
   */
   if ((alter_info.partition_flags & ALTER_PARTITION_DROP) ||
+      (alter_info.partition_flags & ALTER_PARTITION_CONVERT_IN) ||
+      (alter_info.partition_flags & ALTER_PARTITION_CONVERT_OUT) ||
       (alter_info.flags & ALTER_RENAME))
     priv_needed|= DROP_ACL;
 

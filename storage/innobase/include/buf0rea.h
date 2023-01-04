@@ -101,12 +101,10 @@ which could result in a deadlock if the OS does not support asynchronous io.
 ulint
 buf_read_ahead_linear(const page_id_t page_id, ulint zip_size, bool ibuf);
 
-/** Issues read requests for pages which recovery wants to read in.
-@param[in]	space_id	tablespace id
-@param[in]	page_nos	array of page numbers to read, with the
-highest page number the last in the array
-@param[in]	n		number of page numbers in the array */
-void buf_read_recv_pages(ulint space_id, const uint32_t* page_nos, ulint n);
+/** Issue read requests for pages that need to be recovered.
+@param space_id	tablespace identifier
+@param page_nos	page numbers to read, in ascending order */
+void buf_read_recv_pages(uint32_t space_id, st_::span<uint32_t> page_nos);
 
 /** @name Modes used in read-ahead @{ */
 /** read only pages belonging to the insert buffer tree */
