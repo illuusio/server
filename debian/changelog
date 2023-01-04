@@ -1,14 +1,21 @@
-mariadb (1:10.11.1-1) UNRELEASED; urgency=medium
+mariadb (1:10.11.1-1~exp1) experimental; urgency=medium
 
   * New major upstream release: 10.11
     - Introduce new packages called 'providers', each one providing
       a particular features, though so far only various compression
       methods.
     - New plugin package for Hashicorp Vault
+    - Upstream 10.11 series is intended to be a long-term supported
+      version with 5 years of security releases
+    - The other major versions 10.7/8/9/10 releases after 10.6
+      are all short-term releases, and thus not suitable for inclusion
+      in Debian but still worth noting as a guide on how to read
+      upstream relases notes, as all apply for what is now new in
+      Debian with the introduction of this 10.11
   * Remove version suffix from Debian packages and rename source
     package to just 'mariadb', dropping the 10.6 suffix.
 
- -- Otto Kekäläinen <otto@debian.org>  Mon, 02 Jan 2023 23:42:58 -0800
+ -- Otto Kekäläinen <otto@debian.org>  Tue, 03 Jan 2023 22:18:36 -0800
 
 mariadb-10.6 (1:10.6.11-2) unstable; urgency=medium
 
