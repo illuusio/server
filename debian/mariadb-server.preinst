@@ -226,7 +226,17 @@ find $mysql_datadir -follow -not -group mysql -print0 2>/dev/null \
   | xargs -0 --no-run-if-empty chgrp mysql
 set -e
 
-
 db_stop
 
 #DEBHELPER#
+
+# dh_installinit/13.11.3 adds this check but only with 'install', so we need to
+# have and extra one to check 'upgrade'. This ensures that upgrades from
+# mariadb-server-x.y to mariadb-server (without version suffix) ends up with
+# the executable bit set on /etc/init.d/mariadb, which otherwise would end up
+# disabled due to the mariadb-server-x.y.postrm being triggered.
+#   $1 = upgrade
+#   $2 = 1:10.6.11-2
+if [ "$1" = "upgrade" ] && [ -n "$2" ] && [ -e "/etc/init.d/mariadb" ] ; then
+	chmod +x "/etc/init.d/mariadb" >/dev/null || true
+fi
