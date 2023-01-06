@@ -889,7 +889,7 @@ mariadb.org-10.3 upgrade:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # archive.mariadb.org for Debian Sid latest is 10.2.21
-from mariadb.org-10.2 upgrade:
+mariadb.org-10.2 upgrade:
   stage: upgrade MariaDB variant
   needs:
     - job: build
@@ -929,7 +929,7 @@ from mariadb.org-10.2 upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-mysql.com-5.7 with bullseye backports upgrade:
+mysql.com-5.7 with Bullseye backports upgrade:
   stage: upgrade MariaDB variant
   needs:
     - job: build bullseye-backports
@@ -969,7 +969,7 @@ mysql.com-5.7 with bullseye backports upgrade:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
-percona-xtradb-5.7 with bullseye backports upgrade:
+percona-xtradb-5.7 with Bullseye backports upgrade:
   stage: upgrade MariaDB variant
   needs:
     - job: build bullseye-backports
@@ -992,8 +992,8 @@ percona-xtradb-5.7 with bullseye backports upgrade:
     # Enable backports to make galera-4 available
     - echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list.d/backports.list && apt-get update -qq
     - *test-install
-    - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
     - service mysql status
+    - sleep 15 # Give the mysql_upgrade a bit of extra time to complete with MySQL 5.7 before querying the server
     - *test-verify-final
   variables:
     GIT_STRATEGY: none

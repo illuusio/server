@@ -1,3 +1,11 @@
+mariadb-10.6 (1:10.6.11-3) UNRELEASED; urgency=medium
+
+  * Open new changelog entry. If there is ever a new upload of this
+    10.6 series to Debian, this entry will be updated by 'gbp dch -avR'
+    automatically.
+
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 05 Jan 2023 22:05:50 -0800
+
 mariadb-10.6 (1:10.6.11-2) unstable; urgency=medium
 
   [ Otto Kekäläinen ]
