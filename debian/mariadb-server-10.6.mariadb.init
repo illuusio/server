@@ -34,6 +34,12 @@ else
   exit -1
 fi
 
+if [ ! -x /usr/bin/mysqld_safe ]
+then
+  log_failure_msg "/usr/bin/mysqld_safe not found or executable! This SysV init script depends on it."
+  exit -1
+fi
+
 # priority can be overridden and "-s" adds output to stderr
 ERR_LOGGER="logger -p daemon.err -t /etc/init.d/mariadb -i"
 
