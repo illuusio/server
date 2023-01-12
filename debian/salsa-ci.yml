@@ -167,6 +167,12 @@ blhc:
   EOF
   apt-get update -qq
 
+.test-enable-artifacts-repo: &test-enable-artifacts-repo |
+  apt-get install -y apt-utils
+  apt-ftparchive packages .>Packages
+  echo "deb [trusted=yes] file:$(pwd) ./" >>/etc/apt/sources.list
+  apt-get update
+
 .test-install: &test-install |
   # Install MariaDB built in this commit
   apt-get install -y ./*.deb
@@ -1063,6 +1069,38 @@ percona-xtradb-5.7 with Bullseye backports upgrade:
     - *test-install
     - service mysql status
     - sleep 15 # Give the mysql_upgrade a bit of extra time to complete with MySQL 5.7 before querying the server
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
+full-upgrade Bookworm to Sid:
+  stage: upgrade MariaDB and distro
+  needs:
+    - job: build
+  image: debian:bookworm
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
+    - *test-verify-initial
+    - service mariadb status
+    - *test-verify-final
+    - *test-enable-sid-repos
+    - *test-enable-artifacts-repo
+    # following is needed to prevent usrmerge to run during full-upgrade (that
+    # is not compatible with docker layers), see:
+    # - https://salsa.debian.org/mariadb-team/mariadb-server/-/merge_requests/18
+    # - https://bugs.debian.org/1008202
+    - apt-get full-upgrade -y
+    - *test-verify-initial
+    - service mariadb status
     - *test-verify-final
   variables:
     GIT_STRATEGY: none
