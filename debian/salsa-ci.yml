@@ -178,7 +178,6 @@ blhc:
   mkdir -p debug # Ensure dir exists before using it
   find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
   cp -ra /etc/mysql debug/etc-mysql
-  cp -ra /var/log/mysql debug/var-log-mysql
   mariadb --skip-column-names -e "select @@version, @@version_comment" # Show version
   mariadb --table -e "SHOW DATABASES;" # List databases
   mariadb --table -e "SELECT host,user,plugin,authentication_string FROM user;" mysql

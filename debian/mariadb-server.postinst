@@ -119,7 +119,6 @@ EOF
     # log files. Use mkdir option 'Z' to create with correct SELinux context.
     if [ ! -d "$mysql_statedir" ] && [ ! -L "$mysql_statedir" ]; then mkdir -Z "$mysql_statedir"; fi
     if [ ! -d "$mysql_datadir"  ] && [ ! -L "$mysql_datadir" ]; then mkdir -Z "$mysql_datadir" ; fi
-    if [ ! -d "$mysql_logdir"   ] && [ ! -L "$mysql_logdir"  ]; then mkdir -Z "$mysql_logdir"  ; fi
     # When creating an ext3 jounal on an already mounted filesystem like e.g.
     # /var/lib/mysql, you get a .journal file that is not modifiable by chown.
     # The mysql_statedir must not be writable by the mysql user under any
@@ -127,8 +126,6 @@ EOF
     set +e
     chown -R 0:0 $mysql_statedir
     find $mysql_datadir ! -uid "$(id -u mysql)" -print0 | xargs -0 -r chown mysql
-    chown -R mysql:adm $mysql_logdir
-    chmod 2750 $mysql_logdir
     set -e
 
     ## Set the correct filesystem ownership for the PAM v2 plugin
