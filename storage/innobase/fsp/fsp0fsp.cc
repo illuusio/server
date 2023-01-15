@@ -449,8 +449,7 @@ void fsp_apply_init_file_page(buf_block_t *block)
   const page_id_t id(block->page.id());
 
   mach_write_to_4(block->page.frame + FIL_PAGE_OFFSET, id.page_no());
-  if (log_sys.is_physical())
-    memset_aligned<8>(block->page.frame + FIL_PAGE_PREV, 0xff, 8);
+  memset_aligned<8>(block->page.frame + FIL_PAGE_PREV, 0xff, 8);
   mach_write_to_4(block->page.frame + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID,
                   id.space());
   if (page_zip_des_t* page_zip= buf_block_get_page_zip(block))
@@ -460,8 +459,7 @@ void fsp_apply_init_file_page(buf_block_t *block)
     static_assert(FIL_PAGE_OFFSET == 4, "compatibility");
     memcpy_aligned<4>(page_zip->data + FIL_PAGE_OFFSET,
                       block->page.frame + FIL_PAGE_OFFSET, 4);
-    if (log_sys.is_physical())
-      memset_aligned<8>(page_zip->data + FIL_PAGE_PREV, 0xff, 8);
+    memset_aligned<8>(page_zip->data + FIL_PAGE_PREV, 0xff, 8);
     static_assert(FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID % 4 == 2,
                   "not perfect alignment");
     memcpy_aligned<2>(page_zip->data + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID,
@@ -1516,7 +1514,7 @@ static
 fseg_inode_t*
 fseg_inode_try_get(
 	const fseg_header_t*	header,
-	ulint			space,
+	uint32_t		space,
 	ulint			zip_size,
 	mtr_t*			mtr,
 	buf_block_t**		block,
@@ -2250,13 +2248,12 @@ fseg_alloc_free_page_general(
 	dberr_t*	err)	/*!< out: error code */
 {
 	fseg_inode_t*	inode;
-	ulint		space_id;
 	fil_space_t*	space;
 	buf_block_t*	iblock;
 	buf_block_t*	block;
 	uint32_t	n_reserved;
 
-	space_id = page_get_space_id(page_align(seg_header));
+	const uint32_t space_id = page_get_space_id(page_align(seg_header));
 	space = mtr->x_lock_space(space_id);
 	inode = fseg_inode_try_get(seg_header, space_id, space->zip_size(),
 				   mtr, &iblock, err);

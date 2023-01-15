@@ -126,7 +126,6 @@ public:
     bool use_fields,
     spider_fields *fields
   ) override;
-#ifdef HANDLER_HAS_DIRECT_AGGREGATE
   int open_item_sum_func(
     Item_sum *item_sum,
     ha_spider *spider,
@@ -136,12 +135,10 @@ public:
     bool use_fields,
     spider_fields *fields
   ) override;
-#endif
   int append_escaped_util(
     spider_string *to,
     String *from
   ) override;
-#ifdef SPIDER_HAS_GROUP_BY_HANDLER
   int append_table(
     ha_spider *spider,
     spider_fields *fields,
@@ -194,7 +191,6 @@ public:
   int append_having(
     spider_string *str
   ) override;
-#endif
   bool tables_on_different_db_are_joinable();
   bool socket_has_default_value();
   bool database_has_default_value();
@@ -328,11 +324,9 @@ public:
     int mode,
     ha_rows &records
   );
-#ifdef HA_HAS_CHECKSUM_EXTENDED
   int fetch_table_checksum(
     ha_spider *spider
   );
-#endif
   int fetch_table_cardinality(
     int mode,
     TABLE *table,
@@ -356,7 +350,6 @@ public:
     longlong pos
   );
   int get_errno();
-#ifdef SPIDER_HAS_DISCOVER_TABLE_STRUCTURE
   int fetch_columns_for_discover_table_structure(
     spider_string *str,
     CHARSET_INFO *access_charset
@@ -370,7 +363,6 @@ public:
     SPIDER_SHARE *spider_share,
     CHARSET_INFO *access_charset
   );
-#endif
 };
 
 class spider_db_mysql_result: public spider_db_mbase_result
@@ -404,12 +396,6 @@ public:
   const char     *lock_table_hash_func_name;
   const char     *lock_table_hash_file_name;
   ulong          lock_table_hash_line_no;
-  DYNAMIC_ARRAY  handler_open_array;
-  bool           handler_open_array_inited;
-  uint           handler_open_array_id;
-  const char     *handler_open_array_func_name;
-  const char     *handler_open_array_file_name;
-  ulong          handler_open_array_line_no;
   spider_db_mbase(
     SPIDER_CONN *conn,
     spider_db_mbase_util *spider_db_mbase_utility
@@ -577,54 +563,6 @@ public:
     uint binlog_pos_length,
     SPIDER_DB_RESULT **res
   );
-#if defined(HS_HAS_SQLCOM) && defined(HAVE_HANDLERSOCKET)
-  int append_sql(
-    char *sql,
-    ulong sql_length,
-    st_spider_db_request_key *request_key
-  );
-  int append_open_handler(
-    uint handler_id,
-    const char *db_name,
-    const char *table_name,
-    const char *index_name,
-    const char *sql,
-    st_spider_db_request_key *request_key
-  );
-  int append_select(
-    uint handler_id,
-    spider_string *sql,
-    SPIDER_DB_HS_STRING_REF_BUFFER *keys,
-    int limit,
-    int skip,
-    st_spider_db_request_key *request_key
-  );
-  int append_insert(
-    uint handler_id,
-    SPIDER_DB_HS_STRING_REF_BUFFER *upds,
-    st_spider_db_request_key *request_key
-  );
-  int append_update(
-    uint handler_id,
-    spider_string *sql,
-    SPIDER_DB_HS_STRING_REF_BUFFER *keys,
-    SPIDER_DB_HS_STRING_REF_BUFFER *upds,
-    int limit,
-    int skip,
-    bool increment,
-    bool decrement,
-    st_spider_db_request_key *request_key
-  );
-  int append_delete(
-    uint handler_id,
-    spider_string *sql,
-    SPIDER_DB_HS_STRING_REF_BUFFER *keys,
-    int limit,
-    int skip,
-    st_spider_db_request_key *request_key
-  );
-  void reset_request_queue();
-#endif
   size_t escape_string(
     char *to,
     const char *from,
@@ -639,8 +577,6 @@ public:
   );
   uint get_lock_table_hash_count();
   void reset_lock_table_hash();
-  uint get_opened_handler_count();
-  void reset_opened_handler();
   void set_dup_key_idx(
     ha_spider *spider,
     int link_idx
@@ -684,9 +620,7 @@ public:
   spider_string      *table_names_str;
   spider_string      *db_names_str;
   spider_string      *db_table_str;
-#ifdef SPIDER_HAS_HASH_VALUE_TYPE
   my_hash_value_type *db_table_str_hash_value;
-#endif
   uint               table_nm_max_length;
   uint               db_nm_max_length;
   spider_string      *column_name_str;
@@ -726,16 +660,12 @@ public:
     int *table_name_pos
   );
   bool need_change_db_table_name();
-#ifdef SPIDER_HAS_DISCOVER_TABLE_STRUCTURE
   int discover_table_structure(
     SPIDER_TRX *trx,
     SPIDER_SHARE *spider_share,
     spider_string *str
   );
-#endif
-#ifdef HA_HAS_CHECKSUM_EXTENDED
   bool checksum_support();
-#endif
 protected:
   int create_table_names_str();
   void free_table_names_str();
@@ -812,9 +742,6 @@ protected:
   spider_string           *exec_ha_sql;
   bool                    reading_from_bulk_tmp_table;
   bool                    filled_up;
-#if defined(HS_HAS_SQLCOM) && defined(HAVE_HANDLERSOCKET)
-  SPIDER_DB_HS_STRING_REF_BUFFER hs_upds;
-#endif
   SPIDER_INT_HLD          *union_table_name_pos_first;
   SPIDER_INT_HLD          *union_table_name_pos_current;
 public:
@@ -921,19 +848,10 @@ public:
   int append_delete(
     spider_string *str
   );
-  #if defined(HS_HAS_SQLCOM) && defined(HAVE_HANDLERSOCKET)
-  #ifdef HANDLER_HAS_DIRECT_UPDATE_ROWS
-  int append_increment_update_set_part();
-  int append_increment_update_set(
-    spider_string *str
-  );
-  #endif
-  #endif
   int append_update_set_part();
   int append_update_set(
     spider_string *str
   );
-  #ifdef HANDLER_HAS_DIRECT_UPDATE_ROWS
   int append_direct_update_set_part();
   int append_direct_update_set(
     spider_string *str
@@ -952,7 +870,6 @@ public:
     const char *alias,
     uint alias_length
   );
-  #endif
   int append_select_part(
     ulong sql_type
   );
@@ -1149,7 +1066,6 @@ public:
     const char *alias,
     uint alias_length
   );
-#ifdef HANDLER_HAS_DIRECT_AGGREGATE
   int append_sum_select_part(
     ulong sql_type,
     const char *alias,
@@ -1160,14 +1076,12 @@ public:
     const char *alias,
     uint alias_length
   );
-#endif
   void set_order_pos(
     ulong sql_type
   );
   void set_order_to_pos(
     ulong sql_type
   );
-#ifdef HANDLER_HAS_DIRECT_AGGREGATE
   int append_group_by_part(
     const char *alias,
     uint alias_length,
@@ -1178,7 +1092,6 @@ public:
     const char *alias,
     uint alias_length
   );
-#endif
   int append_key_order_for_merge_with_alias_part(
     const char *alias,
     uint alias_length,
@@ -1270,26 +1183,6 @@ public:
   int append_multi_range_cnt_with_name(
     spider_string *str,
     uint multi_range_cnt
-  );
-  int append_open_handler_part(
-    ulong sql_type,
-    uint handler_id,
-    SPIDER_CONN *conn,
-    int link_idx
-  );
-  int append_open_handler(
-    spider_string *str,
-    uint handler_id,
-    SPIDER_CONN *conn,
-    int link_idx
-  );
-  int append_close_handler_part(
-    ulong sql_type,
-    int link_idx
-  );
-  int append_close_handler(
-    spider_string *str,
-    int link_idx
   );
   int append_insert_terminator_part(
     ulong sql_type
@@ -1459,33 +1352,14 @@ public:
   int reset_sql(
     ulong sql_type
   );
-#if defined(HS_HAS_SQLCOM) && defined(HAVE_HANDLERSOCKET)
-  int reset_keys(
-    ulong sql_type
-  );
-  int reset_upds(
-    ulong sql_type
-  );
-  int reset_strs(
-    ulong sql_type
-  );
-  int reset_strs_pos(
-    ulong sql_type
-  );
-  int push_back_upds(
-    SPIDER_HS_STRING_REF &info
-  );
-#endif
   bool need_lock_before_set_sql_for_exec(
     ulong sql_type
   );
-#ifdef SPIDER_HAS_GROUP_BY_HANDLER
   int set_sql_for_exec(
     ulong sql_type,
     int link_idx,
     SPIDER_LINK_IDX_CHAIN *link_idx_chain
   );
-#endif
   int set_sql_for_exec(
     ulong sql_type,
     int link_idx
@@ -1523,11 +1397,9 @@ public:
   int show_records(
     int link_idx
   );
-#ifdef HA_HAS_CHECKSUM_EXTENDED
   int checksum_table(
     int link_idx
   );
-#endif
   int show_last_insert_id(
     int link_idx,
     ulonglong &last_insert_id
@@ -1578,19 +1450,8 @@ public:
     SPIDER_CONN *conn,
     int link_idx
   );
-  int insert_opened_handler(
-    SPIDER_CONN *conn,
-    int link_idx
-  );
-  int delete_opened_handler(
-    SPIDER_CONN *conn,
-    int link_idx
-  );
   int sync_from_clone_source(
     spider_db_handler *dbton_hdl
-  );
-  bool support_use_handler(
-    int use_handler
   );
   void minimum_select_bitmap_create();
   bool minimum_select_bit_is_set(
@@ -1606,7 +1467,6 @@ public:
     int link_idx,
     ulong sql_type
   );
-#ifdef SPIDER_HAS_GROUP_BY_HANDLER
   int append_from_and_tables_part(
     spider_fields *fields,
     ulong sql_type
@@ -1677,8 +1537,6 @@ public:
     bool use_fields,
     spider_fields *fields
   );
-#endif
-#ifdef HANDLER_HAS_DIRECT_UPDATE_ROWS
   bool check_direct_update(
     st_select_lex *select_lex,
     longlong select_limit,
@@ -1689,7 +1547,6 @@ public:
     longlong select_limit,
     longlong offset_limit
   );
-#endif
 };
 
 class spider_mysql_handler: public spider_mbase_handler

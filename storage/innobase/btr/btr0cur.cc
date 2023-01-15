@@ -1387,7 +1387,7 @@ dberr_t btr_cur_search_to_nth_level(dict_index_t *index, ulint level,
 # endif /* PAGE_CUR_LE_OR_EXTENDS */
 	    && info->last_hash_succ
 	    && !(tuple->info_bits & REC_INFO_MIN_REC_FLAG)
-	    && !index->is_spatial() && !index->table->is_temporary()
+	    && index->is_btree() && !index->table->is_temporary()
 	    && btr_search_guess_on_hash(index, info, tuple, mode,
 					latch_mode, cursor, mtr)) {
 
@@ -1598,7 +1598,6 @@ retry_page_get:
 		case BTR_INSERT_OP:
 		case BTR_INSERT_IGNORE_UNIQUE_OP:
 			ut_ad(buf_mode == BUF_GET_IF_IN_POOL);
-			ut_ad(!dict_index_is_spatial(index));
 
 			if (ibuf_insert(IBUF_OP_INSERT, tuple, index,
 					page_id, zip_size, cursor->thr)) {
@@ -1611,7 +1610,6 @@ retry_page_get:
 
 		case BTR_DELMARK_OP:
 			ut_ad(buf_mode == BUF_GET_IF_IN_POOL);
-			ut_ad(!dict_index_is_spatial(index));
 
 			if (ibuf_insert(IBUF_OP_DELETE_MARK, tuple,
 					index, page_id, zip_size,
@@ -1626,7 +1624,7 @@ retry_page_get:
 
 		case BTR_DELETE_OP:
 			ut_ad(buf_mode == BUF_GET_IF_IN_POOL_OR_WATCH);
-			ut_ad(!dict_index_is_spatial(index));
+			ut_ad(index->is_btree());
 			auto& chain = buf_pool.page_hash.cell_get(
 				page_id.fold());
 
@@ -6877,7 +6875,6 @@ btr_store_big_rec_extern_fields(
 	byte*		field_ref;
 	ulint		extern_len;
 	ulint		store_len;
-	ulint		space_id;
 	ulint		i;
 	mtr_t		mtr;
 	mem_heap_t*	heap = NULL;
@@ -6906,7 +6903,6 @@ btr_store_big_rec_extern_fields(
 	btr_blob_log_check_t redo_log(pcur, btr_mtr, offsets, &rec_block,
 				      &rec, op);
 	page_zip = buf_block_get_page_zip(rec_block);
-	space_id = rec_block->page.id().space();
 
 	if (page_zip) {
 		int	err;
@@ -7030,6 +7026,7 @@ alloc_fail:
 				goto alloc_fail;
 			}
 
+			const uint32_t space_id = block->page.id().space();
 			const uint32_t page_no = block->page.id().page_no();
 
 			if (prev_page_no == FIL_NULL) {

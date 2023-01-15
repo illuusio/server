@@ -25,6 +25,8 @@
 #include "opt_range.h"
 #include "sql_expression_cache.h"
 
+#include <stack>
+
 const char * STR_DELETING_ALL_ROWS= "Deleting all rows";
 const char * STR_IMPOSSIBLE_WHERE= "Impossible WHERE";
 const char * STR_NO_ROWS_AFTER_PRUNING= "No matching rows after partition pruning";
@@ -37,14 +39,15 @@ const char *unit_operation_text[4]=
 const char *pushed_derived_text= "PUSHED DERIVED";
 const char *pushed_select_text= "PUSHED SELECT";
 
-static void write_item(Json_writer *writer, Item *item);
-static void append_item_to_str(String *out, Item *item);
+static void write_item(Json_writer *writer, Item *item, bool no_tmp_tbl);
+static void append_item_to_str(String *out, Item *item, bool no_tmp_tbl);
 
 Explain_query::Explain_query(THD *thd_arg, MEM_ROOT *root) : 
-  mem_root(root), upd_del_plan(NULL),  insert_plan(NULL),
-  unions(root), selects(root),  thd(thd_arg), apc_enabled(false),
+  mem_root(root), upd_del_plan(nullptr),  insert_plan(nullptr),
+  unions(root), selects(root), stmt_thd(thd_arg), apc_enabled(false),
   operations(0)
 {
+  optimization_time_tracker.start_tracking(stmt_thd);
 }
 
 static void print_json_array(Json_writer *writer,
@@ -63,7 +66,7 @@ static void print_json_array(Json_writer *writer,
 Explain_query::~Explain_query()
 {
   if (apc_enabled)
-    thd->apc_target.disable();
+    stmt_thd->apc_target.disable();
 
   delete upd_del_plan;
   delete insert_plan;
@@ -152,10 +155,34 @@ void Explain_query::add_upd_del_plan(Explain_update *upd_del_plan_arg)
 
 void Explain_query::query_plan_ready()
 {
+  optimization_time_tracker.stop_tracking(stmt_thd);
+
   if (!apc_enabled)
-    thd->apc_target.enable();
+    stmt_thd->apc_target.enable();
   apc_enabled= true;
+#ifndef DBUG_OFF
+  can_print_json= true;
+#endif
 }
+
+
+void Explain_query::notify_tables_are_closed()
+{
+  /*
+    Disable processing of SHOW EXPLAIN|ANALYZE. The query is about to close
+    the tables it is using, which will make it impossible to print Item*
+    values. See sql_explain.h:ExplainDataStructureLifetime for details.
+  */
+  if (apc_enabled)
+  {
+    stmt_thd->apc_target.disable();
+    apc_enabled= false;
+#ifndef DBUG_OFF
+    can_print_json= false;
+#endif
+  }
+}
+
 
 /*
   Send EXPLAIN output to the client.
@@ -172,7 +199,7 @@ int Explain_query::send_explain(THD *thd)
 
   int res= 0;
   if (thd->lex->explain_json)
-    print_explain_json(result, thd->lex->analyze_stmt);
+    print_explain_json(result, thd->lex->analyze_stmt, false /*is_show_cmd*/);
   else
     res= print_explain(result, lex->describe, thd->lex->analyze_stmt);
 
@@ -213,36 +240,99 @@ int Explain_query::print_explain(select_result_sink *output,
 }
 
 
-void Explain_query::print_explain_json(select_result_sink *output,
-                                       bool is_analyze)
+/*
+   @param  is_show_cmd  TRUE<=> This is a SHOW EXPLAIN|ANALYZE command.
+                        (These commands may be called at late stage in
+                         the query processing, we need to pass no_tmp_tbl=true
+                         to other print functions)
+*/
+
+int Explain_query::print_explain_json(select_result_sink *output,
+                                      bool is_analyze,
+                                      bool is_show_cmd,
+                                      ulonglong query_time_in_progress_ms)
 {
   Json_writer writer;
-  writer.start_object();
 
-  if (upd_del_plan)
-    upd_del_plan->print_explain_json(this, &writer, is_analyze);
-  else if (insert_plan)
-    insert_plan->print_explain_json(this, &writer, is_analyze);
-  else
+#ifndef DBUG_OFF
+  DBUG_ASSERT(can_print_json);
+#endif
+
+  writer.start_object();
+  
+  /*
+    If we are printing ANALYZE FORMAT=JSON output, take into account that
+    query's temporary tables have already been freed. See sql_explain.h,
+    sql_explain.h:ExplainDataStructureLifetime for details.
+  */
+  if (is_analyze)
   {
-    /* Start printing from node with id=1 */
-    Explain_node *node= get_node(1);
-    if (!node)
-      return; /* No query plan */
-    node->print_explain_json(this, &writer, is_analyze);
+    if (query_time_in_progress_ms > 0){
+      writer.add_member("r_query_time_in_progress_ms").
+            add_ull(query_time_in_progress_ms);
+    }
+
+    print_query_optimization_json(&writer);
+    is_show_cmd = true;
   }
+
+  bool plan_found = print_query_blocks_json(&writer, is_analyze, is_show_cmd);
 
   writer.end_object();
 
+  if( plan_found )
+  {
+    send_explain_json_to_output(&writer, output);
+  }
+  
+  return 0;
+}
+
+void Explain_query::print_query_optimization_json(Json_writer *writer)
+{
+  if (optimization_time_tracker.has_timed_statistics())
+  {
+    // if more timers are added, move the query_optimization member 
+    // outside the if statement
+    writer->add_member("query_optimization").start_object();
+    writer->add_member("r_total_time_ms").
+            add_double(optimization_time_tracker.get_time_ms());
+    writer->end_object(); 
+  }
+}
+
+bool Explain_query::print_query_blocks_json(Json_writer *writer, 
+                                              const bool is_analyze, 
+                                              const bool is_show_cmd)
+{
+  if (upd_del_plan)
+    upd_del_plan->print_explain_json(this, writer, is_analyze, is_show_cmd);
+  else if (insert_plan)
+    insert_plan->print_explain_json(this, writer, is_analyze, is_show_cmd);
+  else
+  {
+    /* Start printing from root node with id=1 */
+    Explain_node *node= get_node(1);
+    if (!node)
+      return false; /* No query plan */
+    node->print_explain_json(this, writer, is_analyze, is_show_cmd);
+  }
+
+  return true;
+}
+
+void Explain_query::send_explain_json_to_output(Json_writer *writer, 
+                                                select_result_sink *output)
+{
   CHARSET_INFO *cs= system_charset_info;
   List<Item> item_list;
-  const String *buf= writer.output.get_string();
+  const String *buf= writer->output.get_string();
+  THD *thd= output->thd;
   item_list.push_back(new (thd->mem_root)
                       Item_string(thd, buf->ptr(), buf->length(), cs),
                       thd->mem_root);
   output->send_data(item_list);
-}
-
+} 
 
 bool print_explain_for_slow_log(LEX *lex, THD *thd, String *str)
 {
@@ -590,7 +680,8 @@ int Explain_union::print_explain(Explain_query *query,
 
 
 void Explain_union::print_explain_json(Explain_query *query, 
-                                       Json_writer *writer, bool is_analyze)
+                                       Json_writer *writer, bool is_analyze,
+                                       bool no_tmp_tbl)
 {
   Json_writer_nesting_guard guard(writer);
   char table_name_buffer[SAFE_NAME_LEN];
@@ -635,12 +726,12 @@ void Explain_union::print_explain_json(Explain_query *query,
     //writer->add_member("dependent").add_str("TODO");
     //writer->add_member("cacheable").add_str("TODO");
     Explain_select *sel= query->get_select(union_members.at(i));
-    sel->print_explain_json(query, writer, is_analyze);
+    sel->print_explain_json(query, writer, is_analyze, no_tmp_tbl);
     writer->end_object();
   }
   writer->end_array();
 
-  print_explain_json_for_children(query, writer, is_analyze);
+  print_explain_json_for_children(query, writer, is_analyze, no_tmp_tbl);
 
   writer->end_object(); // union_result
   writer->end_object(); // query_block
@@ -702,7 +793,8 @@ bool is_connection_printable_in_json(enum Explain_node::explain_connection_type 
 
 void Explain_node::print_explain_json_for_children(Explain_query *query, 
                                                   Json_writer *writer,
-                                                  bool is_analyze)
+                                                  bool is_analyze,
+                                                  bool no_tmp_tbl)
 {
   Json_writer_nesting_guard guard(writer);
   
@@ -729,7 +821,7 @@ void Explain_node::print_explain_json_for_children(Explain_query *query,
     }
 
     writer->start_object();
-    node->print_explain_json(query, writer, is_analyze);
+    node->print_explain_json(query, writer, is_analyze, no_tmp_tbl);
     writer->end_object();
   }
 
@@ -909,7 +1001,8 @@ void Explain_select::add_linkage(Json_writer *writer)
 }
 
 void Explain_select::print_explain_json(Explain_query *query, 
-                                        Json_writer *writer, bool is_analyze)
+                                        Json_writer *writer, bool is_analyze,
+                                        bool no_tmp_tbl)
 {
   Json_writer_nesting_guard guard(writer);
   
@@ -931,7 +1024,7 @@ void Explain_select::print_explain_json(Explain_query *query,
                                           message);
     writer->end_object();
 
-    print_explain_json_for_children(query, writer, is_analyze);
+    print_explain_json_for_children(query, writer, is_analyze, no_tmp_tbl);
     writer->end_object();
   }
   else
@@ -943,23 +1036,27 @@ void Explain_select::print_explain_json(Explain_query *query,
     if (is_analyze && time_tracker.get_loops())
     {
       writer->add_member("r_loops").add_ll(time_tracker.get_loops());
-      writer->add_member("r_total_time_ms").add_double(time_tracker.get_time_ms());
+      if (time_tracker.has_timed_statistics())
+      {
+        writer->add_member("r_total_time_ms").
+                add_double(time_tracker.get_time_ms());
+      }
     }
 
     if (exec_const_cond)
     {
       writer->add_member("const_condition");
-      write_item(writer, exec_const_cond);
+      write_item(writer, exec_const_cond, no_tmp_tbl);
     }
     if (outer_ref_cond)
     {
       writer->add_member("outer_ref_condition");
-      write_item(writer, outer_ref_cond);
+      write_item(writer, outer_ref_cond, no_tmp_tbl);
     }
     if (pseudo_bits_cond)
     {
       writer->add_member("pseudo_bits_condition");
-      write_item(writer, pseudo_bits_cond);
+      write_item(writer, pseudo_bits_cond, no_tmp_tbl);
     }
 
     /* we do not print HAVING which always evaluates to TRUE */
@@ -967,7 +1064,7 @@ void Explain_select::print_explain_json(Explain_query *query,
     {
       writer->add_member("having_condition");
       if (likely(having))
-        write_item(writer, having);
+        write_item(writer, having, no_tmp_tbl);
       else
       {
         /* Normally we should not go this branch, left just for safety */
@@ -990,7 +1087,8 @@ void Explain_select::print_explain_json(Explain_query *query,
         case AGGR_OP_FILESORT:
         {
           writer->add_member("filesort").start_object();
-          ((Explain_aggr_filesort*)node)->print_json_members(writer, is_analyze);
+          auto aggr_node= (Explain_aggr_filesort*)node;
+          aggr_node->print_json_members(writer, is_analyze, no_tmp_tbl);
           break;
         }
         case AGGR_OP_REMOVE_DUPLICATES:
@@ -1000,7 +1098,8 @@ void Explain_select::print_explain_json(Explain_query *query,
         {
           //TODO: make print_json_members virtual?
           writer->add_member("window_functions_computation").start_object();
-          ((Explain_aggr_window_funcs*)node)->print_json_members(writer, is_analyze);
+          auto aggr_node= (Explain_aggr_window_funcs*)node;
+          aggr_node->print_json_members(writer, is_analyze, no_tmp_tbl);
           break;
         }
         default:
@@ -1009,7 +1108,8 @@ void Explain_select::print_explain_json(Explain_query *query,
       started_objects++;
     }
     
-    Explain_basic_join::print_explain_json_interns(query, writer, is_analyze);
+    Explain_basic_join::print_explain_json_interns(query, writer, is_analyze,
+                                                   no_tmp_tbl);
 
     for (;started_objects; started_objects--)
       writer->end_object();
@@ -1038,7 +1138,8 @@ Explain_aggr_filesort::Explain_aggr_filesort(MEM_ROOT *mem_root,
 
 
 void Explain_aggr_filesort::print_json_members(Json_writer *writer, 
-                                               bool is_analyze)
+                                               bool is_analyze,
+                                               bool no_tmp_tbl)
 {
   char item_buf[256];
   String str(item_buf, sizeof(item_buf), &my_charset_bin);
@@ -1058,7 +1159,7 @@ void Explain_aggr_filesort::print_json_members(Json_writer *writer,
     {
       str.append(STRING_WITH_LEN(", "));
     }
-    append_item_to_str(&str, item);
+    append_item_to_str(&str, item, no_tmp_tbl);
     if (*direction == ORDER::ORDER_DESC)
       str.append(STRING_WITH_LEN(" desc"));
   }
@@ -1071,29 +1172,29 @@ void Explain_aggr_filesort::print_json_members(Json_writer *writer,
 
 
 void Explain_aggr_window_funcs::print_json_members(Json_writer *writer, 
-                                                   bool is_analyze)
+                                                   bool is_analyze, 
+                                                   bool no_tmp_tbl)
 {
   Explain_aggr_filesort *srt;
   List_iterator<Explain_aggr_filesort> it(sorts);
-  writer->add_member("sorts").start_object();
+  Json_writer_array sorts(writer, "sorts");
   while ((srt= it++))
   {
-    writer->add_member("filesort").start_object();
-    srt->print_json_members(writer, is_analyze);
-    writer->end_object(); // filesort
+    Json_writer_object sort(writer);
+    Json_writer_object filesort(writer, "filesort");
+    srt->print_json_members(writer, is_analyze, no_tmp_tbl);
   }
-  writer->end_object(); // sorts
 }
 
 
 void Explain_basic_join::print_explain_json(Explain_query *query, 
                                             Json_writer *writer, 
-                                            bool is_analyze)
+                                            bool is_analyze, bool no_tmp_tbl)
 {
   writer->add_member("query_block").start_object();
   writer->add_member("select_id").add_ll(select_id);
   
-  print_explain_json_interns(query, writer, is_analyze);
+  print_explain_json_interns(query, writer, is_analyze, no_tmp_tbl);
 
   writer->end_object();
 }
@@ -1102,20 +1203,29 @@ void Explain_basic_join::print_explain_json(Explain_query *query,
 void Explain_basic_join::
 print_explain_json_interns(Explain_query *query, 
                            Json_writer *writer, 
-                           bool is_analyze)
+                           bool is_analyze, bool no_tmp_tbl)
 {
-  Json_writer_nesting_guard guard(writer);
-  for (uint i=0; i< n_join_tabs; i++)
   {
-    if (join_tabs[i]->start_dups_weedout)
-      writer->add_member("duplicates_removal").start_object();
+    Json_writer_array loop(writer, "nested_loop");
+    for (uint i=0; i< n_join_tabs; i++)
+    {
+      if (join_tabs[i]->start_dups_weedout)
+      {
+        writer->start_object();
+        writer->add_member("duplicates_removal");
+        writer->start_array();
+      }
 
-    join_tabs[i]->print_explain_json(query, writer, is_analyze);
+      join_tabs[i]->print_explain_json(query, writer, is_analyze, no_tmp_tbl);
 
-    if (join_tabs[i]->end_dups_weedout)
-      writer->end_object();
-  }
-  print_explain_json_for_children(query, writer, is_analyze);
+      if (join_tabs[i]->end_dups_weedout)
+      {
+        writer->end_array();
+        writer->end_object();
+      }
+    }
+  } // "nested_loop"
+  print_explain_json_for_children(query, writer, is_analyze, no_tmp_tbl);
 }
 
 
@@ -1274,7 +1384,7 @@ int Explain_table_access::print_explain(select_result_sink *output, uint8 explai
                                         uint select_id, const char *select_type,
                                         bool using_temporary, bool using_filesort)
 {
-  THD *thd= output->thd;
+  THD *thd= output->thd; // note: for SHOW EXPLAIN, this is target thd.
   MEM_ROOT *mem_root= thd->mem_root;
 
   List<Item> item_list;
@@ -1515,7 +1625,7 @@ const char *String_list::append_str(MEM_ROOT *mem_root, const char *str)
 }
 
 
-static void write_item(Json_writer *writer, Item *item)
+static void write_item(Json_writer *writer, Item *item, bool no_tmp_tbl)
 {
   THD *thd= current_thd;
   char item_buf[256];
@@ -1525,23 +1635,27 @@ static void write_item(Json_writer *writer, Item *item)
   ulonglong save_option_bits= thd->variables.option_bits;
   thd->variables.option_bits &= ~OPTION_QUOTE_SHOW_CREATE;
 
-  item->print(&str, QT_EXPLAIN);
+  auto qtype= QT_EXPLAIN | (no_tmp_tbl? QT_DONT_ACCESS_TMP_TABLES : 0);
+  item->print(&str, (enum_query_type)qtype);
 
   thd->variables.option_bits= save_option_bits;
   writer->add_str(str.c_ptr_safe());
 }
 
-static void append_item_to_str(String *out, Item *item)
+static void append_item_to_str(String *out, Item *item, bool no_tmp_tbl)
 {
   THD *thd= current_thd;
   ulonglong save_option_bits= thd->variables.option_bits;
   thd->variables.option_bits &= ~OPTION_QUOTE_SHOW_CREATE;
 
-  item->print(out, QT_EXPLAIN);
+  auto qtype= QT_EXPLAIN | (no_tmp_tbl? QT_DONT_ACCESS_TMP_TABLES : 0);
+  item->print(out, (enum_query_type)qtype);
   thd->variables.option_bits= save_option_bits;
 }
 
-void Explain_table_access::tag_to_json(Json_writer *writer, enum explain_extra_tag tag)
+void Explain_table_access::tag_to_json(Json_writer *writer,
+                                       enum explain_extra_tag tag,
+                                       bool no_tmp_tbl)
 {
   switch (tag)
   {
@@ -1565,11 +1679,11 @@ void Explain_table_access::tag_to_json(Json_writer *writer, enum explain_extra_t
       break;
     case ET_USING_INDEX_CONDITION:
       writer->add_member("index_condition");
-      write_item(writer, pushed_index_cond);
+      write_item(writer, pushed_index_cond, no_tmp_tbl);
       break;
     case ET_USING_INDEX_CONDITION_BKA:
       writer->add_member("index_condition_bka");
-      write_item(writer, pushed_index_cond);
+      write_item(writer, pushed_index_cond, no_tmp_tbl);
       break;
     case ET_USING_WHERE:
       {
@@ -1583,7 +1697,7 @@ void Explain_table_access::tag_to_json(Json_writer *writer, enum explain_extra_t
         if (item)
         {
           writer->add_member("attached_condition");
-          write_item(writer, item);
+          write_item(writer, item, no_tmp_tbl);
         }
       }
       break;
@@ -1697,9 +1811,9 @@ void Explain_rowid_filter::print_explain_json(Explain_query *query,
 
 void Explain_table_access::print_explain_json(Explain_query *query,
                                               Json_writer *writer,
-                                              bool is_analyze)
+                                              bool is_analyze, bool no_tmp_tbl)
 {
-  Json_writer_nesting_guard guard(writer);
+  Json_writer_object jsobj(writer);
   
   if (pre_join_sort)
   {
@@ -1728,7 +1842,7 @@ void Explain_table_access::print_explain_json(Explain_query *query,
       }
     }
     writer->add_member("filesort").start_object();
-    pre_join_sort->print_json_members(writer, is_analyze);
+    pre_join_sort->print_json_members(writer, is_analyze, no_tmp_tbl);
   }
 
   if (bka_type.is_using_jbuf())
@@ -1865,7 +1979,7 @@ void Explain_table_access::print_explain_json(Explain_query *query,
 
   for (int i=0; i < (int)extra_tags.elements(); i++)
   {
-    tag_to_json(writer, extra_tags.at(i));
+    tag_to_json(writer, extra_tags.at(i), no_tmp_tbl);
   }
   
   if (full_scan_on_null_key)
@@ -1886,7 +2000,7 @@ void Explain_table_access::print_explain_json(Explain_query *query,
     if (where_cond)
     {
       writer->add_member("attached_condition");
-      write_item(writer, where_cond);
+      write_item(writer, where_cond, no_tmp_tbl);
     }
 
     if (is_analyze)
@@ -1910,7 +2024,7 @@ void Explain_table_access::print_explain_json(Explain_query *query,
     {
       writer->add_member("lateral").add_ll(1);
     }
-    node->print_explain_json(query, writer, is_analyze);
+    node->print_explain_json(query, writer, is_analyze, no_tmp_tbl);
     writer->end_object();
   }
   if (non_merged_sjm_number)
@@ -1920,7 +2034,7 @@ void Explain_table_access::print_explain_json(Explain_query *query,
     writer->add_member("unique").add_ll(1);
     Explain_node *node= query->get_node(non_merged_sjm_number);
     node->connection_type= Explain_node::EXPLAIN_NODE_NON_MERGED_SJ;
-    node->print_explain_json(query, writer, is_analyze);
+    node->print_explain_json(query, writer, is_analyze, no_tmp_tbl);
     writer->end_object();
   }
   if (sjm_nest)
@@ -1928,7 +2042,7 @@ void Explain_table_access::print_explain_json(Explain_query *query,
     /* This is a non-merged semi-join table. Print its contents here */
     writer->add_member("materialized").start_object();
     writer->add_member("unique").add_ll(1);
-    sjm_nest->print_explain_json(query, writer, is_analyze);
+    sjm_nest->print_explain_json(query, writer, is_analyze, no_tmp_tbl);
     writer->end_object();
   }
 
@@ -2095,14 +2209,15 @@ void Explain_quick_select::print_json(Json_writer *writer)
   }
   else
   {
-    writer->add_member(get_name_by_type()).start_object();
+    Json_writer_array ranges(writer, get_name_by_type());
 
     List_iterator_fast<Explain_quick_select> it (children);
     Explain_quick_select* child;
     while ((child = it++))
+    {
+      Json_writer_object obj(writer);
       child->print_json(writer);
-
-    writer->end_object();
+    }
   }
 }
 
@@ -2233,7 +2348,8 @@ int Explain_delete::print_explain(Explain_query *query,
 
 void Explain_delete::print_explain_json(Explain_query *query, 
                                         Json_writer *writer,
-                                        bool is_analyze)
+                                        bool is_analyze,
+                                        bool no_tmp_tbl)
 {
   Json_writer_nesting_guard guard(writer);
 
@@ -2248,7 +2364,7 @@ void Explain_delete::print_explain_json(Explain_query *query,
     writer->end_object(); // query_block
     return;
   }
-  Explain_update::print_explain_json(query, writer, is_analyze);
+  Explain_update::print_explain_json(query, writer, is_analyze, no_tmp_tbl);
 }
 
 
@@ -2351,7 +2467,8 @@ int Explain_update::print_explain(Explain_query *query,
 
 void Explain_update::print_explain_json(Explain_query *query,
                                         Json_writer *writer,
-                                        bool is_analyze)
+                                        bool is_analyze,
+                                        bool no_tmp_tbl)
 {
   Json_writer_nesting_guard guard(writer);
 
@@ -2359,7 +2476,7 @@ void Explain_update::print_explain_json(Explain_query *query,
   writer->add_member("select_id").add_ll(1);
  
   /* This is the total time it took to do the UPDATE/DELETE */
-  if (is_analyze && command_tracker.get_loops())
+  if (is_analyze && command_tracker.has_timed_statistics())
   {
     writer->add_member("r_total_time_ms").
             add_double(command_tracker.get_time_ms());
@@ -2506,7 +2623,7 @@ void Explain_update::print_explain_json(Explain_query *query,
       writer->add_member("r_filtered").add_double(r_filtered);
     }
 
-    if (table_tracker.get_loops())
+    if (table_tracker.has_timed_statistics())
     {
       writer->add_member("r_total_time_ms").
               add_double(table_tracker.get_time_ms());
@@ -2516,7 +2633,7 @@ void Explain_update::print_explain_json(Explain_query *query,
   if (where_cond)
   {
     writer->add_member("attached_condition");
-    write_item(writer, where_cond);
+    write_item(writer, where_cond, no_tmp_tbl);
   }
 
   /*** The part of plan that is before the buffering/sorting ends here ***/
@@ -2528,7 +2645,7 @@ void Explain_update::print_explain_json(Explain_query *query,
 
   writer->end_object(); // table
 
-  print_explain_json_for_children(query, writer, is_analyze);
+  print_explain_json_for_children(query, writer, is_analyze, no_tmp_tbl);
   writer->end_object(); // query_block
 }
 
@@ -2558,7 +2675,8 @@ int Explain_insert::print_explain(Explain_query *query,
 }
 
 void Explain_insert::print_explain_json(Explain_query *query, 
-                                        Json_writer *writer, bool is_analyze)
+                                        Json_writer *writer, bool is_analyze,
+                                        bool no_tmp_tbl)
 {
   Json_writer_nesting_guard guard(writer);
 
@@ -2567,7 +2685,7 @@ void Explain_insert::print_explain_json(Explain_query *query,
   writer->add_member("table").start_object();
   writer->add_member("table_name").add_str(table_name.c_ptr());
   writer->end_object(); // table
-  print_explain_json_for_children(query, writer, is_analyze);
+  print_explain_json_for_children(query, writer, is_analyze, no_tmp_tbl);
   writer->end_object(); // query_block
 }
 

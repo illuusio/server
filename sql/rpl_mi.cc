@@ -1,5 +1,5 @@
 /* Copyright (c) 2006, 2017, Oracle and/or its affiliates.
-   Copyright (c) 2010, 2017, MariaDB Corporation
+   Copyright (c) 2010, 2022, MariaDB Corporation.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -39,12 +39,11 @@ Master_info::Master_info(LEX_CSTRING *connection_name_arg,
    clock_diff_with_master(0),
    sync_counter(0), heartbeat_period(0), received_heartbeats(0),
    master_id(0), prev_master_id(0),
-   using_gtid(USE_GTID_NO), events_queued_since_last_gtid(0),
+   using_gtid(USE_GTID_SLAVE_POS), events_queued_since_last_gtid(0),
    gtid_reconnect_event_skip_count(0), gtid_event_seen(false),
    in_start_all_slaves(0), in_stop_all_slaves(0), in_flush_all_relay_logs(0),
    users(0), killed(0),
-   total_ddl_groups(0), total_non_trans_groups(0), total_trans_groups(0),
-   do_accept_own_server_id(false)
+   total_ddl_groups(0), total_non_trans_groups(0), total_trans_groups(0)
 {
   char *tmp;
   host[0] = 0; user[0] = 0; password[0] = 0;
@@ -86,6 +85,14 @@ Master_info::Master_info(LEX_CSTRING *connection_name_arg,
   mysql_mutex_init(key_master_info_data_lock, &data_lock, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_master_info_start_stop_lock, &start_stop_lock,
                    MY_MUTEX_INIT_SLOW);
+  /*
+    start_alter_lock will protect individual start_alter_info while
+    start_alter_list_lock is for list insertion and deletion operations
+  */
+  mysql_mutex_init(key_master_info_start_alter_lock, &start_alter_lock,
+                                      MY_MUTEX_INIT_FAST);
+  mysql_mutex_init(key_master_info_start_alter_list_lock, &start_alter_list_lock,
+                                      MY_MUTEX_INIT_FAST);
   mysql_mutex_setflags(&run_lock, MYF_NO_DEADLOCK_DETECTION);
   mysql_mutex_setflags(&data_lock, MYF_NO_DEADLOCK_DETECTION);
   mysql_mutex_init(key_master_info_sleep_lock, &sleep_lock, MY_MUTEX_INIT_FAST);
@@ -93,6 +100,7 @@ Master_info::Master_info(LEX_CSTRING *connection_name_arg,
   mysql_cond_init(key_master_info_start_cond, &start_cond, NULL);
   mysql_cond_init(key_master_info_stop_cond, &stop_cond, NULL);
   mysql_cond_init(key_master_info_sleep_cond, &sleep_cond, NULL);
+  init_sql_alloc(PSI_INSTRUMENT_ME, &mem_root, MEM_ROOT_BLOCK_SIZE, 0, MYF(0));
 }
 
 
@@ -122,10 +130,13 @@ Master_info::~Master_info()
   mysql_mutex_destroy(&data_lock);
   mysql_mutex_destroy(&sleep_lock);
   mysql_mutex_destroy(&start_stop_lock);
+  mysql_mutex_destroy(&start_alter_lock);
+  mysql_mutex_destroy(&start_alter_list_lock);
   mysql_cond_destroy(&data_cond);
   mysql_cond_destroy(&start_cond);
   mysql_cond_destroy(&stop_cond);
   mysql_cond_destroy(&sleep_cond);
+  free_root(&mem_root, MYF(0));
 }
 
 /**
@@ -199,7 +210,10 @@ void init_master_log_pos(Master_info* mi)
 
   mi->master_log_name[0] = 0;
   mi->master_log_pos = BIN_LOG_HEADER_SIZE;             // skip magic number
-  mi->using_gtid= Master_info::USE_GTID_NO;
+  if (mi->master_supports_gtid)
+  {
+    mi->using_gtid= Master_info::USE_GTID_SLAVE_POS;
+  }
   mi->gtid_current_pos.reset();
   mi->events_queued_since_last_gtid= 0;
   mi->gtid_reconnect_event_skip_count= 0;
@@ -750,7 +764,7 @@ int flush_master_info(Master_info* mi,
                          (1 + mi->ignore_server_ids.elements), MYF(MY_WME));
     if (!ignore_server_ids_buf)
       DBUG_RETURN(1);                           /* error */
-    ulong cur_len= sprintf(ignore_server_ids_buf, "%u",
+    ulong cur_len= sprintf(ignore_server_ids_buf, "%zu",
                            mi->ignore_server_ids.elements);
     for (ulong i= 0; i < mi->ignore_server_ids.elements; i++)
     {
@@ -1010,10 +1024,12 @@ void copy_filter_setting(Rpl_filter* dst_filter, Rpl_filter* src_filter)
       dst_filter->set_wild_ignore_table(tmp.ptr());
   }
 
-  if (dst_filter->rewrite_db_is_empty())
+  dst_filter->get_rewrite_db(&tmp);
+  if (tmp.is_empty())
   {
-    if (!src_filter->rewrite_db_is_empty())
-      dst_filter->copy_rewrite_db(src_filter);
+    src_filter->get_rewrite_db(&tmp);
+    if (!tmp.is_empty())
+      dst_filter->set_rewrite_db(tmp.ptr());
   }
 }
 
@@ -1456,10 +1472,31 @@ bool Master_info_index::add_master_info(Master_info *mi, bool write_to_file)
    atomic
 */
 
-bool Master_info_index::remove_master_info(Master_info *mi)
+bool Master_info_index::remove_master_info(Master_info *mi, bool clear_log_files)
 {
+  char tmp_name[FN_REFLEN];
   DBUG_ENTER("remove_master_info");
   mysql_mutex_assert_owner(&LOCK_active_mi);
+
+  if (clear_log_files)
+  {
+    /* This code is only executed when change_master() failes to create a new master info */
+
+    // Delete any temporary relay log files that could have been created by change_master()
+    mi->rli.relay_log.reset_logs(current_thd, 0, (rpl_gtid*) 0, 0, 0);
+    /* Delete master-'connection'.info */
+    create_logfile_name_with_suffix(tmp_name,
+                                    sizeof(tmp_name),
+                                    master_info_file, 0,
+                                    &mi->cmp_connection_name);
+    my_delete(tmp_name, MYF(0));
+    /* Delete relay-log-'connection'.info */
+    create_logfile_name_with_suffix(tmp_name,
+                                    sizeof(tmp_name),
+                                    relay_log_info_file, 0,
+                                    &mi->cmp_connection_name);
+    my_delete(tmp_name, MYF(0));
+  }
 
   // Delete Master_info and rewrite others to file
   if (!my_hash_delete(&master_info_hash, (uchar*) mi))
@@ -1917,7 +1954,7 @@ char *Domain_id_filter::as_string(enum_list_type type)
     return NULL;
 
   // Store the total number of elements followed by the individual elements.
-  size_t cur_len= sprintf(buf, "%u", ids->elements);
+  size_t cur_len= sprintf(buf, "%zu", ids->elements);
   sz-= cur_len;
 
   for (uint i= 0; i < ids->elements; i++)

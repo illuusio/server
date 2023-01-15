@@ -54,19 +54,16 @@ Created 10/25/1995 Heikki Tuuri
 # include <dirent.h>
 #endif
 
+#include "lz4.h"
+#include "lzo/lzo1x.h"
+#include "lzma.h"
+#include "bzlib.h"
+#include "snappy-c.h"
+
 ATTRIBUTE_COLD void fil_space_t::set_corrupted() const
 {
   if (!is_stopping() && !is_corrupted.test_and_set())
     sql_print_error("InnoDB: File '%s' is corrupted", chain.start->name);
-}
-
-/** Determine if the space id is a user tablespace id or not.
-@param space_id tablespace identifier
-@return true if it is a user tablespace ID */
-inline bool fil_is_user_tablespace_id(ulint space_id)
-{
-  return space_id != TRX_SYS_SPACE && space_id != SRV_TMP_SPACE_ID &&
-    !srv_is_undo_tablespace(space_id);
 }
 
 /** Try to close a file to adhere to the innodb_open_files limit.
@@ -83,7 +80,7 @@ bool fil_space_t::try_to_close(bool print_info)
     case FIL_TYPE_IMPORT:
       break;
     case FIL_TYPE_TABLESPACE:
-      if (!fil_is_user_tablespace_id(space.id))
+      if (is_predefined_tablespace(space.id))
         continue;
     }
 
@@ -214,14 +211,11 @@ fil_validate_skip(void)
 }
 #endif /* UNIV_DEBUG */
 
-/*******************************************************************//**
-Returns the table space by a given id, NULL if not found.
-It is unsafe to dereference the returned pointer. It is fine to check
-for NULL. */
-fil_space_t*
-fil_space_get_by_id(
-/*================*/
-	ulint	id)	/*!< in: space id */
+/** Look up a tablespace.
+@param tablespace identifier
+@return tablespace
+@retval nullptr if not found */
+fil_space_t *fil_space_get_by_id(uint32_t id)
 {
 	fil_space_t*	space;
 
@@ -242,48 +236,38 @@ or the caller should be in single-threaded crash recovery mode
 Normally, fil_space_t::get() should be used instead.
 @param[in]	id	tablespace ID
 @return tablespace, or NULL if not found */
-fil_space_t*
-fil_space_get(
-	ulint	id)
+fil_space_t *fil_space_get(uint32_t id)
 {
-	mysql_mutex_lock(&fil_system.mutex);
-	fil_space_t*	space = fil_space_get_by_id(id);
-	mysql_mutex_unlock(&fil_system.mutex);
-	return(space);
+  mysql_mutex_lock(&fil_system.mutex);
+  fil_space_t *space= fil_space_get_by_id(id);
+  mysql_mutex_unlock(&fil_system.mutex);
+  return space;
 }
 
-/** Validate the compression algorithm for full crc32 format.
-@param[in]	space	tablespace object
-@return whether the compression algorithm support */
-static bool fil_comp_algo_validate(const fil_space_t* space)
+/** Check if the compression algorithm is loaded
+@param[in]	comp_algo ulint compression algorithm
+@return whether the compression algorithm is loaded */
+bool fil_comp_algo_loaded(ulint comp_algo)
 {
-	if (!space->full_crc32()) {
-		return true;
-	}
-
-	DBUG_EXECUTE_IF("fil_comp_algo_validate_fail",
-			return false;);
-
-	ulint	comp_algo = space->get_compression_algo();
 	switch (comp_algo) {
 	case PAGE_UNCOMPRESSED:
 	case PAGE_ZLIB_ALGORITHM:
-#ifdef HAVE_LZ4
-	case PAGE_LZ4_ALGORITHM:
-#endif /* HAVE_LZ4 */
-#ifdef HAVE_LZO
-	case PAGE_LZO_ALGORITHM:
-#endif /* HAVE_LZO */
-#ifdef HAVE_LZMA
-	case PAGE_LZMA_ALGORITHM:
-#endif /* HAVE_LZMA */
-#ifdef HAVE_BZIP2
-	case PAGE_BZIP2_ALGORITHM:
-#endif /* HAVE_BZIP2 */
-#ifdef HAVE_SNAPPY
-	case PAGE_SNAPPY_ALGORITHM:
-#endif /* HAVE_SNAPPY */
 		return true;
+
+	case PAGE_LZ4_ALGORITHM:
+		return provider_service_lz4->is_loaded;
+
+	case PAGE_LZO_ALGORITHM:
+		return provider_service_lzo->is_loaded;
+
+	case PAGE_LZMA_ALGORITHM:
+		return provider_service_lzma->is_loaded;
+
+	case PAGE_BZIP2_ALGORITHM:
+		return provider_service_bzip2->is_loaded;
+
+	case PAGE_SNAPPY_ALGORITHM:
+		return provider_service_snappy->is_loaded;
 	}
 
 	return false;
@@ -382,9 +366,26 @@ static bool fil_node_open_file_low(fil_node_t *node)
     return false;
   }
 
+  ulint comp_algo = node->space->get_compression_algo();
+  bool comp_algo_invalid = false;
+
   if (node->size);
-  else if (!node->read_page0() || !fil_comp_algo_validate(node->space))
+  else if (!node->read_page0() ||
+            // validate compression algorithm for full crc32 format
+            (node->space->full_crc32() &&
+             (comp_algo_invalid = !fil_comp_algo_loaded(comp_algo))))
   {
+    if (comp_algo_invalid)
+    {
+      if (comp_algo <= PAGE_ALGORITHM_LAST)
+        ib::warn() << "'" << node->name << "' is compressed with "
+                   << page_compression_algorithms[comp_algo]
+                   << ", which is not currently loaded";
+      else
+        ib::warn() << "'" << node->name << "' is compressed with "
+                   << "invalid algorithm: " << comp_algo;
+    }
+
     os_file_close(node->handle);
     node->handle= OS_FILE_CLOSED;
     return false;
@@ -411,7 +412,7 @@ static bool fil_node_open_file(fil_node_t *node)
 {
   mysql_mutex_assert_owner(&fil_system.mutex);
   ut_ad(!node->is_open());
-  ut_ad(fil_is_user_tablespace_id(node->space->id) ||
+  ut_ad(!is_predefined_tablespace(node->space->id) ||
         srv_operation == SRV_OPERATION_BACKUP ||
         srv_operation == SRV_OPERATION_RESTORE ||
         srv_operation == SRV_OPERATION_RESTORE_DELTA);
@@ -860,13 +861,10 @@ fil_space_free_low(
 /** Frees a space object from the tablespace memory cache.
 Closes the files in the chain but does not delete them.
 There must not be any pending i/o's or flushes on the files.
-@param[in]	id		tablespace identifier
-@param[in]	x_latched	whether the caller holds X-mode space->latch
+@param id          tablespace identifier
+@param x_latched   whether the caller holds exclusive fil_space_t::latch
 @return true if success */
-bool
-fil_space_free(
-	ulint		id,
-	bool		x_latched)
+bool fil_space_free(uint32_t id, bool x_latched)
 {
 	ut_ad(id != TRX_SYS_SPACE);
 
@@ -885,18 +883,22 @@ fil_space_free(
 		}
 
 		if (!recv_recovery_is_on()) {
-			mysql_mutex_lock(&log_sys.mutex);
-		}
+			log_sys.latch.wr_lock(SRW_LOCK_CALL);
 
-		mysql_mutex_assert_owner(&log_sys.mutex);
+			if (space->max_lsn) {
+				ut_d(space->max_lsn = 0);
+				fil_system.named_spaces.remove(*space);
+			}
 
-		if (space->max_lsn != 0) {
-			ut_d(space->max_lsn = 0);
-			fil_system.named_spaces.remove(*space);
-		}
-
-		if (!recv_recovery_is_on()) {
-			mysql_mutex_unlock(&log_sys.mutex);
+			log_sys.latch.wr_unlock();
+		} else {
+#ifndef SUX_LOCK_GENERIC
+			ut_ad(log_sys.latch.is_write_locked());
+#endif
+			if (space->max_lsn) {
+				ut_d(space->max_lsn = 0);
+				fil_system.named_spaces.remove(*space);
+			}
 		}
 
 		fil_space_free_low(space);
@@ -914,7 +916,7 @@ fil_space_free(
 @param mode       encryption mode
 @return pointer to created tablespace, to be filled in with add()
 @retval nullptr on failure (such as when the same tablespace exists) */
-fil_space_t *fil_space_t::create(ulint id, ulint flags,
+fil_space_t *fil_space_t::create(uint32_t id, uint32_t flags,
                                  fil_type_t purpose,
 				 fil_space_crypt_t *crypt_data,
 				 fil_encryption_t mode)
@@ -1022,17 +1024,12 @@ Assigns a new space id for a new single-table tablespace. This works simply by
 incrementing the global counter. If 4 billion id's is not enough, we may need
 to recycle id's.
 @return true if assigned, false if not */
-bool
-fil_assign_new_space_id(
-/*====================*/
-	ulint*	space_id)	/*!< in/out: space id */
+bool fil_assign_new_space_id(uint32_t *space_id)
 {
-	ulint	id;
+	uint32_t id = *space_id;
 	bool	success;
 
 	mysql_mutex_lock(&fil_system.mutex);
-
-	id = *space_id;
 
 	if (id < fil_system.max_assigned_id) {
 		id = fil_system.max_assigned_id;
@@ -1059,7 +1056,7 @@ fil_assign_new_space_id(
 			<< ". To reset the counter to zero"
 			" you have to dump all your tables and"
 			" recreate the whole InnoDB installation.";
-		*space_id = ULINT_UNDEFINED;
+		*space_id = UINT32_MAX;
 	}
 
 	mysql_mutex_unlock(&fil_system.mutex);
@@ -1092,7 +1089,7 @@ bool fil_space_t::read_page0()
 }
 
 /** Look up a tablespace and ensure that its first page has been validated. */
-static fil_space_t *fil_space_get_space(ulint id)
+static fil_space_t *fil_space_get_space(uint32_t id)
 {
   if (fil_space_t *space= fil_space_get_by_id(id))
     if (space->read_page0())
@@ -1100,7 +1097,8 @@ static fil_space_t *fil_space_get_space(ulint id)
   return nullptr;
 }
 
-void fil_space_set_recv_size_and_flags(ulint id, uint32_t size, uint32_t flags)
+void fil_space_set_recv_size_and_flags(uint32_t id, uint32_t size,
+                                       uint32_t flags)
 {
   ut_ad(id < SRV_SPACE_ID_UPPER_BOUND);
   mysql_mutex_lock(&fil_system.mutex);
@@ -1381,10 +1379,7 @@ void fil_space_t::close_all()
 /*******************************************************************//**
 Sets the max tablespace id counter if the given number is bigger than the
 previous value. */
-void
-fil_set_max_space_id_if_bigger(
-/*===========================*/
-	ulint	max_id)	/*!< in: maximum known id */
+void fil_set_max_space_id_if_bigger(uint32_t max_id)
 {
 	ut_a(max_id < SRV_SPACE_ID_UPPER_BOUND);
 
@@ -1398,51 +1393,11 @@ fil_set_max_space_id_if_bigger(
 	mysql_mutex_unlock(&fil_system.mutex);
 }
 
-/** Write the flushed LSN to the page header of the first page in the
-system tablespace.
-@param[in]	lsn	flushed LSN
-@return DB_SUCCESS or error number */
-dberr_t
-fil_write_flushed_lsn(
-	lsn_t	lsn)
-{
-	byte*	buf;
-	ut_ad(!srv_read_only_mode);
-
-	if (!fil_system.sys_space->acquire()) {
-		return DB_ERROR;
-	}
-
-	buf = static_cast<byte*>(aligned_malloc(srv_page_size, srv_page_size));
-
-	auto fio = fil_system.sys_space->io(IORequestRead, 0, srv_page_size,
-					    buf);
-
-	if (fio.err == DB_SUCCESS) {
-		mach_write_to_8(buf + FIL_PAGE_FILE_FLUSH_LSN_OR_KEY_VERSION,
-				lsn);
-
-		ulint fsp_flags = mach_read_from_4(
-			buf + FSP_HEADER_OFFSET + FSP_SPACE_FLAGS);
-
-		if (fil_space_t::full_crc32(fsp_flags)) {
-			buf_flush_assign_full_crc32_checksum(buf);
-		}
-
-		fio = fil_system.sys_space->io(IORequestWrite,
-					       0, srv_page_size, buf);
-		fil_flush_file_spaces();
-	}
-
-	aligned_free(buf);
-	return fio.err;
-}
-
 /** Acquire a tablespace reference.
 @param id      tablespace identifier
 @return tablespace
 @retval nullptr if the tablespace is missing or inaccessible */
-fil_space_t *fil_space_t::get(ulint id)
+fil_space_t *fil_space_t::get(uint32_t id)
 {
   mysql_mutex_lock(&fil_system.mutex);
   fil_space_t *space= fil_space_get_by_id(id);
@@ -1462,7 +1417,7 @@ fil_space_t *fil_space_t::get(ulint id)
 @param first_page_no  first page number in the file
 @param path           file path
 @param new_path       new file path for type=FILE_RENAME */
-inline void mtr_t::log_file_op(mfile_type_t type, ulint space_id,
+inline void mtr_t::log_file_op(mfile_type_t type, uint32_t space_id,
 			       const char *path, const char *new_path)
 {
   ut_ad((new_path != nullptr) == (type == FILE_RENAME));
@@ -1510,7 +1465,7 @@ inline void mtr_t::log_file_op(mfile_type_t type, ulint space_id,
   {
     ut_ad(strchr(new_path, '/'));
     m_log.push(reinterpret_cast<const byte*>(path), uint32_t(len + 1));
-    m_log.push(reinterpret_cast<const byte*>(new_path), uint32_t(new_len));
+    m_log.push(reinterpret_cast<const byte*>(new_path), uint32_t(new_len - 1));
   }
   else
     m_log.push(reinterpret_cast<const byte*>(path), uint32_t(len));
@@ -1520,18 +1475,14 @@ inline void mtr_t::log_file_op(mfile_type_t type, ulint space_id,
 @param[in]	space_id	tablespace id
 @param[in]	name		tablespace file name
 @param[in,out]	mtr		mini-transaction */
-static
-void
-fil_name_write(
-	ulint		space_id,
-	const char*	name,
-	mtr_t*		mtr)
+static void fil_name_write(uint32_t space_id, const char *name,
+                           mtr_t *mtr)
 {
   ut_ad(!is_predefined_tablespace(space_id));
   mtr->log_file_op(FILE_MODIFY, space_id, name);
 }
 
-fil_space_t *fil_space_t::check_pending_operations(ulint id)
+fil_space_t *fil_space_t::check_pending_operations(uint32_t id)
 {
   ut_a(!is_system_tablespace(id));
   mysql_mutex_lock(&fil_system.mutex);
@@ -1558,7 +1509,7 @@ being_deleted:
         return nullptr;
       /* Issue a warning every 10.24 seconds, starting after 2.56 seconds */
       if ((count & 511) == 128)
-        sql_print_warning("InnoDB: Waiting for tablespace " ULINTPF
+        sql_print_warning("InnoDB: Waiting for tablespace " UINT32PF
                           " to be deleted", id);
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       mysql_mutex_lock(&fil_system.mutex);
@@ -1597,7 +1548,7 @@ being_deleted:
 /** Close a single-table tablespace on failed IMPORT TABLESPACE.
 The tablespace must be cached in the memory cache.
 Free all pages used by the tablespace. */
-void fil_close_tablespace(ulint id)
+void fil_close_tablespace(uint32_t id)
 {
 	ut_ad(!is_system_tablespace(id));
 	fil_space_t* space = fil_space_t::check_pending_operations(id);
@@ -1637,7 +1588,7 @@ void fil_close_tablespace(ulint id)
 @param id    tablespace identifier
 @return detached file handle (to be closed by the caller)
 @return	OS_FILE_CLOSED if no file existed */
-pfs_os_file_t fil_delete_tablespace(ulint id)
+pfs_os_file_t fil_delete_tablespace(uint32_t id)
 {
   ut_ad(!is_system_tablespace(id));
   pfs_os_file_t handle= OS_FILE_CLOSED;
@@ -1838,10 +1789,10 @@ must be >= FIL_IBD_FILE_INITIAL_SIZE
 @retval	NULL	on error */
 fil_space_t*
 fil_ibd_create(
-	ulint		space_id,
+	uint32_t	space_id,
 	const table_name_t name,
 	const char*	path,
-	ulint		flags,
+	uint32_t	flags,
 	uint32_t	size,
 	fil_encryption_t mode,
 	uint32_t	key_id,
@@ -1867,8 +1818,11 @@ fil_ibd_create(
 
 	mtr.start();
 	mtr.log_file_op(FILE_CREATE, space_id, path);
-	mtr.commit();
-	log_write_up_to(mtr.commit_lsn(), true);
+	log_sys.latch.wr_lock(SRW_LOCK_CALL);
+	auto lsn= mtr.commit_files();
+	log_sys.latch.wr_unlock();
+	mtr.flag_wr_unlock();
+	log_write_up_to(lsn, true);
 
 	ulint type;
 	static_assert(((UNIV_ZIP_SIZE_MIN >> 1) << 3) == 4096,
@@ -2014,8 +1968,8 @@ fil_space_t*
 fil_ibd_open(
 	unsigned		validate,
 	fil_type_t		purpose,
-	ulint			id,
-	ulint			flags,
+	uint32_t		id,
+	uint32_t		flags,
 	fil_space_t::name_type	name,
 	const char*		path_in,
 	dberr_t*		err)
@@ -2035,7 +1989,7 @@ fil_ibd_open(
 
 	/* Table flags can be ULINT_UNDEFINED if
 	dict_tf_to_fsp_flags_failure is set. */
-	if (flags == ULINT_UNDEFINED) {
+	if (flags == UINT32_MAX) {
 corrupted:
 		local_err = DB_CORRUPTION;
 func_exit:
@@ -2378,10 +2332,7 @@ of the file in validate_for_recovery().
 @param[out]	space		the tablespace, or NULL on error
 @return status of the operation */
 enum fil_load_status
-fil_ibd_load(
-	ulint		space_id,
-	const char*	filename,
-	fil_space_t*&	space)
+fil_ibd_load(uint32_t space_id, const char *filename, fil_space_t *&space)
 {
 	/* If the a space is already in the file system cache with this
 	space ID, then there is nothing to do. */
@@ -2500,7 +2451,7 @@ tablespace_check:
 
 	/* Adjust the memory-based flags that would normally be set by
 	dict_tf_to_fsp_flags(). In recovery, we have no data dictionary. */
-	ulint flags = file.flags();
+	uint32_t flags = file.flags();
 	if (fil_space_t::is_compressed(flags)) {
 		flags |= page_zip_level
 			<< FSP_FLAGS_MEM_COMPRESSION_LEVEL;
@@ -2541,7 +2492,7 @@ tablespace_check:
 (Typically when upgrading from MariaDB 10.1.0..10.1.20.)
 @param[in,out]	space		tablespace
 @param[in]	flags		desired tablespace flags */
-void fsp_flags_try_adjust(fil_space_t* space, ulint flags)
+void fsp_flags_try_adjust(fil_space_t *space, uint32_t flags)
 {
 	ut_ad(!srv_read_only_mode);
 	ut_ad(fil_space_t::is_valid_flags(flags, space->id));
@@ -2591,14 +2542,15 @@ startup, there may be many tablespaces which are not yet in the memory cache.
 @param[in]	table_flags	table flags
 @return the tablespace
 @retval	NULL	if no matching tablespace exists in the memory cache */
-fil_space_t *fil_space_for_table_exists_in_mem(ulint id, ulint table_flags)
+fil_space_t *fil_space_for_table_exists_in_mem(uint32_t id,
+                                               uint32_t table_flags)
 {
-	const ulint	expected_flags = dict_tf_to_fsp_flags(table_flags);
+	const uint32_t expected_flags = dict_tf_to_fsp_flags(table_flags);
 
 	mysql_mutex_lock(&fil_system.mutex);
 	if (fil_space_t* space = fil_space_get_by_id(id)) {
-		ulint tf = expected_flags & ~FSP_FLAGS_MEM_MASK;
-		ulint sf = space->flags & ~FSP_FLAGS_MEM_MASK;
+		uint32_t tf = expected_flags & ~FSP_FLAGS_MEM_MASK;
+		uint32_t sf = space->flags & ~FSP_FLAGS_MEM_MASK;
 
 		if (!fil_space_t::is_flags_equal(tf, sf)
 		    && !fil_space_t::is_flags_equal(sf, tf)) {
@@ -2669,8 +2621,8 @@ fil_io_t fil_space_t::io(const IORequest &type, os_offset_t offset, size_t len,
                          void *buf, buf_page_t *bpage)
 {
 	ut_ad(referenced());
-	ut_ad(offset % OS_FILE_LOG_BLOCK_SIZE == 0);
-	ut_ad((len % OS_FILE_LOG_BLOCK_SIZE) == 0);
+	ut_ad(offset % UNIV_ZIP_SIZE_MIN == 0);
+	ut_ad(len % 512 == 0); /* page_compressed */
 	ut_ad(fil_validate_skip());
 	ut_ad(type.is_read() || type.is_write());
 	ut_ad(type.type != IORequest::DBLWR_BATCH);
@@ -2969,19 +2921,6 @@ fil_space_validate_for_mtr_commit(
 }
 #endif /* UNIV_DEBUG */
 
-/** Write a FILE_MODIFY record for a persistent tablespace.
-@param[in]	space	tablespace
-@param[in,out]	mtr	mini-transaction */
-static
-void
-fil_names_write(
-	const fil_space_t*	space,
-	mtr_t*			mtr)
-{
-	ut_ad(UT_LIST_GET_LEN(space->chain) == 1);
-	fil_name_write(space->id, UT_LIST_GET_FIRST(space->chain)->name, mtr);
-}
-
 /** Note that a non-predefined persistent tablespace has been modified
 by redo log.
 @param[in,out]	space	tablespace */
@@ -2989,7 +2928,9 @@ void
 fil_names_dirty(
 	fil_space_t*	space)
 {
-	mysql_mutex_assert_owner(&log_sys.mutex);
+#ifndef SUX_LOCK_GENERIC
+	ut_ad(log_sys.latch.is_write_locked());
+#endif
 	ut_ad(recv_recovery_is_on());
 	ut_ad(log_sys.get_lsn() != 0);
 	ut_ad(space->max_lsn == 0);
@@ -2999,56 +2940,48 @@ fil_names_dirty(
 	space->max_lsn = log_sys.get_lsn();
 }
 
-/** Write FILE_MODIFY records when a non-predefined persistent
-tablespace was modified for the first time since the latest
-fil_names_clear().
-@param[in,out]	space	tablespace */
-void fil_names_dirty_and_write(fil_space_t* space)
+/** Write a FILE_MODIFY record when a non-predefined persistent
+tablespace was modified for the first time since fil_names_clear(). */
+ATTRIBUTE_NOINLINE ATTRIBUTE_COLD void mtr_t::name_write()
 {
-	mysql_mutex_assert_owner(&log_sys.mutex);
-	ut_d(fil_space_validate_for_mtr_commit(space));
-	ut_ad(space->max_lsn == log_sys.get_lsn());
+#ifndef SUX_LOCK_GENERIC
+  ut_ad(log_sys.latch.is_write_locked());
+#endif
+  ut_d(fil_space_validate_for_mtr_commit(m_user_space));
+  ut_ad(!m_user_space->max_lsn);
+  m_user_space->max_lsn= log_sys.get_lsn();
 
-	fil_system.named_spaces.push_back(*space);
-	mtr_t mtr;
-	mtr.start();
-	fil_names_write(space, &mtr);
+  fil_system.named_spaces.push_back(*m_user_space);
+  ut_ad(UT_LIST_GET_LEN(m_user_space->chain) == 1);
 
-	DBUG_EXECUTE_IF("fil_names_write_bogus",
-			{
-				char bogus_name[] = "./test/bogus file.ibd";
-				fil_name_write(
-					SRV_SPACE_ID_UPPER_BOUND,
-					bogus_name, &mtr);
-			});
-
-	mtr.commit_files();
+  mtr_t mtr;
+  mtr.start();
+  fil_name_write(m_user_space->id,
+                 UT_LIST_GET_FIRST(m_user_space->chain)->name,
+                 &mtr);
+  mtr.commit_files();
 }
 
 /** On a log checkpoint, reset fil_names_dirty_and_write() flags
-and write out FILE_MODIFY and FILE_CHECKPOINT if needed.
-@param[in]	lsn		checkpoint LSN
-@param[in]	do_write	whether to always write FILE_CHECKPOINT
-@return whether anything was written to the redo log
-@retval false	if no flags were set and nothing written
-@retval true	if anything was written to the redo log */
-bool
-fil_names_clear(
-	lsn_t	lsn,
-	bool	do_write)
+and write out FILE_MODIFY if needed, and write FILE_CHECKPOINT.
+@param lsn  checkpoint LSN
+@return current LSN */
+lsn_t fil_names_clear(lsn_t lsn)
 {
 	mtr_t	mtr;
 
-	mysql_mutex_assert_owner(&log_sys.mutex);
+#ifndef SUX_LOCK_GENERIC
+	ut_ad(log_sys.latch.is_write_locked());
+#endif
 	ut_ad(lsn);
+	ut_ad(log_sys.is_latest());
 
 	mtr.start();
 
 	for (auto it = fil_system.named_spaces.begin();
 	     it != fil_system.named_spaces.end(); ) {
-		if (mtr.get_log_size()
-		    + strlen(it->chain.start->name)
-		    >= RECV_SCAN_SIZE - (3 + 5 + 1)) {
+		if (mtr.get_log_size() + strlen(it->chain.start->name)
+		    >= recv_sys.MTR_SIZE_MAX - (3 + 5)) {
 			/* Prevent log parse buffer overflow */
 			mtr.commit_files();
 			mtr.start();
@@ -3071,20 +3004,13 @@ fil_names_clear(
 		was called. If we kept track of "min_lsn" (the first LSN
 		where max_lsn turned nonzero), we could avoid the
 		fil_names_write() call if min_lsn > lsn. */
-
-		fil_names_write(&*it, &mtr);
-		do_write = true;
-
+		ut_ad(UT_LIST_GET_LEN((*it).chain) == 1);
+		fil_name_write((*it).id, UT_LIST_GET_FIRST((*it).chain)->name,
+			       &mtr);
 		it = next;
 	}
 
-	if (do_write) {
-		mtr.commit_files(lsn);
-	} else {
-		ut_ad(!mtr.has_modifications());
-	}
-
-	return(do_write);
+	return mtr.commit_files(lsn);
 }
 
 /* Unit Tests */

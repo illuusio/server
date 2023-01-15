@@ -600,6 +600,7 @@ static unsigned long  // NOLINT(runtime/int)
     rocksdb_persistent_cache_size_mb;
 static ulong rocksdb_info_log_level;
 static char *rocksdb_wal_dir;
+static char *rocksdb_log_dir;
 static char *rocksdb_persistent_cache_path;
 static ulong rocksdb_index_type;
 static uint32_t rocksdb_flush_log_at_trx_commit;
@@ -704,7 +705,7 @@ static int rmdir_force(const char *dir) {
   if (!dir_info)
     return 1;
 
-  for (uint i = 0; i < dir_info->number_of_files; i++) {
+  for (size_t i = 0; i < dir_info->number_of_files; i++) {
     FILEINFO *file = dir_info->dir_entry + i;
 
     strxnmov(path, sizeof(path), dir, sep, file->name, NULL);
@@ -1315,6 +1316,11 @@ static MYSQL_SYSVAR_STR(wal_dir, rocksdb_wal_dir,
                         PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
                         "DBOptions::wal_dir for RocksDB", nullptr, nullptr,
                         rocksdb_db_options->wal_dir.c_str());
+
+static MYSQL_SYSVAR_STR(log_dir, rocksdb_log_dir,
+                        PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
+                        "DBOptions::db_log_dir for RocksDB", nullptr, nullptr,
+                        rocksdb_db_options->db_log_dir.c_str());
 
 static MYSQL_SYSVAR_STR(
     persistent_cache_path, rocksdb_persistent_cache_path,
@@ -2041,6 +2047,7 @@ static struct st_mysql_sys_var *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(max_total_wal_size),
     MYSQL_SYSVAR(use_fsync),
     MYSQL_SYSVAR(wal_dir),
+    MYSQL_SYSVAR(log_dir),
     MYSQL_SYSVAR(persistent_cache_path),
     MYSQL_SYSVAR(persistent_cache_size_mb),
     MYSQL_SYSVAR(delete_obsolete_files_period_micros),
@@ -5216,9 +5223,6 @@ static rocksdb::Status check_rocksdb_options_compatibility(
   return status;
 }
 
-bool prevent_myrocks_loading= false;
-
-
 static int rocksdb_check_version(handlerton *hton,
                                  const char *path,
                                  const LEX_CUSTRING *version,
@@ -5238,14 +5242,6 @@ static int rocksdb_check_version(handlerton *hton,
 static int rocksdb_init_func(void *const p) {
 
   DBUG_ENTER_FUNC();
-
-  if (prevent_myrocks_loading)
-  {
-    my_error(ER_INTERNAL_ERROR, MYF(0),
-             "Loading MyRocks plugin after it has been unloaded is not "
-             "supported. Please restart mariadbd");
-    DBUG_RETURN(1);
-  }
 
   if (rocksdb_ignore_datadic_errors)
   {
@@ -5392,7 +5388,7 @@ static int rocksdb_init_func(void *const p) {
         rocksdb::NewGenericRateLimiter(rocksdb_rate_limiter_bytes_per_sec));
     rocksdb_db_options->rate_limiter = rocksdb_rate_limiter;
   }
-
+  rocksdb_db_options->db_log_dir = rocksdb_log_dir;
   rocksdb_db_options->delayed_write_rate = rocksdb_delayed_write_rate;
 
   std::shared_ptr<Rdb_logger> myrocks_logger = std::make_shared<Rdb_logger>();
@@ -5821,8 +5817,6 @@ static int rocksdb_init_func(void *const p) {
 static int rocksdb_done_func(void *const p) {
   DBUG_ENTER_FUNC();
 
-  int error = 0;
-
   // signal the drop index thread to stop
   rdb_drop_idx_thread.signal(true);
 
@@ -5864,12 +5858,6 @@ static int rocksdb_done_func(void *const p) {
     // NO_LINT_DEBUG
     sql_print_error(
         "RocksDB: Couldn't stop the manual compaction thread: (errno=%d)", err);
-  }
-
-  if (rdb_open_tables.count()) {
-    // Looks like we are getting unloaded and yet we have some open tables
-    // left behind.
-    error = 1;
   }
 
   rdb_open_tables.free();
@@ -5923,7 +5911,7 @@ static int rocksdb_done_func(void *const p) {
     MariaDB: don't clear rocksdb_db_options and rocksdb_tbl_options.
     MyRocks' plugin variables refer to them.
 
-    The plugin cannot be loaded again (see prevent_myrocks_loading) but plugin
+    The plugin cannot be loaded again but plugin
     variables are processed before myrocks::rocksdb_init_func is invoked, so
     they must point to valid memory.
   */
@@ -5938,12 +5926,12 @@ static int rocksdb_done_func(void *const p) {
   my_error_unregister(HA_ERR_ROCKSDB_FIRST, HA_ERR_ROCKSDB_LAST);
 
   /*
-    Prevent loading the plugin after it has been loaded and then unloaded. This
-    doesn't work currently.
+    returning non-zero status from the plugin deinit function will prevent
+    the server from unloading the plugin. it will only be marked unusable.
+    This is needed here, because RocksDB cannot be fully unloaded
+    and reloaded (see sql_plugin.cc near STB_GNU_UNIQUE).
   */
-  prevent_myrocks_loading= true;
-
-  DBUG_RETURN(error);
+  DBUG_RETURN(1);
 }
 
 static inline void rocksdb_smart_seek(bool seek_backward,
@@ -7599,8 +7587,7 @@ int ha_rocksdb::create_key_def(const TABLE *const table_arg, const uint i,
     (*new_key_def)->m_ttl_column = ttl_column;
   }
   // initialize key_def
-  (*new_key_def)->setup(table_arg, tbl_def_arg);
-  DBUG_RETURN(HA_EXIT_SUCCESS);
+  DBUG_RETURN((*new_key_def)->setup(table_arg, tbl_def_arg));
 }
 
 int rdb_normalize_tablename(const std::string &tablename,
@@ -10833,7 +10820,7 @@ int ha_rocksdb::index_end() {
 
   release_scan_iterator();
 
-  bitmap_free(&m_lookup_bitmap);
+  my_bitmap_free(&m_lookup_bitmap);
 
   active_index = MAX_KEY;
   in_range_check_pushed_down = FALSE;

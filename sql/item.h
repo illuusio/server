@@ -772,8 +772,8 @@ enum class item_base_t : item_flags_t
   FIXED=                 (1<<2),   // Was fixed with fix_fields().
   IS_EXPLICIT_NAME=      (1<<3),   // The name of this Item was set by the user
                                    // (or was auto generated otherwise)
-  IS_IN_WITH_CYCLE=      (1<<4)    // This item is in CYCLE clause
-                                   // of WITH.
+  IS_IN_WITH_CYCLE=      (1<<4),   // This item is in CYCLE clause of WITH.
+  AT_TOP_LEVEL=          (1<<5)    // At top (AND) level of item tree
 };
 
 
@@ -1327,6 +1327,25 @@ public:
   {
     set_maybe_null(maybe_null_arg);
   }
+  /*
+    Mark the item that it is a top level item, or part of a top level AND item,
+    for WHERE and ON clauses:
+    Example:   ... WHERE a=5 AND b=6;   Both a=5 and b=6 are top level items
+
+    This is used to indicate that there is no distinction between if the
+    value of the item is FALSE or NULL..
+    This enables Item_cond_and and subquery related items to do special
+    "top level" optimizations.
+  */
+  virtual void top_level_item()
+  {
+    base_flags|= item_base_t::AT_TOP_LEVEL;
+  }
+  /*
+    Return TRUE if this item of top WHERE level (AND/OR)
+  */
+  bool is_top_level_item() const
+  { return (bool) (base_flags & item_base_t::AT_TOP_LEVEL); }
 
   void set_typelib(const TYPELIB *typelib) override
   {
@@ -1827,6 +1846,16 @@ public:
   */
   virtual bool is_evaluable_expression() const { return true; }
 
+  virtual bool check_assignability_to(const Field *to, bool ignore) const
+  {
+    /*
+      "this" must be neither DEFAULT/IGNORE,
+      nor Item_param bound to DEFAULT/IGNORE.
+    */
+    DBUG_ASSERT(is_evaluable_expression());
+    return to->check_assignability_from(type_handler(), ignore);
+  }
+
   /**
    * Check whether the item is a parameter  ('?') of stored routine.
    * Default implementation returns false. Method is overridden in the class
@@ -2043,25 +2072,6 @@ public:
   {
     return type_handler()->Item_update_null_value(this);
   }
-
-  /*
-    Inform the item that there will be no distinction between its result
-    being FALSE or NULL.
-
-    NOTE
-      This function will be called for eg. Items that are top-level AND-parts
-      of the WHERE clause. Items implementing this function (currently
-      Item_cond_and and subquery-related item) enable special optimizations
-      when they are "top level".
-  */
-  virtual void top_level_item() {}
-  /*
-    Return TRUE if it is item of top WHERE level (AND/OR)  and it is
-    important, return FALSE if it not important (we can not use to simplify
-    calculations) or not top level
-  */
-  virtual bool is_top_level_item() const
-  { return FALSE; /* not important */}
   /*
     return IN/ALL/ANY subquery or NULL
   */
@@ -2666,7 +2676,7 @@ public:
   
   bool depends_only_on(table_map view_map) 
   { return marker & MARKER_FULL_EXTRACTION; }
-  int get_extraction_flag()
+  int get_extraction_flag() const
   { return marker & MARKER_EXTRACTION_MASK; }
   void set_extraction_flag(int16 flags)
   {
@@ -3549,6 +3559,32 @@ public:
   privilege_t have_privileges;
   /* field need any privileges (for VIEW creation) */
   bool any_privileges;
+
+private:
+  /*
+    Setting this member to TRUE (via set_refers_to_temp_table())
+    ensures print() function continues to work even if the table
+    has been dropped.
+
+    We need this for "ANALYZE statement" feature. Query execution has
+    these steps:
+      1. Run the query.
+      2. Cleanup starts. Temporary tables are destroyed
+      3. print "ANALYZE statement" output, if needed
+      4. Call close_thread_table() for regular tables.
+
+    Step #4 is done after step #3, so "ANALYZE stmt" has no problem printing
+    Item_field objects that refer to regular tables.
+
+    However, Step #3 is done after Step #2. Attempt to print Item_field objects
+    that refer to temporary tables will cause access to freed memory.
+
+    To resolve this, we use refers_to_temp_table member to refer to items 
+    in temporary (work) tables.
+  */
+  bool refers_to_temp_table= false;
+
+public:
   Item_field(THD *thd, Name_resolution_context *context_arg,
              const LEX_CSTRING &db_arg, const LEX_CSTRING &table_name_arg,
 	     const LEX_CSTRING &field_name_arg);
@@ -3773,6 +3809,7 @@ public:
     return field->table->pos_in_table_list->outer_join;
   }
   bool check_index_dependence(void *arg) override;
+  void set_refers_to_temp_table(bool value);
   friend class Item_default_value;
   friend class Item_insert_value;
   friend class st_select_lex_unit;
@@ -3808,46 +3845,6 @@ public:
     return false;
   }
   bool row_create_items(THD *thd, List<Spvar_definition> *list);
-};
-
-
-/*
-  @brief 
-    Item_temptable_field is the same as Item_field, except that print() 
-    continues to work even if the table has been dropped.
-
-  @detail
-
-    We need this item for "ANALYZE statement" feature. Query execution has 
-    these steps:
-
-      1. Run the query.
-      2. Cleanup starts. Temporary tables are destroyed
-      3. print "ANALYZE statement" output, if needed
-      4. Call close_thread_table() for regular tables.
-
-    Step #4 is done after step #3, so "ANALYZE stmt" has no problem printing
-    Item_field objects that refer to regular tables.
-
-    However, Step #3 is done after Step #2. Attempt to print Item_field objects
-    that refer to temporary tables will cause access to freed memory. 
-    
-    To resolve this, we use Item_temptable_field to refer to items in temporary
-    (work) tables.
-*/
-
-class Item_temptable_field :public Item_field
-{
-public:
-  Item_temptable_field(THD *thd, Name_resolution_context *context_arg, Field *field)
-   : Item_field(thd, context_arg, field) {}
-
-  Item_temptable_field(THD *thd, Field *field)
-   : Item_field(thd, field) {}
-
-  Item_temptable_field(THD *thd, Item_field *item) : Item_field(thd, item) {};
-
-  void print(String *str, enum_query_type query_type) override;
 };
 
 
@@ -4105,6 +4102,7 @@ class Item_param :public Item_basic_value,
   const String *value_query_val_str(THD *thd, String* str) const;
   Item *value_clone_item(THD *thd);
   bool is_evaluable_expression() const override;
+  bool check_assignability_to(const Field *field, bool ignore) const override;
   bool can_return_value() const;
 
 public:
@@ -4451,11 +4449,16 @@ public:
   Item_bool_static(const char *str_arg, longlong i):
     Item_bool(str_arg, i) {};
 
+  /* Don't mark static items as top level item */
+  virtual void top_level_item() override {}
   void set_join_tab_idx(uint8 join_tab_idx_arg) override
   { DBUG_ASSERT(0); }
+
+  void cleanup() override {}
 };
 
-extern const Item_bool_static Item_false, Item_true;
+/* The following variablese are stored in a read only segment */
+extern Item_bool_static *Item_false, *Item_true;
 
 class Item_uint :public Item_int
 {
@@ -5477,7 +5480,7 @@ public:
   inline const char *func_name() const
   { return (char*) func_name_cstring().str; }
   virtual LEX_CSTRING func_name_cstring() const= 0;
-  virtual bool fix_length_and_dec()= 0;
+  virtual bool fix_length_and_dec(THD *thd)= 0;
   bool const_item() const override { return const_item_cache; }
   table_map used_tables() const override { return used_tables_cache; }
   Item* build_clone(THD *thd) override;
@@ -6780,6 +6783,10 @@ public:
   {
     str->append(STRING_WITH_LEN("default"));
   }
+  bool check_assignability_to(const Field *to, bool ignore) const override
+  {
+    return false;
+  }
   int save_in_field(Field *field_arg, bool) override
   {
     return field_arg->save_in_field_default_value(false);
@@ -6812,6 +6819,10 @@ public:
   void print(String *str, enum_query_type) override
   {
     str->append(STRING_WITH_LEN("ignore"));
+  }
+  bool check_assignability_to(const Field *to, bool ignore) const override
+  {
+    return false;
   }
   int save_in_field(Field *field_arg, bool) override
   {

@@ -111,10 +111,11 @@ struct mtr_t {
   /** Commit a mini-transaction that did not modify any pages,
   but generated some redo log on a higher level, such as
   FILE_MODIFY records and an optional FILE_CHECKPOINT marker.
-  The caller must hold log_sys.mutex.
+  The caller must hold exclusive log_sys.latch.
   This is to be used at log_checkpoint().
-  @param checkpoint_lsn   the log sequence number of a checkpoint, or 0 */
-  void commit_files(lsn_t checkpoint_lsn= 0);
+  @param checkpoint_lsn   the log sequence number of a checkpoint, or 0
+  @return current LSN */
+  lsn_t commit_files(lsn_t checkpoint_lsn= 0);
 
   /** @return mini-transaction savepoint (current size of m_memo) */
   ulint get_savepoint() const { ut_ad(is_active()); return m_memo.size(); }
@@ -198,10 +199,10 @@ struct mtr_t {
 	(needed for generating a FILE_MODIFY record)
 	@param[in]	space_id	user or system tablespace ID
 	@return	the tablespace */
-	fil_space_t* set_named_space_id(ulint space_id)
+	fil_space_t* set_named_space_id(uint32_t space_id)
 	{
 		ut_ad(!m_user_space_id);
-		ut_d(m_user_space_id = static_cast<uint32_t>(space_id));
+		ut_d(m_user_space_id = space_id);
 		if (!space_id) {
 			return fil_system.sys_space;
 		} else {
@@ -219,7 +220,7 @@ struct mtr_t {
 	void set_named_space(fil_space_t* space)
 	{
 		ut_ad(!m_user_space_id);
-		ut_d(m_user_space_id = static_cast<uint32_t>(space->id));
+		ut_d(m_user_space_id = space->id);
 		if (space->id) {
 			m_user_space = space;
 		}
@@ -230,7 +231,7 @@ struct mtr_t {
 	(needed for generating a FILE_MODIFY record)
 	@param[in]	space	tablespace
 	@return whether the mini-transaction is associated with the space */
-	bool is_named_space(ulint space) const;
+	bool is_named_space(uint32_t space) const;
 	/** Check the tablespace associated with the mini-transaction
 	(needed for generating a FILE_MODIFY record)
 	@param[in]	space	tablespace
@@ -238,10 +239,10 @@ struct mtr_t {
 	bool is_named_space(const fil_space_t* space) const;
 #endif /* UNIV_DEBUG */
 
-	/** Acquire a tablespace X-latch.
-	@param[in]	space_id	tablespace ID
-	@return the tablespace object (never NULL) */
-	fil_space_t* x_lock_space(ulint space_id);
+  /** Acquire a tablespace X-latch.
+  @param space_id   tablespace ID
+  @return the tablespace object (never NULL) */
+  fil_space_t *x_lock_space(uint32_t space_id);
 
   /** Acquire a shared rw-latch. */
   void s_lock(
@@ -329,11 +330,8 @@ public:
   /** @return true if we are inside the change buffer code */
   bool is_inside_ibuf() const { return m_inside_ibuf; }
 
-  /** Note that pages has been trimed */
+  /** Note that some pages have been freed */
   void set_trim_pages() { m_trim_pages= true; }
-
-  /** @return true if pages has been trimed */
-  bool is_trim_pages() { return m_trim_pages; }
 
   /** Latch a buffer pool block.
   @param block    block to be latched
@@ -587,7 +585,7 @@ public:
   @param space_id       tablespace identifier
   @param path           file path
   @param new_path       new file path for type=FILE_RENAME */
-  inline void log_file_op(mfile_type_t type, ulint space_id,
+  inline void log_file_op(mfile_type_t type, uint32_t space_id,
                           const char *path,
                           const char *new_path= nullptr);
 
@@ -611,6 +609,9 @@ public:
   @return number of buffer count added by this mtr */
   uint32_t get_fix_count(const buf_block_t *block) const;
 
+  /** Note that log_sys.latch is no longer being held exclusively. */
+  void flag_wr_unlock() noexcept { ut_ad(m_latch_ex); m_latch_ex= false; }
+
   /** type of page flushing is needed during commit() */
   enum page_flush_ahead
   {
@@ -623,6 +624,11 @@ public:
   };
 
 private:
+  /** Handle any pages that were freed during the mini-transaction. */
+  void process_freed_pages();
+  /** Release modified pages when no log was written. */
+  void release_unlogged();
+
   /** Log a write of a byte string to a page.
   @param block   buffer page
   @param offset  byte offset within page
@@ -648,6 +654,13 @@ private:
   @param type   extended record subtype; @see mrec_ext_t */
   inline void log_write_extended(const buf_block_t &block, byte type);
 
+  /** Write a FILE_MODIFY record when a non-predefined persistent
+  tablespace was modified for the first time since fil_names_clear(). */
+  ATTRIBUTE_NOINLINE ATTRIBUTE_COLD void name_write();
+
+  /** Encrypt the log */
+  ATTRIBUTE_NOINLINE void encrypt();
+
   /** Append the redo log records to the redo log buffer.
   @return {start_lsn,flush_ahead} */
   std::pair<lsn_t,page_flush_ahead> do_write();
@@ -655,7 +668,7 @@ private:
   /** Append the redo log records to the redo log buffer.
   @param len   number of bytes to write
   @return {start_lsn,flush_ahead} */
-  inline std::pair<lsn_t,page_flush_ahead> finish_write(ulint len);
+  std::pair<lsn_t,page_flush_ahead> finish_write(size_t len);
 
   /** Release the resources */
   inline void release_resources();
@@ -679,7 +692,7 @@ private:
   /** whether freeing_tree() has been called */
   bool m_freeing_tree= false;
 #endif
-
+private:
   /** The page of the most recent m_log record written, or NULL */
   const buf_page_t* m_last;
   /** The current byte offset in m_last, or 0 */
@@ -694,12 +707,18 @@ private:
   /** whether at least one previously clean buffer pool page was written to */
   uint16_t m_made_dirty:1;
 
+  /** whether log_sys.latch is locked exclusively */
+  uint16_t m_latch_ex:1;
+
   /** whether change buffer is latched; only needed in non-debug builds
   to suppress some read-ahead operations, @see ibuf_inside() */
   uint16_t m_inside_ibuf:1;
 
   /** whether the pages has been trimmed */
   uint16_t m_trim_pages:1;
+
+  /** CRC-32C of m_log */
+  uint32_t m_crc;
 
 #ifdef UNIV_DEBUG
   /** Persistent user tablespace associated with the

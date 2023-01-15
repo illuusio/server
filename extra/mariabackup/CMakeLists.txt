@@ -48,6 +48,11 @@ ADD_DEFINITIONS(-UMYSQL_SERVER)
 
 ADD_DEFINITIONS(-DPCRE_STATIC=1)
 ADD_DEFINITIONS(${SSL_DEFINES})
+
+IF(PMEM_FOUND)
+  ADD_COMPILE_FLAGS(xtrabackup.cc COMPILE_FLAGS "-DHAVE_PMEM")
+ENDIF()
+
 MYSQL_ADD_EXECUTABLE(mariadb-backup
   xtrabackup.cc
   innobackupex.cc
@@ -67,7 +72,7 @@ MYSQL_ADD_EXECUTABLE(mariadb-backup
   xbstream_write.cc
   backup_mysql.cc
   backup_copy.cc
-  encryption_plugin.cc
+  xb_plugin.cc
   ${PROJECT_BINARY_DIR}/sql/sql_builtin.cc
   ${PROJECT_SOURCE_DIR}/sql/net_serv.cc
   ${PROJECT_SOURCE_DIR}/libmysqld/libmysql.c

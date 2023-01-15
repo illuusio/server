@@ -469,7 +469,7 @@ static void test_prepare_simple()
   strmov(query, "SHOW SLAVE STATUS");
   stmt= mysql_simple_prepare(mysql, query);
   check_stmt(stmt);
-  DIE_UNLESS(mysql_stmt_field_count(stmt) == 53);
+  DIE_UNLESS(mysql_stmt_field_count(stmt) == 54);
   mysql_stmt_close(stmt);
 
   /* show master status */
@@ -17008,25 +17008,25 @@ static void test_bug30472()
 {
   MYSQL con;
 
-  char character_set_name_1[MY_CS_NAME_SIZE];
-  char character_set_client_1[MY_CS_NAME_SIZE];
-  char character_set_results_1[MY_CS_NAME_SIZE];
-  char collation_connnection_1[MY_CS_NAME_SIZE];
+  char character_set_name_1[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char character_set_client_1[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char character_set_results_1[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char collation_connnection_1[MY_CS_COLLATION_NAME_SIZE];
 
-  char character_set_name_2[MY_CS_NAME_SIZE];
-  char character_set_client_2[MY_CS_NAME_SIZE];
-  char character_set_results_2[MY_CS_NAME_SIZE];
-  char collation_connnection_2[MY_CS_NAME_SIZE];
+  char character_set_name_2[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char character_set_client_2[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char character_set_results_2[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char collation_connnection_2[MY_CS_COLLATION_NAME_SIZE];
 
-  char character_set_name_3[MY_CS_NAME_SIZE];
-  char character_set_client_3[MY_CS_NAME_SIZE];
-  char character_set_results_3[MY_CS_NAME_SIZE];
-  char collation_connnection_3[MY_CS_NAME_SIZE];
+  char character_set_name_3[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char character_set_client_3[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char character_set_results_3[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char collation_connnection_3[MY_CS_COLLATION_NAME_SIZE];
 
-  char character_set_name_4[MY_CS_NAME_SIZE];
-  char character_set_client_4[MY_CS_NAME_SIZE];
-  char character_set_results_4[MY_CS_NAME_SIZE];
-  char collation_connnection_4[MY_CS_NAME_SIZE];
+  char character_set_name_4[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char character_set_client_4[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char character_set_results_4[MY_CS_CHARACTER_SET_NAME_SIZE];
+  char collation_connnection_4[MY_CS_COLLATION_NAME_SIZE];
 
   /* Create a new connection. */
 
@@ -21712,6 +21712,95 @@ static void test_cache_metadata()
   mysql_stmt_close(stmt);
 }
 
+void test_mdev_10075()
+{
+  MYSQL_STMT *stmt;
+  int        rc;
+  MYSQL_RES  *result;
+  MYSQL_BIND my_bind[1];
+  MYSQL_BIND my_bind2[1];
+
+  struct st_data {
+    unsigned long id;
+    char id_ind;
+  };
+
+  struct st_data data[]= {
+    {0, STMT_INDICATOR_NONE},
+    {1, STMT_INDICATOR_NONE},
+    {2, STMT_INDICATOR_NONE}
+  };
+
+  struct st_data data2[]= {
+    {3, STMT_INDICATOR_NONE},
+    {2, STMT_INDICATOR_NONE},
+    {4, STMT_INDICATOR_NONE}
+  };
+
+  myheader("test_mdev_10075");
+
+  rc= mysql_query(mysql, "DROP TABLE IF EXISTS t1");
+  myquery(rc);
+
+  rc= mysql_query(mysql, "CREATE TABLE t1(id INT PRIMARY KEY)");
+  myquery(rc);
+
+  /* insert by prepare */
+  stmt= mysql_simple_prepare(mysql,
+                             "INSERT INTO t1 VALUES(?)");
+  check_stmt(stmt);
+  verify_param_count(stmt, 1);
+
+  /* bzero bind structure */
+  bzero((char*) my_bind, sizeof(my_bind));
+  my_bind[0].buffer_type= MYSQL_TYPE_LONG;
+  my_bind[0].buffer= (void *)&data[0].id;
+
+  rc= mysql_stmt_bind_param(stmt, my_bind);
+  check_execute(stmt, rc);
+
+  /* Set array size, row size and bind the parameter */
+  mysql_stmt_bind_param(stmt, my_bind);
+
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  mysql_stmt_close(stmt);
+
+  stmt= mysql_simple_prepare(mysql,
+                             "INSERT IGNORE INTO t1 VALUES(?)");
+  check_stmt(stmt);
+  verify_param_count(stmt, 1);
+
+  /* bzero bind structure */
+  bzero((char*) my_bind2, sizeof(my_bind2));
+  my_bind2[0].buffer_type= MYSQL_TYPE_LONG;
+  my_bind2[0].buffer= (void *)&data2[0].id;
+
+  rc= mysql_stmt_bind_param(stmt, my_bind2);
+  check_execute(stmt, rc);
+
+  mysql_stmt_bind_param(stmt, my_bind2);
+
+  rc= mysql_stmt_execute(stmt);
+  check_execute(stmt, rc);
+
+  mysql_stmt_close(stmt);
+
+  rc= mysql_query(mysql, "GET DIAGNOSTICS CONDITION 1 @var1 = ROW_NUMBER");
+  myquery(rc);
+
+  rc= mysql_query(mysql, "SELECT @var1");
+  myquery(rc);
+
+  result= mysql_store_result(mysql);
+  mytest(result);
+
+  rc= my_process_result_set(result);
+  DIE_UNLESS(rc == 1);
+
+  mysql_free_result(result);
+}
 
 static struct my_tests_st my_tests[]= {
   { "test_mdev_20516", test_mdev_20516 },
@@ -22019,6 +22108,7 @@ static struct my_tests_st my_tests[]= {
   { "test_mdev20261", test_mdev20261 },
   { "test_execute_direct", test_execute_direct },
   { "test_cache_metadata", test_cache_metadata},
+  { "test_mdev_10075", test_mdev_10075},
   { 0, 0 }
 };
 

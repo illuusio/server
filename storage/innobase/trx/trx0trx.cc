@@ -728,6 +728,12 @@ corrupted:
 		return err;
 	}
 
+	if (trx_sys.is_undo_empty()) {
+func_exit:
+		purge_sys.clone_oldest_view<true>();
+		return DB_SUCCESS;
+	}
+
 	/* Look from the rollback segments if there exist undo logs for
 	transactions. */
 	const time_t	start_time	= time(NULL);
@@ -788,8 +794,7 @@ corrupted:
 		ib::info() << "Trx id counter is " << trx_sys.get_max_trx_id();
 	}
 
-	purge_sys.clone_oldest_view<true>();
-	return DB_SUCCESS;
+	goto func_exit;
 }
 
 /** Assign a persistent rollback segment in a round-robin fashion,
@@ -846,8 +851,7 @@ static trx_rseg_t* trx_assign_rseg_low()
 			ut_ad(rseg->is_persistent());
 
 			if (rseg->space != fil_system.sys_space) {
-				if (rseg->skip_allocation()
-				    || !srv_undo_tablespaces) {
+				if (rseg->skip_allocation()) {
 					continue;
 				}
 			} else if (const fil_space_t *space =
@@ -1152,29 +1156,20 @@ static void trx_flush_log_if_needed_low(lsn_t lsn, const trx_t *trx)
   if (!srv_flush_log_at_trx_commit)
     return;
 
-  if (log_sys.get_flushed_lsn() > lsn)
+  if (log_sys.get_flushed_lsn(std::memory_order_relaxed) >= lsn)
     return;
 
-  const bool flush= srv_file_flush_method != SRV_NOSYNC &&
-    (srv_flush_log_at_trx_commit & 1);
+  completion_callback cb, *callback= nullptr;
 
-  if (trx->state == TRX_STATE_PREPARED)
+  if (trx->state != TRX_STATE_PREPARED && !log_sys.is_pmem() &&
+      (cb.m_param= thd_increment_pending_ops(trx->mysql_thd)))
   {
-    /* XA, which is used with binlog as well.
-    Be conservative, use synchronous wait.*/
-sync:
-    log_write_up_to(lsn, flush);
-    return;
+    cb.m_callback= (void (*)(void *)) thd_decrement_pending_ops;
+    callback= &cb;
   }
 
-  completion_callback cb;
-  if ((cb.m_param = thd_increment_pending_ops(trx->mysql_thd)))
-  {
-    cb.m_callback = (void (*)(void *)) thd_decrement_pending_ops;
-    log_write_up_to(lsn, flush, false, &cb);
-  }
-  else
-    goto sync;
+  log_write_up_to(lsn, srv_file_flush_method != SRV_NOSYNC &&
+                  (srv_flush_log_at_trx_commit & 1), callback);
 }
 
 /**********************************************************************//**
@@ -1393,6 +1388,10 @@ void trx_t::commit_cleanup()
   ut_ad(!dict_operation);
   ut_ad(!was_dict_operation);
 
+  if (is_bulk_insert())
+    for (auto &t : mod_tables)
+      delete t.second.bulk_store;
+
   mutex.wr_lock();
   state= TRX_STATE_NOT_STARTED;
   mod_tables.clear();
@@ -1484,8 +1483,11 @@ void trx_t::commit()
   ut_d(was_dict_operation= dict_operation);
   dict_operation= false;
   commit_persist();
+#ifdef UNIV_DEBUG
+  if (!was_dict_operation)
+    for (const auto &p : mod_tables) ut_ad(!p.second.is_dropped());
+#endif /* UNIV_DEBUG */
   ut_d(was_dict_operation= false);
-  ut_d(for (const auto &p : mod_tables) ut_ad(!p.second.is_dropped()));
   commit_cleanup();
 }
 
@@ -1653,6 +1655,9 @@ trx_mark_sql_stat_end(
 		}
 
 		if (trx->is_bulk_insert()) {
+			/* MDEV-25036 FIXME: we support buffered
+			insert only for the first insert statement */
+			trx->error_state = trx->bulk_insert_apply();
 			/* Allow a subsequent INSERT into an empty table
 			if !unique_checks && !foreign_key_checks. */
 			return;
@@ -1863,8 +1868,6 @@ trx_prepare(
 	ut_a(!trx->is_recovered);
 
 	lsn_t	lsn = trx_prepare_low(trx);
-
-	DBUG_EXECUTE_IF("ib_trx_crash_during_xa_prepare_step", DBUG_SUICIDE(););
 
 	ut_a(trx->state == TRX_STATE_ACTIVE);
 	{

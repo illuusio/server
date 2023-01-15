@@ -33,25 +33,6 @@ Created 1/20/1994 Heikki Tuuri
 
 #pragma once
 
-/* aux macros to convert M into "123" (string) if M is defined like
-#define M 123 */
-#define _IB_TO_STR(s)	#s
-#define IB_TO_STR(s)	_IB_TO_STR(s)
-
-/* The following is the InnoDB version as shown in
-SELECT plugin_version FROM information_schema.plugins;
-calculated in make_version_string() in sql/sql_show.cc like this:
-"version >> 8" . "version & 0xff"
-because the version is shown with only one dot, we skip the last
-component, i.e. we show M.N.P as M.N */
-#define INNODB_VERSION_SHORT	\
-	(MYSQL_VERSION_MAJOR << 8 | MYSQL_VERSION_MINOR)
-
-#define INNODB_VERSION_STR			\
-	IB_TO_STR(MYSQL_VERSION_MAJOR) "."	\
-	IB_TO_STR(MYSQL_VERSION_MINOR) "."	\
-	IB_TO_STR(MYSQL_VERSION_PATCH)
-
 /** How far ahead should we tell the service manager the timeout
 (time in seconds) */
 #define INNODB_EXTEND_TIMEOUT_INTERVAL 30
@@ -214,36 +195,6 @@ management to ensure correct alignment for doubles etc. */
 			DATABASE VERSION CONTROL
 			========================
 */
-
-#ifdef HAVE_LZO
-#define IF_LZO(A,B) A
-#else
-#define IF_LZO(A,B) B
-#endif
-
-#ifdef HAVE_LZ4
-#define IF_LZ4(A,B) A
-#else
-#define IF_LZ4(A,B) B
-#endif
-
-#ifdef HAVE_LZMA
-#define IF_LZMA(A,B) A
-#else
-#define IF_LZMA(A,B) B
-#endif
-
-#ifdef HAVE_BZIP2
-#define IF_BZIP2(A,B) A
-#else
-#define IF_BZIP2(A,B) B
-#endif
-
-#ifdef HAVE_SNAPPY
-#define IF_SNAPPY(A,B) A
-#else
-#define IF_SNAPPY(A,B) B
-#endif
 
 #if defined (HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE) || defined(_WIN32)
 #define IF_PUNCH_HOLE(A,B) A
@@ -514,7 +465,7 @@ it is read or written. */
 #include "ut0lst.h"
 #include "ut0ut.h"
 
-extern ulong	srv_page_size_shift;
+extern uint32_t srv_page_size_shift;
 extern ulong	srv_page_size;
 
 /* Dimension of spatial object we support so far. It has its root in
@@ -536,8 +487,6 @@ extern mysql_pfs_key_t fts_doc_id_mutex_key;
 extern mysql_pfs_key_t ibuf_bitmap_mutex_key;
 extern mysql_pfs_key_t ibuf_mutex_key;
 extern mysql_pfs_key_t ibuf_pessimistic_insert_mutex_key;
-extern mysql_pfs_key_t log_sys_mutex_key;
-extern mysql_pfs_key_t log_flush_order_mutex_key;
 extern mysql_pfs_key_t recalc_pool_mutex_key;
 extern mysql_pfs_key_t purge_sys_pq_mutex_key;
 extern mysql_pfs_key_t recv_sys_mutex_key;
@@ -564,6 +513,7 @@ extern mysql_pfs_key_t index_tree_rw_lock_key;
 extern mysql_pfs_key_t index_online_log_key;
 extern mysql_pfs_key_t trx_sys_rw_lock_key;
 extern mysql_pfs_key_t lock_latch_key;
+extern mysql_pfs_key_t log_latch_key;
 extern mysql_pfs_key_t trx_rseg_latch_key;
 # endif /* UNIV_PFS_RWLOCK */
 #endif /* HAVE_PSI_INTERFACE */

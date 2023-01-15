@@ -2601,3 +2601,4 @@ select * from t1 where t1.a in (select t2.a from t2 order by t2.b);
 drop table t0, t1, t2;
 
 --echo # End of 10.4 tests
+

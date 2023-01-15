@@ -36,6 +36,7 @@ Created 3/26/1996 Heikki Tuuri
 #include "fts0fts.h"
 #include "read0types.h"
 #include "ilist.h"
+#include "row0merge.h"
 
 #include <vector>
 
@@ -429,6 +430,11 @@ class trx_mod_table_time_t
   /** First modification of a system versioned column
   (NONE= no versioning, BULK= the table was dropped) */
   undo_no_t first_versioned= NONE;
+
+  /** Buffer to store insert opertion */
+  row_merge_bulk_t *bulk_store= nullptr;
+
+  friend struct trx_t;
 public:
   /** Constructor
   @param rows   number of modified rows so far */
@@ -462,8 +468,14 @@ public:
     first_versioned= BULK;
   }
 
-  /** Notify the start of a bulk insert operation */
-  void start_bulk_insert() { first|= BULK; }
+  /** Notify the start of a bulk insert operation
+  @param table table to do bulk operation */
+  void start_bulk_insert(dict_table_t *table)
+  {
+    first|= BULK;
+    if (!table->is_temporary())
+      bulk_store= new row_merge_bulk_t(table);
+  }
 
   /** Notify the end of a bulk insert operation */
   void end_bulk_insert() { first&= ~BULK; }
@@ -482,6 +494,41 @@ public:
     if (first_versioned < limit)
       first_versioned= NONE;
     return false;
+  }
+
+  /** @return the first undo record that modified the table */
+  undo_no_t get_first() const
+  {
+    ut_ad(valid());
+    return LIMIT & first;
+  }
+
+  /** Add the tuple to the transaction bulk buffer for the given index.
+  @param entry  tuple to be inserted
+  @param index  bulk insert for the index
+  @param trx    transaction */
+  dberr_t bulk_insert_buffered(const dtuple_t &entry,
+                               const dict_index_t &index, trx_t *trx)
+  {
+    return bulk_store->bulk_insert_buffered(entry, index, trx);
+  }
+
+  /** Do bulk insert operation present in the buffered operation
+  @return DB_SUCCESS or error code */
+  dberr_t write_bulk(dict_table_t *table, trx_t *trx)
+  {
+    if (!bulk_store)
+      return DB_SUCCESS;
+    dberr_t err= bulk_store->write_to_table(table, trx);
+    delete bulk_store;
+    bulk_store= nullptr;
+    return err;
+  }
+
+  /** @return whether the buffer storage exist */
+  bool bulk_buffer_exist() const
+  {
+    return bulk_store && is_bulk_insert();
   }
 };
 
@@ -1098,6 +1145,55 @@ public:
       if (t.second.is_bulk_insert())
         return true;
     return false;
+  }
+
+  /** @return logical modification time of a table only
+  if the table has bulk buffer exist in the transaction */
+  trx_mod_table_time_t *check_bulk_buffer(dict_table_t *table)
+  {
+    if (UNIV_LIKELY(!bulk_insert))
+      return nullptr;
+    ut_ad(!check_unique_secondary);
+    ut_ad(!check_foreigns);
+    auto it= mod_tables.find(table);
+    if (it == mod_tables.end() || !it->second.bulk_buffer_exist())
+      return nullptr;
+    return &it->second;
+  }
+
+  /** Rollback all bulk insert operations */
+  void bulk_rollback()
+  {
+    undo_no_t low_limit= UINT64_MAX;
+    for (auto& t : mod_tables)
+    {
+      if (!t.second.is_bulk_insert())
+        continue;
+      if (t.second.get_first() < low_limit)
+        low_limit= t.second.get_first();
+    }
+
+    trx_savept_t bulk_save{low_limit};
+    rollback(&bulk_save);
+  }
+
+  /** Do the bulk insert for the buffered insert operation
+  for the transaction.
+  @return DB_SUCCESS or error code */
+  dberr_t bulk_insert_apply()
+  {
+    if (UNIV_LIKELY(!bulk_insert))
+      return DB_SUCCESS;
+    ut_ad(!check_unique_secondary);
+    ut_ad(!check_foreigns);
+    for (auto& t : mod_tables)
+      if (t.second.is_bulk_insert())
+        if (dberr_t err= t.second.write_bulk(t.first, this))
+        {
+          bulk_rollback();
+          return err;
+        }
+    return DB_SUCCESS;
   }
 
 private:

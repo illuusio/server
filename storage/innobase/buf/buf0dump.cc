@@ -314,11 +314,13 @@ buf_dump(
 					       n_pages * sizeof(*dump)));
 
 	if (dump == NULL) {
+		std::ostringstream str_bytes;
 		mysql_mutex_unlock(&buf_pool.mutex);
 		fclose(f);
+		str_bytes << ib::bytes_iec{n_pages * sizeof(*dump)};
 		buf_dump_status(STATUS_ERR,
-				"Cannot allocate " ULINTPF " bytes: %s",
-				(ulint) (n_pages * sizeof(*dump)),
+				"Cannot allocate %s: %s",
+				str_bytes.str().c_str(),
 				strerror(errno));
 		/* leave tmp_filename to exist */
 		return;
@@ -560,11 +562,14 @@ buf_load()
 	}
 
 	if (dump == NULL) {
+		std::ostringstream str_bytes;
 		fclose(f);
-		buf_load_status(STATUS_ERR,
-				"Cannot allocate " ULINTPF " bytes: %s",
-				dump_n * sizeof(*dump),
+		str_bytes << ib::bytes_iec{dump_n * sizeof(*dump)};
+		buf_dump_status(STATUS_ERR,
+				"Cannot allocate %s: %s",
+				str_bytes.str().c_str(),
 				strerror(errno));
+		/* leave tmp_filename to exist */
 		return;
 	}
 
@@ -632,7 +637,7 @@ buf_load()
 	/* Avoid calling the expensive fil_space_t::get() for each
 	page within the same tablespace. dump[] is sorted by (space, page),
 	so all pages from a given tablespace are consecutive. */
-	ulint		cur_space_id = dump[0].space();
+	uint32_t	cur_space_id = dump[0].space();
 	fil_space_t*	space = fil_space_t::get(cur_space_id);
 	ulint		zip_size = space ? space->zip_size() : 0;
 
@@ -644,10 +649,9 @@ buf_load()
 	for (i = 0; i < dump_n && !SHUTTING_DOWN(); i++) {
 
 		/* space_id for this iteration of the loop */
-		const ulint	this_space_id = dump[i].space();
+		const uint32_t this_space_id = dump[i].space();
 
-		if (this_space_id == SRV_TMP_SPACE_ID) {
-			/* Ignore the innodb_temporary tablespace. */
+		if (this_space_id >= SRV_SPACE_ID_UPPER_BOUND) {
 			continue;
 		}
 

@@ -1,6 +1,6 @@
 '\" t
 .\"
-.TH "\FBMARIADB-DUMP\FR" "1" "24 October 2020" "MariaDB 10\&.6" "MariaDB Database System"
+.TH "\FBMARIADB-DUMP\FR" "1" "24 October 2020" "MariaDB 10\&.10" "MariaDB Database System"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -993,6 +993,21 @@ prints the error message, but it also writes an SQL comment containing the view 
 \fB\-\-gtid\fR
 .sp
 Available from MariaDB 10.0.13, and is used together with \fB\-\-master\-data\fR and \fB\-\-dump\-slave\fR to more conveniently set up a new GTID slave\&. It causes those options to output SQL statements that configure the slave to use the global transaction ID to connect to the master instead of old-style filename/offset positions\&. The old-style positions are still included in comments when \fB\-\-gtid\fR is used; likewise the GTID position is included in comments even if \fB\-\-gtid\fR is not used\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+.\" mysqldump: header option
+.\" header option: mysqldump
+\fB\-\-header\fR
+.sp
+Used together with --tab. When enabled, adds header with column names to the top of output txt files.
 .RE
 .sp
 .RS 4

@@ -45,6 +45,7 @@
 #include "ha_sequence.h"
 #include "sql_show.h"
 #include "opt_trace.h"
+#include "sql_db.h"              // get_default_db_collation
 
 /* For MySQL 5.7 virtual fields */
 #define MYSQL57_GENERATED_FIELD 128
@@ -2670,11 +2671,9 @@ int TABLE_SHARE::init_from_binary_frm_image(THD *thd, bool write,
       {
         auto field_type= handler->real_field_type();
 
-        if (DBUG_EVALUATE_IF("error_vers_wrong_type", 1, 0))
-          field_type= MYSQL_TYPE_BLOB;
+        DBUG_EXECUTE_IF("error_vers_wrong_type", field_type= MYSQL_TYPE_BLOB;);
 
-        switch (field_type)
-        {
+        switch (field_type) {
         case MYSQL_TYPE_TIMESTAMP2:
           break;
         case MYSQL_TYPE_LONGLONG:
@@ -3353,7 +3352,7 @@ int TABLE_SHARE::init_from_binary_frm_image(THD *thd, bool write,
                                              share->column_bitmap_size *
                                              bitmap_count)))
     goto err;
-  my_bitmap_init(&share->all_set, bitmaps, share->fields, FALSE);
+  my_bitmap_init(&share->all_set, bitmaps, share->fields);
   bitmap_set_all(&share->all_set);
   if (share->check_set)
   {
@@ -3364,7 +3363,7 @@ int TABLE_SHARE::init_from_binary_frm_image(THD *thd, bool write,
     my_bitmap_init(share->check_set,
                    (my_bitmap_map*) ((uchar*) bitmaps +
                                      share->column_bitmap_size),
-                   share->fields, FALSE);
+                   share->fields);
     bitmap_clear_all(share->check_set);
   }
 
@@ -3509,12 +3508,28 @@ int TABLE_SHARE::init_from_sql_statement_string(THD *thd, bool write,
   else
     thd->set_n_backup_active_arena(arena, &backup);
 
+  /*
+    THD::reset_db() does not set THD::db_charset,
+    so it keeps pointing to the character set and collation
+    of the current database, rather than the database of the
+    new initialized table. After reset_db() the result of
+    get_default_db_collation() can be wrong. The latter is
+    used inside charset_collation_context_create_table_in_db().
+    Let's initialize ctx before calling reset_db().
+    This makes sure the db.opt file to be loaded properly when needed.
+  */
+  Charset_collation_context
+    ctx(thd->charset_collation_context_create_table_in_db(db.str));
+
   thd->reset_db(&db);
   lex_start(thd);
 
   if (unlikely((error= parse_sql(thd, & parser_state, NULL) ||
                 sql_unusable_for_discovery(thd, hton, sql_copy))))
     goto ret;
+
+  if (thd->lex->create_info.resolve_to_charset_collation_context(thd, ctx))
+    DBUG_RETURN(true);
 
   thd->lex->create_info.db_type= hton;
 #ifdef WITH_PARTITION_STORAGE_ENGINE
@@ -4326,6 +4341,8 @@ enum open_frm_error open_table_from_share(THD *thd, TABLE_SHARE *share,
       thd->restore_active_arena(&part_func_arena, &backup_arena);
       goto partititon_err;
     }
+    if (parse_engine_part_options(thd, outparam))
+      goto err;
     outparam->part_info->is_auto_partitioned= share->auto_partitioned;
     DBUG_PRINT("info", ("autopartitioned: %u", share->auto_partitioned));
     /* 
@@ -4382,26 +4399,26 @@ partititon_err:
     goto err;
 
   my_bitmap_init(&outparam->def_read_set,
-                 (my_bitmap_map*) bitmaps, share->fields, FALSE);
+                 (my_bitmap_map*) bitmaps, share->fields);
   bitmaps+= bitmap_size;
   my_bitmap_init(&outparam->def_write_set,
-                 (my_bitmap_map*) bitmaps, share->fields, FALSE);
+                 (my_bitmap_map*) bitmaps, share->fields);
   bitmaps+= bitmap_size;
 
   my_bitmap_init(&outparam->has_value_set,
-                 (my_bitmap_map*) bitmaps, share->fields, FALSE);
+                 (my_bitmap_map*) bitmaps, share->fields);
   bitmaps+= bitmap_size;
   my_bitmap_init(&outparam->tmp_set,
-                 (my_bitmap_map*) bitmaps, share->fields, FALSE);
+                 (my_bitmap_map*) bitmaps, share->fields);
   bitmaps+= bitmap_size;
   my_bitmap_init(&outparam->eq_join_set,
-                 (my_bitmap_map*) bitmaps, share->fields, FALSE);
+                 (my_bitmap_map*) bitmaps, share->fields);
   bitmaps+= bitmap_size;
   my_bitmap_init(&outparam->cond_set,
-                 (my_bitmap_map*) bitmaps, share->fields, FALSE);
+                 (my_bitmap_map*) bitmaps, share->fields);
   bitmaps+= bitmap_size;
   my_bitmap_init(&outparam->def_rpl_write_set,
-                 (my_bitmap_map*) bitmaps, share->fields, FALSE);
+                 (my_bitmap_map*) bitmaps, share->fields);
   outparam->default_column_bitmaps();
 
   outparam->cond_selectivity= 1.0;
@@ -7580,6 +7597,8 @@ void TABLE::mark_columns_needed_for_update()
   }
   if (s->versioned)
   {
+    bitmap_set_bit(write_set, s->vers.start_fieldno);
+    bitmap_set_bit(write_set, s->vers.end_fieldno);
     /*
       For System Versioning we have to read all columns since we store
       a copy of previous row with modified row_end back to a table.
@@ -7637,6 +7656,12 @@ void TABLE::mark_columns_needed_for_insert()
     mark_auto_increment_column();
   if (default_field)
     mark_default_fields_for_write(TRUE);
+  if (s->versioned)
+  {
+    bitmap_set_bit(write_set, s->vers.start_fieldno);
+    bitmap_set_bit(write_set, s->vers.end_fieldno);
+    bitmap_set_bit(read_set, s->vers.end_fieldno);
+  }
   /* Mark virtual columns for insert */
   if (vfield)
     mark_virtual_columns_for_write(TRUE);
@@ -9111,34 +9136,25 @@ bool TABLE::check_period_overlaps(const KEY &key,
   return true;
 }
 
-void TABLE::vers_update_fields()
+/* returns true if vers_end_field was updated */
+bool TABLE::vers_update_fields()
 {
-  if (!vers_write)
+  bool res= false;
+  if (versioned(VERS_TIMESTAMP) && !vers_start_field()->has_explicit_value())
   {
-    file->column_bitmaps_signal();
-    return;
-  }
-
-  if (versioned(VERS_TIMESTAMP))
-  {
-    bitmap_set_bit(write_set, vers_start_field()->field_index);
-    if (vers_start_field()->store_timestamp(in_use->query_start(),
-                                          in_use->query_start_sec_part()))
-    {
+    if (vers_start_field()->set_time())
       DBUG_ASSERT(0);
-    }
-    vers_start_field()->set_has_explicit_value();
-    bitmap_set_bit(read_set, vers_start_field()->field_index);
   }
 
-  bitmap_set_bit(write_set, vers_end_field()->field_index);
-  vers_end_field()->set_max();
-  vers_end_field()->set_has_explicit_value();
-  bitmap_set_bit(read_set, vers_end_field()->field_index);
+  if (!versioned(VERS_TIMESTAMP) || !vers_end_field()->has_explicit_value())
+  {
+    vers_end_field()->set_max();
+    res= true;
+  }
 
-  file->column_bitmaps_signal();
   if (vfield)
     update_virtual_fields(file, VCOL_UPDATE_FOR_READ);
+  return res;
 }
 
 
@@ -9147,7 +9163,6 @@ void TABLE::vers_update_end()
   if (vers_end_field()->store_timestamp(in_use->query_start(),
                                         in_use->query_start_sec_part()))
     DBUG_ASSERT(0);
-  vers_end_field()->set_has_explicit_value();
 }
 
 /**
@@ -9273,6 +9288,62 @@ bool TABLE::validate_default_values_of_unset_fields(THD *thd) const
         DBUG_RETURN(true);
       }
     }
+  }
+  DBUG_RETURN(false);
+}
+
+
+/*
+  Check assignment compatibility of a value list against an explicitly
+  specified field list, e.g.
+    INSERT INTO t1 (a,b) VALUES (1,2);
+*/
+bool TABLE::check_assignability_explicit_fields(List<Item> fields,
+                                                List<Item> values,
+                                                bool ignore)
+{
+  DBUG_ENTER("TABLE::check_assignability_explicit_fields");
+  DBUG_ASSERT(fields.elements == values.elements);
+
+  List_iterator<Item> fi(fields);
+  List_iterator<Item> vi(values);
+  Item *f, *value;
+  while ((f= fi++) && (value= vi++))
+  {
+    Item_field *item_field= f->field_for_view_update();
+    if (!item_field)
+    {
+      /*
+        A non-updatable field of a view found.
+        This scenario is caught later and an error is raised.
+        We could eventually move error reporting here. For now just continue.
+      */
+      continue;
+    }
+    if (value->check_assignability_to(item_field->field, ignore))
+      DBUG_RETURN(true);
+  }
+  DBUG_RETURN(false);
+}
+
+
+/*
+  Check assignment compatibility for a value list against
+  all visible fields of the table, e.g.
+    INSERT INTO t1 VALUES (1,2);
+*/
+bool TABLE::check_assignability_all_visible_fields(List<Item> &values,
+                                                   bool ignore) const
+{
+  DBUG_ENTER("TABLE::check_assignability_all_visible_fields");
+  DBUG_ASSERT(s->visible_fields == values.elements);
+
+  List_iterator<Item> vi(values);
+  for (uint i= 0; i < s->fields; i++)
+  {
+    if (!field[i]->invisible &&
+        (vi++)->check_assignability_to(field[i], ignore))
+      DBUG_RETURN(true);
   }
   DBUG_RETURN(false);
 }
@@ -9944,6 +10015,9 @@ bool TR_table::update(ulonglong start_id, ulonglong end_id)
   int error= table->file->ha_write_row(table->record[0]);
   if (unlikely(error))
     table->file->print_error(error, MYF(0));
+  /* extra() is used to apply the bulk insert operation
+  on mysql/transaction_registry table */
+  table->file->extra(HA_EXTRA_IGNORE_INSERT);
   return error;
 }
 
@@ -10348,5 +10422,5 @@ void TABLE::mark_table_for_reopen()
 {
   THD *thd= in_use;
   DBUG_ASSERT(thd);
-  thd->locked_tables_list.mark_table_for_reopen(thd, this);
+  thd->locked_tables_list.mark_table_for_reopen(this);
 }

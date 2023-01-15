@@ -18,16 +18,11 @@
 #include <my_global.h>
 #include "mysql_version.h"
 #include "spd_environ.h"
-#if MYSQL_VERSION_ID < 50500
-#include "mysql_priv.h"
-#include <mysql/plugin.h>
-#else
 #include "sql_priv.h"
 #include "probes_mysql.h"
 #include "sql_class.h"
 #include "sql_partition.h"
 #include "sql_show.h"
-#endif
 #include "spd_db_include.h"
 #include "spd_include.h"
 #include "spd_table.h"
@@ -46,7 +41,6 @@ static struct st_mysql_storage_engine spider_i_s_info =
 { MYSQL_INFORMATION_SCHEMA_INTERFACE_VERSION };
 
 namespace Show {
-#ifdef SPIDER_I_S_USE_SHOW_FOR_COLUMN
 static ST_FIELD_INFO spider_i_s_alloc_mem_fields_info[] =
 {
   Column("ID",                ULong(10),     NOT_NULL, "id"),
@@ -59,27 +53,6 @@ static ST_FIELD_INFO spider_i_s_alloc_mem_fields_info[] =
   Column("FREE_MEM_COUNT",    ULonglong(20), NULLABLE, "free_mem_count"),
   CEnd()
 };
-#else
-static ST_FIELD_INFO spider_i_s_alloc_mem_fields_info[] =
-{
-  {"ID", 10, MYSQL_TYPE_LONG, 0, MY_I_S_UNSIGNED, "id", SKIP_OPEN_TABLE},
-  {"FUNC_NAME", 64, MYSQL_TYPE_STRING, 0,
-    MY_I_S_MAYBE_NULL, "func_name", SKIP_OPEN_TABLE},
-  {"FILE_NAME", 64, MYSQL_TYPE_STRING, 0,
-    MY_I_S_MAYBE_NULL, "file_name", SKIP_OPEN_TABLE},
-  {"LINE_NO", 10, MYSQL_TYPE_LONG, 0,
-    MY_I_S_UNSIGNED | MY_I_S_MAYBE_NULL, "line_no", SKIP_OPEN_TABLE},
-  {"TOTAL_ALLOC_MEM", 20, MYSQL_TYPE_LONGLONG, 0,
-    MY_I_S_UNSIGNED | MY_I_S_MAYBE_NULL, "total_alloc_mem", SKIP_OPEN_TABLE},
-  {"CURRENT_ALLOC_MEM", 20, MYSQL_TYPE_LONGLONG, 0,
-    MY_I_S_MAYBE_NULL, "current_alloc_mem", SKIP_OPEN_TABLE},
-  {"ALLOC_MEM_COUNT", 20, MYSQL_TYPE_LONGLONG, 0,
-    MY_I_S_UNSIGNED | MY_I_S_MAYBE_NULL, "alloc_mem_count", SKIP_OPEN_TABLE},
-  {"FREE_MEM_COUNT", 20, MYSQL_TYPE_LONGLONG, 0,
-    MY_I_S_UNSIGNED | MY_I_S_MAYBE_NULL, "free_mem_count", SKIP_OPEN_TABLE},
-  {NULL, 0,  MYSQL_TYPE_STRING, 0, 0, NULL, 0}
-};
-#endif
 } // namespace Show
 
 static int spider_i_s_alloc_mem_fill_table(
@@ -162,12 +135,9 @@ struct st_mysql_plugin spider_i_s_alloc_mem =
   NULL,
   NULL,
   NULL,
-#if MYSQL_VERSION_ID >= 50600
   0,
-#endif
 };
 
-#ifdef MARIADB_BASE_VERSION
 struct st_maria_plugin spider_i_s_alloc_mem_maria =
 {
   MYSQL_INFORMATION_SCHEMA_PLUGIN,
@@ -184,12 +154,10 @@ struct st_maria_plugin spider_i_s_alloc_mem_maria =
   "1.0",
   MariaDB_PLUGIN_MATURITY_STABLE,
 };
-#endif
 
 extern SPIDER_DBTON spider_dbton[SPIDER_DBTON_SIZE];
 
 namespace Show {
-#ifdef SPIDER_I_S_USE_SHOW_FOR_COLUMN
 static ST_FIELD_INFO spider_i_s_wrapper_protocols_fields_info[] =
 {
   Column("WRAPPER_NAME",        Varchar(NAME_CHAR_LEN), NOT_NULL, ""),
@@ -198,16 +166,6 @@ static ST_FIELD_INFO spider_i_s_wrapper_protocols_fields_info[] =
   Column("WRAPPER_MATURITY",    Varchar(12),            NOT_NULL, ""),
   CEnd()
 };
-#else
-static ST_FIELD_INFO spider_i_s_wrapper_protocols_fields_info[] =
-{
-  {"WRAPPER_NAME", NAME_CHAR_LEN, MYSQL_TYPE_STRING, 0, 0, 0, SKIP_OPEN_TABLE},
-  {"WRAPPER_VERSION", 20, MYSQL_TYPE_STRING, 0, 0, 0, SKIP_OPEN_TABLE},
-  {"WRAPPER_DESCRIPTION", 65535, MYSQL_TYPE_STRING, 0, 1, 0, SKIP_OPEN_TABLE},
-  {"WRAPPER_MATURITY", 12, MYSQL_TYPE_STRING, 0, 0, 0, SKIP_OPEN_TABLE},
-  {0, 0,  MYSQL_TYPE_STRING, 0, 0, 0, 0}
-};
-#endif
 } // namespace Show
 
 static int spider_i_s_wrapper_protocols_fill_table(
@@ -286,12 +244,9 @@ struct st_mysql_plugin spider_i_s_wrapper_protocols =
   NULL,
   NULL,
   NULL,
-#if MYSQL_VERSION_ID >= 50600
   0,
-#endif
 };
 
-#ifdef MARIADB_BASE_VERSION
 struct st_maria_plugin spider_i_s_wrapper_protocols_maria =
 {
   MYSQL_INFORMATION_SCHEMA_PLUGIN,
@@ -308,4 +263,3 @@ struct st_maria_plugin spider_i_s_wrapper_protocols_maria =
   "1.0",
   MariaDB_PLUGIN_MATURITY_STABLE,
 };
-#endif

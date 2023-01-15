@@ -546,36 +546,10 @@ bool LEX::add_alter_list(LEX_CSTRING name, LEX_CSTRING new_name, bool exists)
 
 
 void LEX::init_last_field(Column_definition *field,
-                          const LEX_CSTRING *field_name,
-                          const CHARSET_INFO *cs)
+                          const LEX_CSTRING *field_name)
 {
   last_field= field;
-
   field->field_name= *field_name;
-
-  /* reset LEX fields that are used in Create_field::set_and_check() */
-  charset= cs;
-}
-
-
-bool LEX::set_bincmp(CHARSET_INFO *cs, bool bin)
-{
-  /*
-     if charset is NULL - we're parsing a field declaration.
-     we cannot call find_bin_collation for a field here, because actual
-     field charset is determined in get_sql_field_charset() much later.
-     so we only set a flag.
-  */
-  if (!charset)
-  {
-    charset= cs;
-    last_field->flags|= bin ? BINCMP_FLAG : 0;
-    return false;
-  }
-
-  charset= bin ? find_bin_collation(cs ? cs : charset)
-               :                    cs ? cs : charset;
-  return charset == NULL;
 }
 
 
@@ -1352,7 +1326,7 @@ void lex_unlock_plugins(LEX *lex)
   /* release used plugins */
   if (lex->plugins.elements) /* No function call and no mutex if no plugins. */
   {
-    plugin_unlock_list(0, (plugin_ref*)lex->plugins.buffer, 
+    plugin_unlock_list(0, (plugin_ref*)lex->plugins.buffer,
                        lex->plugins.elements);
   }
   reset_dynamic(&lex->plugins);
@@ -3415,7 +3389,7 @@ bool st_select_lex::test_limit()
 
 
 
-st_select_lex* st_select_lex_unit::outer_select()
+st_select_lex* st_select_lex_unit::outer_select() const
 {
   return (st_select_lex*) master;
 }
@@ -5837,17 +5811,33 @@ bool st_select_lex::is_merged_child_of(st_select_lex *ancestor)
 }
 
 /* 
-  This is used by SHOW EXPLAIN. It assuses query plan has been already 
+  This is used by SHOW EXPLAIN|ANALYZE. It assumes query plan has been already
   collected into QPF structures and we only need to print it out.
 */
 
 int LEX::print_explain(select_result_sink *output, uint8 explain_flags,
-                       bool is_analyze, bool *printed_anything)
+                       bool is_analyze, bool is_json_format,
+                       bool *printed_anything)
 {
   int res;
   if (explain && explain->have_query_plan())
   {
-    res= explain->print_explain(output, explain_flags, is_analyze);
+    if (is_json_format)
+    {
+      auto now= microsecond_interval_timer();
+      auto start_time= thd->start_utime;
+      auto query_time_in_progress_ms= 0ULL;
+      if (likely(now > start_time))
+        query_time_in_progress_ms=
+          (now - start_time) / (HRTIME_RESOLUTION / 1000);
+      res= explain->print_explain_json(output, is_analyze,
+                                       true /* is_show_cmd */,
+                                       query_time_in_progress_ms);
+    }
+    else
+    {
+      res= explain->print_explain(output, explain_flags, is_analyze);
+    }
     *printed_anything= true;
   }
   else
@@ -6060,8 +6050,10 @@ int st_select_lex_unit::save_union_explain_part2(Explain_query *output)
 bool LEX::is_partition_management() const
 {
   return (sql_command == SQLCOM_ALTER_TABLE &&
-          (alter_info.partition_flags ==  ALTER_PARTITION_ADD ||
-           alter_info.partition_flags ==  ALTER_PARTITION_REORGANIZE));
+          (alter_info.partition_flags & (ALTER_PARTITION_ADD |
+                                         ALTER_PARTITION_CONVERT_IN |
+                                         ALTER_PARTITION_CONVERT_OUT |
+                                         ALTER_PARTITION_REORGANIZE)));
 }
 
 
@@ -6386,8 +6378,7 @@ sp_variable *LEX::sp_param_init(LEX_CSTRING *name)
     return NULL;
   }
   sp_variable *spvar= spcont->add_variable(thd, name);
-  init_last_field(&spvar->field_def, name,
-                  thd->variables.collation_database);
+  init_last_field(&spvar->field_def, name);
   return spvar;
 }
 
@@ -6396,8 +6387,7 @@ bool LEX::sp_param_fill_definition(sp_variable *spvar,
                                    const Lex_field_type_st &def)
 {
   return
-    last_field->set_attributes(thd, def, charset,
-                               COLUMN_DEFINITION_ROUTINE_PARAM) ||
+    last_field->set_attributes(thd, def, COLUMN_DEFINITION_ROUTINE_PARAM) ||
     sphead->fill_spvar_definition(thd, last_field, &spvar->name);
 }
 
@@ -6405,8 +6395,7 @@ bool LEX::sp_param_fill_definition(sp_variable *spvar,
 bool LEX::sf_return_fill_definition(const Lex_field_type_st &def)
 {
   return
-    last_field->set_attributes(thd, def, charset,
-                               COLUMN_DEFINITION_FUNCTION_RETURN) ||
+    last_field->set_attributes(thd, def, COLUMN_DEFINITION_FUNCTION_RETURN) ||
     sphead->fill_field_definition(thd, last_field);
 }
 
@@ -6414,7 +6403,7 @@ bool LEX::sf_return_fill_definition(const Lex_field_type_st &def)
 void LEX::set_stmt_init()
 {
   sql_command= SQLCOM_SET_OPTION;
-  mysql_init_select(this);
+  init_select();
   option_type= OPT_SESSION;
   autocommit= 0;
   var_list.empty();
@@ -6486,8 +6475,7 @@ void LEX::sp_variable_declarations_init(THD *thd, int nvars)
 
   sphead->reset_lex(thd);
   spcont->declare_var_boundary(nvars);
-  thd->lex->init_last_field(&spvar->field_def, &spvar->name,
-                            thd->variables.collation_database);
+  thd->lex->init_last_field(&spvar->field_def, &spvar->name);
 }
 
 
@@ -7145,6 +7133,27 @@ bool LEX::sp_declare_cursor(THD *thd, const LEX_CSTRING *name,
 {
   uint offp;
   sp_instr_cpush *i;
+
+  /* In some cases param_ctx can be NULL. e.g.: FOR rec IN (SELECT...) */
+  if (param_ctx)
+  {
+    for (uint prm= 0; prm < param_ctx->context_var_count(); prm++)
+    {
+      const sp_variable *param= param_ctx->get_context_variable(prm);
+      if (param->mode != sp_variable::MODE_IN)
+      {
+        /*
+          PL/SQL supports the IN keyword in cursor parameters.
+          We also support this for compatibility. Note, OUT/INOUT parameters
+          will unlikely be ever supported. So "YET" may sound confusing here.
+          But it should be better than using a generic error. Adding a dedicated
+          error message for this small issue is not desirable.
+        */
+        my_error(ER_NOT_SUPPORTED_YET, MYF(0), "OUT/INOUT cursor parameter");
+        return true;
+      }
+    }
+  }
 
   if (spcont->find_cursor(name, &offp, true))
   {
@@ -9771,7 +9780,11 @@ bool LEX::part_values_history(THD *thd)
   }
   else
   {
-    part_info->vers_init_info(thd);
+    if (unlikely(part_info->vers_init_info(thd)))
+    {
+      my_error(ER_OUT_OF_RESOURCES, MYF(0));
+      return true;
+    }
     elem->id= UINT_MAX32;
   }
   DBUG_ASSERT(part_info->vers_info);
@@ -9798,7 +9811,7 @@ bool LEX::last_field_generated_always_as_row_start_or_end(Lex_ident *p,
              last_field->field_name.str);
     return true;
   }
-  last_field->flags|= (flag | NOT_NULL_FLAG);
+  last_field->flags|= (flag | NO_DEFAULT_VALUE_FLAG | NOT_NULL_FLAG);
   DBUG_ASSERT(p);
   *p= last_field->field_name;
   return false;
@@ -10372,8 +10385,7 @@ bool LEX::parsed_TVC_start()
   save_values_list_state();
   many_values.empty();
   insert_list= 0;
-  if (!(sel= alloc_select(TRUE)) ||
-        push_select(sel))
+  if (!(sel= alloc_select(TRUE)) || push_select(sel))
     return true;
   sel->init_select();
   sel->braces= FALSE; // just initialisation
@@ -10385,9 +10397,7 @@ SELECT_LEX *LEX::parsed_TVC_end()
 {
   SELECT_LEX *res= pop_select(); // above TVC select
   if (!(res->tvc=
-        new (thd->mem_root) table_value_constr(many_values,
-          res,
-          res->options)))
+        new (thd->mem_root) table_value_constr(many_values, res, res->options)))
     return NULL;
   restore_values_list_state();
   return res;
@@ -11360,6 +11370,25 @@ bool LEX::stmt_alter_table_exchange_partition(Table_ident *table)
 }
 
 
+bool LEX::stmt_alter_table(Table_ident *table)
+{
+  DBUG_ASSERT(sql_command == SQLCOM_ALTER_TABLE);
+  first_select_lex()->db= table->db;
+  if (first_select_lex()->db.str == NULL &&
+      copy_db_to(&first_select_lex()->db))
+    return true;
+  if (unlikely(check_table_name(table->table.str, table->table.length,
+                                false)) ||
+      (table->db.str && unlikely(check_db_name((LEX_STRING*) &table->db))))
+  {
+    my_error(ER_WRONG_TABLE_NAME, MYF(0), table->table.str);
+    return true;
+  }
+  name= table->table;
+  return false;
+}
+
+
 void LEX::stmt_purge_to(const LEX_CSTRING &to)
 {
   type= 0;
@@ -11509,16 +11538,15 @@ Spvar_definition *LEX::row_field_name(THD *thd, const Lex_ident_sys_st &name)
   }
   if (unlikely(!(res= new (thd->mem_root) Spvar_definition())))
     return NULL;
-  init_last_field(res, &name, thd->variables.collation_database);
+  init_last_field(res, &name);
   return res;
 }
 
 
 Item *
-Lex_cast_type_st::create_typecast_item_or_error(THD *thd, Item *item,
-                                                CHARSET_INFO *cs) const
+Lex_cast_type_st::create_typecast_item_or_error(THD *thd, Item *item) const
 {
-  Item *tmp= create_typecast_item(thd, item, cs);
+  Item *tmp= create_typecast_item(thd, item);
   if (!tmp)
   {
     Name name= m_type_handler->name();
@@ -11532,14 +11560,42 @@ Lex_cast_type_st::create_typecast_item_or_error(THD *thd, Item *item,
 }
 
 
-void Lex_field_type_st::set_handler_length_flags(const Type_handler *handler,
-                                                 const char *length,
-                                                 uint32 flags)
+void
+Lex_length_and_dec_st::set(const char *plength, const char *pdec)
+{
+  reset();
+
+  if ((m_has_explicit_length= (plength != nullptr)))
+  {
+    int err;
+    ulonglong tmp= my_strtoll10(plength, NULL, &err);
+    if ((m_length_overflowed= (tmp > UINT_MAX32 || err)))
+      m_length= UINT_MAX32;
+    else
+      m_length= (uint32) tmp;
+  }
+
+  if ((m_has_explicit_dec= (pdec != nullptr)))
+  {
+    int err;
+    ulonglong tmp= my_strtoll10(pdec, NULL, &err);
+    if ((m_dec_overflowed= (tmp > 255 || err)))
+      m_dec= 255;
+    else
+      m_dec= (uint8) tmp;
+  }
+}
+
+
+void
+Lex_field_type_st::set_handler_length_flags(const Type_handler *handler,
+                                            const Lex_length_and_dec_st &attr,
+                                            uint32 flags)
 {
   DBUG_ASSERT(!handler->is_unsigned());
+  set(handler, attr);
   if (flags & UNSIGNED_FLAG)
-    handler= handler->type_handler_unsigned();
-  set(handler, length, NULL);
+    m_handler= m_handler->type_handler_unsigned();
 }
 
 
@@ -11550,8 +11606,7 @@ bool LEX::set_field_type_udt(Lex_field_type_st *type,
   const Type_handler *h;
   if (!(h= Type_handler::handler_by_name_or_error(thd, name)))
     return true;
-  type->set(h, attr);
-  charset= &my_charset_bin;
+  type->set(h, attr, &my_charset_bin);
   return false;
 }
 
@@ -11563,7 +11618,6 @@ bool LEX::set_cast_type_udt(Lex_cast_type_st *type,
   if (!(h= Type_handler::handler_by_name_or_error(thd, name)))
     return true;
   type->set(h);
-  charset= NULL;
   return false;
 }
 
@@ -11809,6 +11863,21 @@ bool LEX::sp_create_set_password_instr(THD *thd,
 }
 
 
+bool LEX::set_names(const char *pos,
+                    const Lex_exact_charset_opt_extended_collate &cscl,
+                    bool no_lookahead)
+{
+  if (sp_create_assignment_lex(thd, pos))
+    return true;
+  CHARSET_INFO *ci= cscl.collation().charset_info();
+  set_var_collation_client *var;
+  var= new (thd->mem_root) set_var_collation_client(ci, ci, ci);
+  return unlikely(var == NULL) ||
+         unlikely(thd->lex->var_list.push_back(var, thd->mem_root)) ||
+         unlikely(sp_create_assignment_instr(thd, no_lookahead));
+}
+
+
 bool LEX::map_data_type(const Lex_ident_sys_st &schema_name,
                         Lex_field_type_st *type) const
 {
@@ -11837,15 +11906,33 @@ bool SELECT_LEX_UNIT::explainable() const
     EXPLAIN/ANALYZE unit, when:
     (1) if it's a subquery - it's not part of eliminated WHERE/ON clause.
     (2) if it's a CTE - it's not hanging (needed for execution)
-    (3) if it's a derived - it's not merged
+    (3) if it's a derived - it's not merged or eliminated
     if it's not 1/2/3 - it's some weird internal thing, ignore it
   */
+
   return item ?
            !item->eliminated :                        // (1)
            with_element ?
              derived && derived->derived_result &&
                !with_element->is_hanging_recursive(): // (2)
              derived ?
-               derived->is_materialized_derived() :   // (3)
+               derived->is_materialized_derived() && // (3)
+                 !is_derived_eliminated() :
                false;
+}
+
+/*
+  Determines whether the derived table was eliminated during
+  the call of eliminate_tables(JOIN *) made at the optimization stage
+  or completely optimized out (for such degenerate statements like
+  "SELECT 1", for example)
+*/
+
+bool SELECT_LEX_UNIT::is_derived_eliminated() const
+{
+  if (!derived)
+    return false;
+  if (!derived->table)
+    return true;
+  return derived->table->map & outer_select()->join->eliminated_tables;
 }
