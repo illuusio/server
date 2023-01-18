@@ -266,7 +266,10 @@ simple upgrade:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
+    # As long as Debian unstable has both MariaDB 10.6 and 10.11, the command
+    # to install all mariadb-* packages at once will fail with conflicts
+    # - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
+    - apt-get install -y 'default-mysql*' 'libmariadb*'
     - *test-install
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
