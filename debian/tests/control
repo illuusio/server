@@ -1,3 +1,7 @@
+Tests: configuration-tracing
+Depends: mariadb-server, diffutils
+Restrictions: allow-stderr isolation-container
+
 Tests: smoke
 # RocksDB is not built for all archs. Rather than duplicating the condition
 # for its existence (see the list in debian/control), install it if available

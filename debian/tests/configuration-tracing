@@ -1,0 +1,34 @@
+#!/bin/sh
+# dep8 smoke test for mariadbd
+# Author: Otto Kekäläinen <otto@debian.org>
+#
+# This test should be declared in debian/tests/control with a dependency
+# on the package that provides a configured MariaDB server (eg.
+# mariadb-server).
+#
+# This test should be declared in debian/tests/control with the
+# following restrictions:
+#
+# needs-root (to be able to log into the database)
+# allow-stderr
+#
+# This test prints out various configuration information from mariadbd and
+# compares the result to expected values in original binary/build.
+#
+
+echo "Running test 'configuration-tracing'"
+set -ex
+
+/usr/sbin/mariadbd --print-defaults > trace-mariadbd-print-defaults.actual
+if ! diff -u debian/tests/trace-mariadbd-print-defaults.expected trace-mariadbd-print-defaults.actual
+then
+  echo "Error: Output from 'mariadbd --print-defaults' did NOT match what was expected"
+  exit 1
+fi
+
+/usr/sbin/mariadbd --verbose --help > trace-mariadbd-verbose-help.actual
+if ! diff -u debian/tests/trace-mariadbd-print-defaults.expected trace-mariadbd-print-defaults.actual
+then
+  echo "Error: Output from 'mariadbd --verbose --help' did NOT match what was expected"
+  exit 1
+fi

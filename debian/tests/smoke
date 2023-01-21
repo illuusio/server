@@ -71,9 +71,12 @@ DROP DATABASE testdatabase;
 DROP USER 'testuser'@'localhost';
 EOT
 
-# List based on what is advertised at
-# https://mariadb.com/kb/en/innodb-page-compression/#configuring-the-innodb-page-compression-algorithm
-# but disabled  with '#' the options that are not available in this binary build
+# This will never fail but exists purely for debugging purposes in case a later
+# step would fail
+mariadb <<EOT
+SHOW GLOBAL STATUS WHERE Variable_name LIKE 'Innodb_have_%';
+EOT
+
 mariadb <<EOT
 SET GLOBAL innodb_compression_algorithm=lz4;
 SET GLOBAL innodb_compression_algorithm=lzo;

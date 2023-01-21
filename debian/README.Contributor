@@ -236,11 +236,15 @@ access to the packaging source directory via a local mount:
 
     laptop$ docker run -it -v ${PWD}:/build -w /build debian:sid bash
     container$ apt update && apt install -y autopkgtest
-    container$ autopkgtest --shell-fail -- null
+    container$ autopkgtest --no-built-binaries --shell-fail -- null
 
 Edit the files in `debian/tests` in your favorite code editor and re-run the
 `autopkgtest -- null` until the tests are passing. When the autopkgtests work
 the container can be shut down and the valid `debian/tests` committed in git.
+
+If you don't want to use the MariaDB binaries from Debian Sid but instead build
+them from the source tree to be used in autopkgtest directly, simply omit
+`--no-built-binaries` from the `autopkgtest` command.
 
 ## Debug installation/upgrade
 
