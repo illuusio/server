@@ -169,16 +169,16 @@ blhc:
 
 .test-enable-artifacts-repo: &test-enable-artifacts-repo |
   apt-get install -y apt-utils
-  apt-ftparchive packages .>Packages
-  echo "deb [trusted=yes] file:$(pwd) ./" >>/etc/apt/sources.list
+  apt-ftparchive packages . > Packages
+  echo "deb [trusted=yes] file:$(pwd) ./" > /etc/apt/sources.list.d/mariadb-local.list
   apt-get update
 
 .test-install: &test-install |
   # Install MariaDB built in this commit
   apt-get install -y ./*.deb
   # Verify installation of MariaDB built in this commit
-  dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
   mariadb --version # Client version
+  dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
 
 .test-verify-final: &test-verify-final |
   mkdir -p debug # Ensure dir exists before using it
@@ -327,6 +327,8 @@ mariadb-10.5 and Bullseye upgrade:
     # Verify installation of MariaDB from Bullseye
     - *test-verify-initial
     - *test-enable-sid-repos
+    # Ensure mariadbd will not crash on next shutdown for any reason
+    - service mariadb restart
     - *test-install
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
@@ -353,6 +355,8 @@ mariadb-10.3 and Buster upgrade:
     # Verify installation of MariaDB from Buster
     - *test-verify-initial
     - *test-enable-sid-repos
+    # Ensure mariadbd will not crash on next shutdown for any reason
+    - service mysql restart # in 10.3 service name is still 'mysql'
     - *test-install
     # mariadb-10.3 in Buster ships a /etc/init.d/mysql so it should continue to work
     - service mysql status
@@ -1090,16 +1094,11 @@ full-upgrade Bookworm to Sid:
     - *test-prepare-container
     - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
     - *test-verify-initial
-    - service mariadb status
-    - *test-verify-final
     - *test-enable-sid-repos
+    # Ensure mariadbd will not crash on next shutdown for any reason
+    - service mariadb restart
     - *test-enable-artifacts-repo
-    # following is needed to prevent usrmerge to run during full-upgrade (that
-    # is not compatible with docker layers), see:
-    # - https://salsa.debian.org/mariadb-team/mariadb-server/-/merge_requests/18
-    # - https://bugs.debian.org/1008202
     - apt-get full-upgrade -y
-    - *test-verify-initial
     - service mariadb status
     - *test-verify-final
   variables:
