@@ -709,7 +709,7 @@ mariadb.org-10.11 upgrade:
     - apt-get install -y mariadb-server
     - *test-verify-initial
     # Install MariaDB built in this commit
-    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.9.1-1 vs 1:10.9.1+mariadb~sid
+    # Force downgrades so our version installs on top of upstream revision, e.g. 1:11.10.1-1 vs 1:11.10.1+mariadb~sid
     - apt-get install -y --allow-downgrades ./*.deb
     # Verify installation of MariaDB built in this commit
     - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
@@ -740,12 +740,7 @@ mariadb.org-10.10 upgrade:
     - apt-get update
     - apt-get install -y mariadb-server
     - *test-verify-initial
-    # Install MariaDB built in this commit
-    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.9.1-1 vs 1:10.9.1+mariadb~sid
-    - apt-get install -y --allow-downgrades ./*.deb
-    # Verify installation of MariaDB built in this commit
-    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
-    - mariadb --version # Client version
+    - *test-install
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -772,12 +767,7 @@ mariadb.org-10.9 upgrade:
     - apt-get update
     - apt-get install -y mariadb-server
     - *test-verify-initial
-    # Install MariaDB built in this commit
-    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.9.1-1 vs 1:10.9.1+mariadb~sid
-    - apt-get install -y --allow-downgrades ./*.deb
-    # Verify installation of MariaDB built in this commit
-    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
-    - mariadb --version # Client version
+    - *test-install
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -804,12 +794,7 @@ mariadb.org-10.8 upgrade:
     - apt-get update
     - apt-get install -y mariadb-server-10.8
     - *test-verify-initial
-    # Install MariaDB built in this commit
-    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.9.1-1 vs 1:10.9.1+mariadb~sid
-    - apt-get install -y --allow-downgrades ./*.deb
-    # Verify installation of MariaDB built in this commit
-    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
-    - mariadb --version # Client version
+    - *test-install
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -836,12 +821,7 @@ mariadb.org-10.7 upgrade:
     - apt-get update
     - apt-get install -y mariadb-server-10.7
     - *test-verify-initial
-    # Install MariaDB built in this commit
-    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.9.1-1 vs 1:10.9.1+mariadb~sid
-    - apt-get install -y --allow-downgrades ./*.deb
-    # Verify installation of MariaDB built in this commit
-    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
-    - mariadb --version # Client version
+    - *test-install
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -871,12 +851,7 @@ mariadb.org-10.6 upgrade:
     # - apt-get install -y 'mariadb*' libmariadb3 'libmariadb-*' 'libmariadbd*'
     - apt-get install -y mariadb-server-10.6
     - *test-verify-initial
-    # Install MariaDB built in this commit
-    # Force downgrades so our version installs on top of upstream revision, e.g. 1:10.5.5-1 vs 1:10.5.5+mariadb~sid
-    - apt-get install -y --allow-downgrades ./*.deb
-    # Verify installation of MariaDB built in this commit
-    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
-    - mariadb --version # Client version
+    - *test-install
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -905,10 +880,7 @@ mariadb.org-10.5 upgrade:
     - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.5
     - *test-verify-initial
-    # Install MariaDB built in this commit
-    # Verify installation of MariaDB built in this commit
-    - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
-    - mariadb --version # Client version
+    - *test-install
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
