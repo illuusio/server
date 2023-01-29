@@ -28,7 +28,8 @@ DEB_VERSION_REVISION := $(shell echo $(DEB_VERSION) | sed -e 's/^.*-//')
 DEB_VERSION_VERSION := $(shell echo $(DEB_VERSION) | sed -e 's/^.*:\(.*\)\(-\|+\).*/\1/')
 DEB_VERSION_MAJOR := $(shell echo $(DEB_VERSION_VERSION) | sed -e 's/^\(.*\)\..*$$/\1/')
 RELEASE := $(shell lsb_release -r -s) # Use changelog based DEB_DISTRIBUTION instead?
-TMP:=$(CURDIR)/debian/tmp
+TMP := $(CURDIR)/debian/tmp
+MTR_SKIP_TEST_LIST := $(shell mktemp)
 
 # According to Debian Policy version 4.2.0 builds should be as verbose as
 # possible unless 'terse' is specifically passed.
@@ -131,18 +132,16 @@ override_dh_auto_build:
 override_dh_auto_test:
 	@echo "RULES.$@"
 	dh_testdir
-	# Ensure at least an empty file exists
-	touch mysql-test/unstable-tests
-	# Skip unstable tests if such are defined for arch
-	[ ! -f debian/unstable-tests.$(DEB_HOST_ARCH) ] || cat debian/unstable-tests.$(DEB_HOST_ARCH) >> mysql-test/unstable-tests
-	# Run testsuite
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
-	# Don't use --mem here as official Debian builders and most Docker systems don't have a large mem device available and
-	# would fail with errors on lack of disk space.
+	# Skip unstable tests if such are defined for arch
+	[ ! -f debian/unstable-tests.$(DEB_HOST_ARCH) ] || cat debian/unstable-tests.$(DEB_HOST_ARCH) >> $(MTR_SKIP_TEST_LIST)
+	# Run testsuite
 	cd $(BUILDDIR)/mysql-test && \
 	./mtr --force --testcase-timeout=120 --suite-timeout=540 --retry=3 \
 	      --parallel=$(NUMJOBS) --skip-rpl --suite=main \
-	      --skip-test-list=unstable-tests
+	      --skip-test-list=$(MTR_SKIP_TEST_LIST)
+	# Don't use --mem here as official Debian builders and most Docker systems don't have a large mem device available and
+	# would fail with errors on lack of disk space.
 endif
 
 override_dh_auto_install:
