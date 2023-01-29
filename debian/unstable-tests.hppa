@@ -1,2 +1,2 @@
-repair_symlink-5543  : https://jira.mariadb.org/browse/MDEV-23920
-main.index_intersect : https://jira.mariadb.org/browse/MDEV-23921
+repair_symlink-5543  : MDEV-23920
+main.index_intersect : MDEV-23921
