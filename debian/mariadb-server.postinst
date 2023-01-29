@@ -227,6 +227,17 @@ EOF
     then
       mv -vf /etc/logrotate.d/mysql-server /etc/logrotate.d/mysql-server.dpkg-bak
     fi
+
+    # The introduction of versionless server package is not fully backwards
+    # compatible as the purge of an old mariadb-server-x.y package would
+    # commands such as 'deb-systemd-helper purge mariadb.service' and
+    # 'update-rc.d mariadb remove'. Fix it by simly deleting any existing postrm
+    # stanzas opportunisticly.
+    sed '/Automatically added by dh_installinit/,/End automatically added section/d' \
+      -i /var/lib/dpkg/info/mariadb-server-10.?.postrm || true
+    sed '/Automatically added by dh_systemd_enable/,/End automatically added section/d' \
+      -i /var/lib/dpkg/info/mariadb-server-10.?.postrm || true
+
   ;;
 
   abort-upgrade|abort-remove|abort-configure)

@@ -240,3 +240,14 @@ db_stop
 if [ "$1" = "upgrade" ] && [ -n "$2" ] && [ -e "/etc/init.d/mariadb" ] ; then
 	chmod +x "/etc/init.d/mariadb" >/dev/null || true
 fi
+
+# dh_installinit/13.11.3 adds this check but with extra condition that there
+# must be a version passed as '$2', but that will always be empty when install
+# runs after the unpack that is retriggered for package 'mariadb-server' when
+# the old 'mariadb-server-10.6' is purged, so we need to repeat the same check
+# here without any expectation for '$2'. This ensures that upgrades from
+# mariadb-server-x.y to mariadb-server (without version suffix) ends up with the
+# executable bit set on /etc/init.d/mariadb.
+if [ "$1" = "install" ] && [ -e "/etc/init.d/mariadb" ] ; then
+	chmod +x "/etc/init.d/mariadb" >/dev/null || true
+fi
