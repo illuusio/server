@@ -22,7 +22,7 @@ The official Debian package source is hosted on the Debian Gitlab server under
 the MariaDB/MySQL packaging team at https://salsa.debian.org/mariadb-team/. You
 are welcome to fork it and make merge requests.
 
-To get the latest official Debian packaging source of mariadb-10.6, clone the
+To get the latest official Debian packaging source of `mariadb`, clone the
 source repository with all relevant branches (main branch `debian/latest`) to
 your local environment using _git-buildpackage_:
 

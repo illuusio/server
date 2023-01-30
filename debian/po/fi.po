@@ -1,10 +1,10 @@
-# Finnish translations for mariadb-10.6 package
-# This file is distributed under the same license as the mariadb-10.6 package.
+# Finnish translations for mariadb package
+# This file is distributed under the same license as the mariadb package.
 # Antti Järvinen <antti.jarvinen@katiska.org>, 2017.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mariadb-10.6\n"
+"Project-Id-Version: mariadb\n"
 "Report-Msgid-Bugs-To: mariadb@packages.debian.org\n"
 "POT-Creation-Date: 2022-12-31 18:55-0800\n"
 "PO-Revision-Date: 2017-03-15 22:36+0200\n"

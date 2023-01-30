@@ -5,7 +5,7 @@
 # This file is distributed under the same license as the PACKAGE package.
 msgid ""
 msgstr ""
-"Project-Id-Version: eu\n"
+"Project-Id-Version: mariadb\n"
 "Report-Msgid-Bugs-To: mariadb@packages.debian.org\n"
 "POT-Creation-Date: 2022-12-31 18:55-0800\n"
 "PO-Revision-Date: 2009-07-29 11:59+0200\n"

@@ -1,13 +1,13 @@
-# Translation of mariadb-10.6 debconf templates to French
+# Translation of mariadb debconf templates to French
 # Copyright (C) 2004-2016 Debian French l10n team <debian-l10n-french@lists.debian.org>
-# This file is distributed under the same license as the mariadb-10.6 packages.
+# This file is distributed under the same license as the mariadb packages.
 #
 # Translators:
 # Christian Perrier <bubulle@debian.org>, 2004, 2006, 2007, 2009, 2013.
 # Baptiste Jammet <baptiste@mailoo.org>, 2016.
 msgid ""
 msgstr ""
-"Project-Id-Version: fr\n"
+"Project-Id-Version: mariadb\n"
 "Report-Msgid-Bugs-To: mariadb@packages.debian.org\n"
 "POT-Creation-Date: 2022-12-31 18:55-0800\n"
 "PO-Revision-Date: 2016-12-31 18:35+0100\n"

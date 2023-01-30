@@ -1,5 +1,5 @@
 Forwarded: https://github.com/facebook/rocksdb/pull/6992
-# Merged in RocksDB 6.13.fb, but not updated into MariaDB 10.6
+# Merged in RocksDB 6.13.fb, but not updated into MariaDB yet
 Forwarded: https://jira.mariadb.org/browse/MDEV-19251
 Description:
  Upstream has merged this but we still need to wait for it to be included

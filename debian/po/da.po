@@ -1,12 +1,12 @@
-# Danish translation mariadb-10.6.
-# Copyright (C) 2014 mariadb-10.6 og nedenstående oversættere.
-# This file is distributed under the same license as the mariadb-10.6 package.
+# Danish translation mariadb.
+# Copyright (C) 2014 mariadb og nedenstående oversættere.
+# This file is distributed under the same license as the mariadb package.
 # Claus Hindsgaul <claus.hindsgaul@gmail.com>, 2005, 2006, 2007.
 # Joe Hansen <joedalton2@yahoo.dk>, 2014, 2016.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mariadb-10.6\n"
+"Project-Id-Version: mariadb\n"
 "Report-Msgid-Bugs-To: mariadb@packages.debian.org\n"
 "POT-Creation-Date: 2022-12-31 18:55-0800\n"
 "PO-Revision-Date: 2016-07-09 22:41+0200\n"

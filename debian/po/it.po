@@ -1,10 +1,10 @@
-# Italian (it) translation of debconf templates for mariadb-10.6
-# This file is distributed under the same license as the mariadb-10.6 package.
+# Italian (it) translation of debconf templates for mariadb
+# This file is distributed under the same license as the mariadb package.
 # Luca Monducci <luca.mo@tiscali.it>, 2006-2017.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mariadb-10.6 10.0.13 Italian debconf templates\n"
+"Project-Id-Version: mariadb\n"
 "Report-Msgid-Bugs-To: mariadb@packages.debian.org\n"
 "POT-Creation-Date: 2022-12-31 18:55-0800\n"
 "PO-Revision-Date: 2017-083-20 20:29+0100\n"

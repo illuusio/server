@@ -1,11 +1,11 @@
 # mariadb (debconf) translation to Catalan.
-# his file is distributed under the same license as the mariadb-10.6 package.
+# his file is distributed under the same license as the mariadb package.
 # Aleix Badia i Bosch <abadia@ica.es> 2004
 # Innocent De Marchi <tangram.peces@gmail.com> 2017
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mariadb-10.6\n"
+"Project-Id-Version: mariadb\n"
 "Report-Msgid-Bugs-To: mariadb@packages.debian.org\n"
 "POT-Creation-Date: 2022-12-31 18:55-0800\n"
 "PO-Revision-Date: 2017-03-20 17:55+0100\n"

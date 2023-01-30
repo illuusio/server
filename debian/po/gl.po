@@ -1,10 +1,10 @@
-# Galician translation of mysql-dfsg-5.1's debconf templates
-# This file is distributed under the same license as the mysql-dfsg-5.1 package.
+# Galician translation of mariadb debconf templates
+# This file is distributed under the same license as the mariadb package.
 # Jacobo Tarrio <jtarrio@debian.org>, 2007.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mysql-dfsg-5.1\n"
+"Project-Id-Version: mariadb\n"
 "Report-Msgid-Bugs-To: mariadb@packages.debian.org\n"
 "POT-Creation-Date: 2022-12-31 18:55-0800\n"
 "PO-Revision-Date: 2007-04-20 09:44+0200\n"

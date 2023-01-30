@@ -1,11 +1,11 @@
-# Vietnamese translations for mariadb-10.6 package
-# Bản dịch Tiếng Việt dành cho gói mariadb-10.6.
-# This file is distributed under the same license as the mariadb-10.6 package.
+# Vietnamese translations for mariadb package
+# Bản dịch Tiếng Việt dành cho gói mariadb.
+# This file is distributed under the same license as the mariadb package.
 # Trần Ngọc Quân <vnwildman@gmail.com>, 2017.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: mariadb-10.6\n"
+"Project-Id-Version: mariadb\n"
 "Report-Msgid-Bugs-To: mariadb@packages.debian.org\n"
 "POT-Creation-Date: 2022-12-31 18:55-0800\n"
 "PO-Revision-Date: 2017-03-18 13:32+0700\n"
