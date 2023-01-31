@@ -68,6 +68,11 @@ ifneq (,$(filter $(DEB_HOST_ARCH),amd64 arm64 ppc64el riscv64))
     CMAKEFLAGS += -DWITH_PMEM=ON
 endif
 
+# Link with libatomic on riscv64 to get access to the __atomic_*_1 functions
+ifeq ($(DEB_HOST_ARCH),riscv64)
+    export DEB_LDFLAGS_MAINT_APPEND += -Wl,--no-as-needed -latomic -Wl,--as-needed
+endif
+
 # Add support for verbose builds
 MAKEFLAGS += VERBOSE=1
 
