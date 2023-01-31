@@ -1,9 +1,35 @@
-mariadb (1:10.11.1-2) UNRELEASED; urgency=medium
+mariadb (1:10.11.1-2) unstable; urgency=medium
 
-  * Open new changelog entry. This will automatically be replaced
-    by 'gbp dch -avR' before next release.
+  [ Otto Kekäläinen ]
+  * Add upstream patch for main.explain_json_format_partitions (MDEV-30411)
+    (Closes: 1029163)
+  * Fix riscv64 compilation error in RocksDB atomic functions (Closes: #1024041)
+  * Stop skipping tests that are marked fixed upstream
+  * Don't ship any mysql-tests/unstable-tests as neither does upstream
+  * Skip test main.func_json_notembedded on s390x due to MDEV-30518
+  * Implement configuration tracing as an autopkgtest test
+  * Drop obsolete dependency on package lsb-release
+  * Clean away outdated mentions of mariadb-10.6 and even mysql-dfsg-5.1
+  * Update more Lintian overrides syntax to follow latest Lintian 2.115
+  * Update standards version to 4.6.2, no changes needed
+  * Update watch file format version to 4
 
- -- Otto Kekäläinen <otto@debian.org>  Wed, 18 Jan 2023 01:40:57 -0800
+  [ MichaIng ]
+  * Do not create /var/log/mysql in postinst
+
+  [ Salman Mohammadi ]
+  * mariadb-plugin-connect: introduce curl as recommends
+
+  [ Remus-Gabriel Chelu ]
+  * Update Romanian translation of debconf messages
+
+  [ Faustin Lammler ]
+  * Cover the full-upgrade scenario in CI
+
+  [ Pablo ]
+  * Update Galician translation of debconf messages
+
+ -- Otto Kekäläinen <otto@debian.org>  Tue, 31 Jan 2023 00:19:17 -0800
 
 mariadb (1:10.11.1-1) unstable; urgency=medium
 
