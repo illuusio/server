@@ -141,6 +141,8 @@ blhc:
   mysql --table -e "SHOW PLUGINS;" mysql
 
 .test-enable-sid-repos: &test-enable-sid-repos
+  # Apply usrmerge workaround for Stretch/Buster/Bullseye to Bookworm/Sid upgrades
+  - echo 'this system will not be supported in the future' > /etc/unsupported-skip-usrmerge-conversion
   # Replace any old repos with just Sid
   - echo 'deb http://deb.debian.org/debian sid main' > /etc/apt/sources.list
   # Upgrade minimal stack first
@@ -178,16 +180,16 @@ blhc:
   echo "deb [trusted=yes] file:$(pwd) ./" > /etc/apt/sources.list.d/mariadb-local.list
   apt-get update
 
-.test-install: &test-install |
-  # Install MariaDB built in this commit
-  apt-get install -y ./*.deb
+.test-install-all: &test-install-all
+  - *test-enable-artifacts-repo
+  - apt-get install -yq ${BUILT_PACKAGES}
   # Verify installation of MariaDB built in this commit
-  mariadb --version
-  dpkg -l | grep -iE 'maria|mysql|galera'
-  find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+  - mariadb --version
+  - dpkg -l | grep -iE 'maria|mysql|galera'
+  - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
   # Purge old versions if they exist
-  apt-get purge -y mariadb*10.?
-  find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+  - apt-get purge -y mariadb*10.?
+  - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
 
 .test-full-upgrade: &test-full-upgrade
   - *test-enable-artifacts-repo
@@ -201,6 +203,18 @@ blhc:
   - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
   # Purging the old server might stop the running server, so restart it just in case
   - service mariadb restart
+
+.test-install-all-libs: &test-install-all-libs
+  - *test-enable-artifacts-repo
+  - apt-get install -yq --no-install-recommends libmariadb-dev-compat libmariadbd-dev
+  # Installs 31 packages, including:
+  # libmariadb3 libmariadb-dev libmariadb-dev-compat libmariadbd19 libmariadbd-dev
+
+.test-full-upgrade-libs: &test-full-upgrade-libs
+  - *test-enable-artifacts-repo
+  - apt-get full-upgrade -y
+  - dpkg -l | grep -iE 'maria|mysql|galera'
+  # library tests don't have the mariadb client nor server, so don't check them
 
 .test-verify-final: &test-verify-final |
   mkdir -p debug # Ensure dir exists before using it
@@ -257,9 +271,6 @@ blhc:
     g++ b933063.cpp -l mariadbclient && ./a.out | tee result
     if grep --quiet latin result; then echo "ERROR: Charset latin found!"; exit 1; fi
 
-.test-install-all-libs: &test-install-all-libs
-  - apt-get install -y ./libmariadb3_*.deb ./libmariadb-dev_*.deb ./libmariadb-dev-compat_*.deb ./libmariadbd19_*.deb ./libmariadbd-dev_*.deb ./mariadb-common_*.deb
-
 fresh install:
   stage: test
   needs:
@@ -272,7 +283,7 @@ fresh install:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    - *test-install
+    - *test-install-all
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -293,21 +304,8 @@ simple upgrade:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    # As long as Debian unstable has both MariaDB 10.6 and 10.11, the command
-    # to install all mariadb-* packages at once will fail with conflicts
-    # - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
-    # - *test-full-upgrade
     - apt-get install -y 'default-mysql*' ${BUILT_PACKAGES}
-    - *test-enable-artifacts-repo
-    - apt-get upgrade -y
-    - apt-get full-upgrade -y
-    # Verify installation of MariaDB built in this commit
-    - mariadb --version
-    - dpkg -l | grep -iE 'maria|mysql|galera'
-    - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
-    # Purge old versions if they exist
-    - apt-get purge -y mariadb*10.?
-    - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+    - *test-full-upgrade
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -393,8 +391,6 @@ mariadb-10.5 and Bullseye upgrade:
     - *test-enable-sid-repos
     # Ensure mariadbd will not crash on next shutdown for any reason
     - service mariadb restart
-    # Apply usrmerge workaround: https://salsa.debian.org/mariadb-team/mariadb-server/-/merge_requests/18#note_374610
-    - echo 'this system will not be supported in the future' > /etc/unsupported-skip-usrmerge-conversion
     - *test-full-upgrade
     - service mariadb status  # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
@@ -423,8 +419,6 @@ mariadb-10.3 and Buster upgrade:
     - *test-enable-sid-repos
     # Ensure mariadbd will not crash on next shutdown for any reason
     - service mysql restart # in 10.3 service name is still 'mysql'
-    # Apply usrmerge workaround: https://salsa.debian.org/mariadb-team/mariadb-server/-/merge_requests/18#note_374610
-    - echo 'this system will not be supported in the future' > /etc/unsupported-skip-usrmerge-conversion
     - *test-full-upgrade
     # mariadb-10.3 in Buster ships a /etc/init.d/mysql and it continues to exist
     # after upgrade, but is be removed on purge
@@ -448,7 +442,7 @@ test basic features:
       - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
-    - *test-install
+    - *test-install-all
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
     - |
@@ -545,12 +539,11 @@ build mariadbclient consumer Python-MySQLdb:
   image: debian:${RELEASE}
   script:
     - *test-prepare-container
-    # Run each step separately to avoid an 800+ line chunk that lacks the
-    # commands themselves printed and Gitlab-CI cutting off the output
-    - apt-get install -y pkg-config ./libmariadb-dev*.deb ./libmariadb3_*.deb ./mariadb-common*.deb
-    - pkg-config --cflags --libs mysqlclient # See what MySQLdb builds with
-    - apt-get install -y python3-pip
-    # MySQLdb is Also available in Debian as package python3-mysqldb, but
+    - *test-install-all-libs
+    - apt-get install -y pkg-config python3-pip
+    # See what MySQLdb will build with
+    - pkg-config --cflags --libs mysqlclient
+    # MySQLdb is also available in Debian as package python3-mysqldb, but
     # install it from pip to force that the client is compiled with
     # libmariadb-dev-compat on-the-fly.
     # Python 3.11 needs `--break-system-packages` to proceed with this.
@@ -610,7 +603,7 @@ default-libmysqlclient-dev upgrade:
     - *test-prepare-container
     - apt-get install -y pkg-config default-libmysqlclient-dev default-libmysqld-dev
     - pkg-config --list-all
-    - *test-install-all-libs
+    - *test-full-upgrade-libs
     - *test-verify-libs
   except:
     variables:
@@ -631,7 +624,7 @@ default-libmysqlclient-dev and Bullseye upgrade:
     - apt-get install -y pkg-config default-libmysqlclient-dev
     - pkg-config --list-all
     - *test-enable-sid-repos
-    - *test-install-all-libs
+    - *test-full-upgrade-libs
     - *test-verify-libs
   except:
     variables:
@@ -652,7 +645,7 @@ default-libmysqlclient-dev and Buster upgrade:
     - apt-get install -y pkg-config default-libmysqlclient-dev
     - pkg-config --list-all
     - *test-enable-sid-repos
-    - *test-install-all-libs
+    - *test-full-upgrade-libs
     - *test-verify-libs
   except:
     variables:
@@ -673,7 +666,7 @@ default-libmysqlclient-dev with Bullseye backports upgrade:
     - apt-get install -y pkg-config default-libmysqlclient-dev
     - pkg-config --list-all
     - *test-enable-bullseye-backports-repos
-    - *test-install-all-libs
+    - *test-full-upgrade-libs
     - *test-verify-libs
   except:
     variables:
@@ -696,7 +689,7 @@ mysql-8.0 in Sid upgrade:
     # The postinst fails often if 'ps' is missing from system, so install procps
     - apt-get install -y procps mysql-server 'libmysqlc*'
     - *test-verify-initial
-    - *test-install
+    - *test-install-all
     # Due to some (currently unknown) changes in MySQL 8.0 packaging or apt
     # behaviour changes, a system with a previous installation of MySQL 8.0 will
     # on upgrades to MariaDB first fully remove MySQL, including the
@@ -742,7 +735,7 @@ mysql-8.0 from Ubuntu 22.04 with Bullseye backports upgrade:
     - *test-verify-initial
     # Enable backports to make galera-4 available
     - echo "deb http://deb.debian.org/debian bullseye-backports main" > /etc/apt/sources.list.d/backports.list && apt-get update -qq
-    - *test-install
+    - *test-install-all
     - service mysql status
     - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
     - *test-verify-final
@@ -778,7 +771,7 @@ mysql-community-cluster-8.0 from MySQL.com with Bullseye backports upgrade:
     - systemctl stop mysql # Stop manually as maintainer scripts don't handle this with systemctl shim
     # Enable backports to make galera-4 available
     - echo "deb http://deb.debian.org/debian bullseye-backports main" > /etc/apt/sources.list.d/backports.list && apt-get update -qq
-    - *test-install
+    - *test-install-all
     # Ignore systemctl shim result as MariaDB systemd file is incompatible with it and yields:
     #   ERROR:systemctl:the ExecStartPre control process exited with error code
     - systemctl status mysql || true
@@ -839,9 +832,10 @@ mariadb.org-10.10 upgrade:
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo "deb https://deb.mariadb.org/10.10/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
-    - apt-get install -y mariadb-server
+    # this should not use Sid to begin with
+    - apt-get install -y mariadb-server=1:10.10.2+maria~debunstable mariadb-client=1:10.10.2+maria~debunstable
     - *test-verify-initial
-    - *test-install
+    - *test-full-upgrade
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -866,9 +860,10 @@ mariadb.org-10.9 upgrade:
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
     - echo "deb https://deb.mariadb.org/10.9/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
-    - apt-get install -y mariadb-server
+    # this should not use Sid to begin with
+    - apt-get install -y mariadb-server=1:10.9.4+maria~debunstable mariadb-client=1:10.9.4+maria~debunstable
     - *test-verify-initial
-    - *test-install
+    - *test-full-upgrade
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -895,7 +890,7 @@ mariadb.org-10.8 upgrade:
     - apt-get update
     - apt-get install -y mariadb-server-10.8
     - *test-verify-initial
-    - *test-install
+    - *test-install-all
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -922,7 +917,7 @@ mariadb.org-10.7 upgrade:
     - apt-get update
     - apt-get install -y mariadb-server-10.7
     - *test-verify-initial
-    - *test-install
+    - *test-install-all
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -952,7 +947,7 @@ mariadb.org-10.6 upgrade:
     # - apt-get install -y 'mariadb*' libmariadb3 'libmariadb-*' 'libmariadbd*'
     - apt-get install -y mariadb-server-10.6
     - *test-verify-initial
-    - *test-install
+    - *test-install-all
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -981,7 +976,7 @@ mariadb.org-10.5 upgrade:
     - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.5
     - *test-verify-initial
-    - *test-install
+    - *test-install-all
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -1014,7 +1009,7 @@ mariadb.org-10.4 upgrade:
     # it must be installed here manually
     - cp /usr/share/mysql/mysql.init /etc/init.d/mysql; chmod +x /etc/init.d/mysql; service mysql start; sleep 5
     - *test-verify-initial
-    - *test-install
+    - *test-install-all
     - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
     - service mysql status
     - service mariadb status
@@ -1046,7 +1041,7 @@ mariadb.org-10.3 upgrade:
     - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.3
     - *test-verify-initial
-    - *test-install
+    - *test-install-all
     # mariadb-10.3 in Buster ships a /etc/init.d/mysql and it continues to exist
     # after upgrade, but is be removed on purge
     - service mysql status || service mariadb status
@@ -1089,7 +1084,7 @@ mariadb.org-10.2 upgrade:
       mysql --defaults-file=/etc/mysql/debian.cnf --table -e "SHOW DATABASES;"
       mysql --defaults-file=/etc/mysql/debian.cnf --table -e "SELECT * FROM mysql.user; SHOW CREATE USER root@localhost;"
       mysql --defaults-file=/etc/mysql/debian.cnf --table -e "SELECT * FROM mysql.plugin; SHOW PLUGINS;"
-    - *test-install
+    - *test-install-all
     # mariadb-10.2 in ships a /etc/init.d/mysql and it continues to exist
     # after upgrade, but is be removed on purge
     - service mysql status || service mariadb status
@@ -1124,7 +1119,7 @@ mysql.com-5.7 with Bullseye backports upgrade:
     - *test-verify-initial
     # Enable backports to make galera-4 available
     - echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list.d/backports.list && apt-get update -qq
-    - *test-install
+    - *test-install-all
     # Due to some (currently unknown) changes in MySQL 5.7 packaging or apt
     # behaviour changes, a system with a previous installation of MySQL will
     # on upgrades to MariaDB first fully remove MySQL, including the
@@ -1165,7 +1160,7 @@ percona-xtradb-5.7 with Bullseye backports upgrade:
     - *test-verify-initial
     # Enable backports to make galera-4 available
     - echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list.d/backports.list && apt-get update -qq
-    - *test-install
+    - *test-install-all
     - service mysql status
     - sleep 15 # Give the mysql_upgrade a bit of extra time to complete with MySQL 5.7 before querying the server
     - *test-verify-final
