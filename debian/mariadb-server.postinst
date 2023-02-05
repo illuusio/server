@@ -233,10 +233,13 @@ EOF
     # commands such as 'deb-systemd-helper purge mariadb.service' and
     # 'update-rc.d mariadb remove'. Fix it by simly deleting any existing postrm
     # stanzas opportunisticly.
-    sed '/Automatically added by dh_installinit/,/End automatically added section/d' \
-      -i /var/lib/dpkg/info/mariadb-server-10.?.postrm || true
-    sed '/Automatically added by dh_systemd_enable/,/End automatically added section/d' \
-      -i /var/lib/dpkg/info/mariadb-server-10.?.postrm || true
+    if [ -f /var/lib/dpkg/info/mariadb-server-10.?.postrm ]
+    then
+      sed '/Automatically added by dh_installinit/,/End automatically added section/d' \
+        -i /var/lib/dpkg/info/mariadb-server-10.?.postrm || true
+      sed '/Automatically added by dh_systemd_enable/,/End automatically added section/d' \
+        -i /var/lib/dpkg/info/mariadb-server-10.?.postrm || true
+    fi
 
   ;;
 
