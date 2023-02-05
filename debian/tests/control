@@ -1,6 +1,6 @@
 Tests: configuration-tracing
 Depends: mariadb-server, diffutils
-Restrictions: allow-stderr isolation-container
+Restrictions: allow-stderr
 
 Tests: smoke
 # RocksDB is not built for all archs. Rather than duplicating the condition

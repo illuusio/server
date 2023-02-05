@@ -8,9 +8,9 @@
 #
 # This test should be declared in debian/tests/control with the
 # following restrictions:
-#
-# needs-root (to be able to log into the database)
-# allow-stderr
+# - allow-stderr (set -x always outputs to stderr)
+# - needs-root (to be able to log into the database)
+# - isolation-container (to be able to start service)
 #
 # This test:
 #

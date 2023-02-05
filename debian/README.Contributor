@@ -246,6 +246,10 @@ If you don't want to use the MariaDB binaries from Debian Sid but instead build
 them from the source tree to be used in autopkgtest directly, simply omit
 `--no-built-binaries` from the `autopkgtest` command.
 
+For more information please read:
+* https://manpages.debian.org/unstable/autopkgtest/autopkgtest.1.en.html
+* https://salsa.debian.org/ci-team/autopkgtest/-/tree/master/doc
+
 ## Debug installation/upgrade
 
 To see what exactly the Debian maintainer scripts run, they can be made verbose with:
