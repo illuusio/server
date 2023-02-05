@@ -73,6 +73,11 @@ ifeq ($(DEB_HOST_ARCH),riscv64)
     export DEB_LDFLAGS_MAINT_APPEND += -Wl,--no-as-needed -latomic -Wl,--as-needed
 endif
 
+# Fix compilation errors like "relocation truncated to fit: GPREL16 against symbol `wsrep_debug'"
+ifeq ($(DEB_HOST_ARCH),alpha)
+    export DEB_LDFLAGS_MAINT_APPEND += -Wl,--no-relax
+endif
+
 # Add support for verbose builds
 MAKEFLAGS += VERBOSE=1
 
