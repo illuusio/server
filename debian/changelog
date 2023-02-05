@@ -1,9 +1,15 @@
-mariadb (1:10.11.1-3) UNRELEASED; urgency=medium
+mariadb (1:10.11.1-3) unstable; urgency=medium
 
-  * Open new changelog entry. This will automatically be replaced
-    by 'gbp dch -avR' before next release.
+  [ Otto Kekäläinen ]
+  * Customize dh_installinit to keep service enabled (Closes: #1029136)
+  * Fix alpha compilation error in GPREL16/wsrep_* (Closes: #1024040)
+  * Skip tests that have bug reports and known to fail on 1:10.11.1-2
+  * Review and polish autopkgtests
 
- -- Otto Kekäläinen <otto@debian.org>  Tue, 31 Jan 2023 00:27:20 -0800
+  [ Tianyu Chen ]
+  * Add simplified Chinese translation of debconf messages
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 05 Feb 2023 15:21:04 -0800
 
 mariadb (1:10.11.1-2) unstable; urgency=medium
 
