@@ -6,6 +6,7 @@ include:
 
 # Override Salsa-CI with MariaDB specific variations
 variables:
+  BUILT_PACKAGES: "libmariadb-dev libmariadb-dev-compat libmariadb3 libmariadbd19 libmariadbd-dev mariadb-common mariadb-client mariadb-server mariadb-backup mariadb-plugin-connect mariadb-plugin-s3 mariadb-plugin-rocksdb mariadb-plugin-oqgraph mariadb-plugin-mroonga mariadb-plugin-spider mariadb-plugin-cracklib-password-check mariadb-test mariadb-test-data"
   DEB_BUILD_OPTIONS: "nocheck noautodbgsym"
   RELEASE: sid
   # Reprotest works, but takes very long time and often fails due to timeouts.
@@ -128,7 +129,8 @@ blhc:
 
 .test-verify-initial: &test-verify-initial |
   dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
-  service mysql status || service mariadb status # Early MariaDB 10.5 only had 'mariadb'
+  # MariaDB until 10.5 only had 'mysql', and since only 'mariadb', so try both
+  service mysql status || service mariadb status
   mysql --skip-column-names -e "select @@version, @@version_comment" # Show version
   mysql --table -e "SHOW DATABASES;" # List databases before upgrade
   mysql --table -e "SELECT host,user,plugin,authentication_string FROM user;" mysql
@@ -177,8 +179,25 @@ blhc:
   # Install MariaDB built in this commit
   apt-get install -y ./*.deb
   # Verify installation of MariaDB built in this commit
-  mariadb --version # Client version
-  dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
+  mariadb --version
+  dpkg -l | grep -iE 'maria|mysql|galera'
+  find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+  # Purge old versions if they exist
+  apt-get purge -y mariadb*10.?
+  find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+
+.test-full-upgrade: &test-full-upgrade
+  - *test-enable-artifacts-repo
+  - apt-get full-upgrade -y
+  # Verify installation of MariaDB built in this commit
+  - mariadb --version
+  - dpkg -l | grep -iE 'maria|mysql|galera'
+  - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+  # Purge old versions if they exist
+  - apt-get purge -y mariadb*10.?
+  - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+  # Purging the old server might stop the running server, so restart it just in case
+  - service mariadb restart
 
 .test-verify-final: &test-verify-final |
   mkdir -p debug # Ensure dir exists before using it
@@ -274,8 +293,53 @@ simple upgrade:
     # As long as Debian unstable has both MariaDB 10.6 and 10.11, the command
     # to install all mariadb-* packages at once will fail with conflicts
     # - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
-    - apt-get install -y 'default-mysql*' 'libmariadb*'
-    - *test-install
+    # - *test-full-upgrade
+    - apt-get install -y 'default-mysql*' ${BUILT_PACKAGES}
+    - *test-enable-artifacts-repo
+    - apt-get upgrade -y
+    - apt-get full-upgrade -y
+    # Verify installation of MariaDB built in this commit
+    - mariadb --version
+    - dpkg -l | grep -iE 'maria|mysql|galera'
+    - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+    # Purge old versions if they exist
+    - apt-get purge -y mariadb*10.?
+    - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
+simple upgrade from 10.6 package:
+  stage: upgrade MariaDB
+  needs:
+    - job: build
+  image: debian:${RELEASE}
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    # This test is relevant only as long as Debian unstable has both MariaDB
+    # 10.6 and 10.11
+    - apt-get install -y mariadb-server-10.6
+    - *test-enable-artifacts-repo
+    - apt-get install -y mariadb-server
+    - apt-get full-upgrade -y
+    # Verify installation of MariaDB built in this commit
+    - mariadb --version
+    - dpkg -l | grep -iE 'maria|mysql|galera'
+    - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+    # Purge old versions if they exist
+    - apt-get purge -y mariadb*10.?
+    - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+    # Restart service after purge stopped it
+    - service mariadb restart
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -285,7 +349,7 @@ simple upgrade:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb-10.5 with Bullseye backports upgrade:
-  stage: upgrade MariaDB variant
+  stage: upgrade MariaDB
   needs:
     - job: build bullseye-backports
   image: debian:bullseye
@@ -301,8 +365,34 @@ mariadb-10.5 with Bullseye backports upgrade:
     # Verify installation of MariaDB from Buster
     - *test-verify-initial
     - *test-enable-bullseye-backports-repos
-    - *test-install
+    - *test-full-upgrade
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
+    - *test-verify-final
+  variables:
+    GIT_STRATEGY: none
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
+mariadb-10.6 and Bookworm upgrade:
+  stage: upgrade MariaDB and distro
+  needs:
+    - job: build
+  image: debian:bookworm
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  script:
+    - *test-prepare-container
+    - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
+    - *test-verify-initial
+    - *test-enable-sid-repos
+    # Ensure mariadbd will not crash on next shutdown for any reason
+    - service mariadb restart
+    - *test-full-upgrade
+    - service mariadb status  # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
     GIT_STRATEGY: none
@@ -329,8 +419,8 @@ mariadb-10.5 and Bullseye upgrade:
     - *test-enable-sid-repos
     # Ensure mariadbd will not crash on next shutdown for any reason
     - service mariadb restart
-    - *test-install
-    - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
+    - *test-install  # Using full-upgrade not possible here due to usrmerge
+    - service mariadb status  # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
     GIT_STRATEGY: none
@@ -357,10 +447,10 @@ mariadb-10.3 and Buster upgrade:
     - *test-enable-sid-repos
     # Ensure mariadbd will not crash on next shutdown for any reason
     - service mysql restart # in 10.3 service name is still 'mysql'
-    - *test-install
-    # mariadb-10.3 in Buster ships a /etc/init.d/mysql so it should continue to work
-    - service mysql status
-    - service mariadb status
+    - *test-install  # Using full-upgrade not possible here due to usrmerge
+    # mariadb-10.3 in Buster ships a /etc/init.d/mysql and it continues to exist
+    # after upgrade, but is be removed on purge
+    - service mysql status || service mariadb status
     - *test-verify-final
   variables:
     GIT_STRATEGY: none
@@ -956,7 +1046,9 @@ mariadb.org-10.3 upgrade:
     - apt-get install -y mariadb-server-10.3
     - *test-verify-initial
     - *test-install
-    - service mysql status
+    # mariadb-10.3 in Buster ships a /etc/init.d/mysql and it continues to exist
+    # after upgrade, but is be removed on purge
+    - service mysql status || service mariadb status
     # Give the mariadb-upgrade plenty of time to complete, otherwise next commands
     # fail on non-existing mariadb.sys user
     - sleep 15
@@ -997,7 +1089,9 @@ mariadb.org-10.2 upgrade:
       mysql --defaults-file=/etc/mysql/debian.cnf --table -e "SELECT * FROM mysql.user; SHOW CREATE USER root@localhost;"
       mysql --defaults-file=/etc/mysql/debian.cnf --table -e "SELECT * FROM mysql.plugin; SHOW PLUGINS;"
     - *test-install
-    - service mysql status
+    # mariadb-10.2 in ships a /etc/init.d/mysql and it continues to exist
+    # after upgrade, but is be removed on purge
+    - service mysql status || service mariadb status
     # Give the mariadb-upgrade plenty of time to complete, otherwise next commands
     # fail on non-existing mariadb.sys user
     - sleep 15
@@ -1073,33 +1167,6 @@ percona-xtradb-5.7 with Bullseye backports upgrade:
     - *test-install
     - service mysql status
     - sleep 15 # Give the mysql_upgrade a bit of extra time to complete with MySQL 5.7 before querying the server
-    - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
-
-full-upgrade Bookworm to Sid:
-  stage: upgrade MariaDB and distro
-  needs:
-    - job: build
-  image: debian:bookworm
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
-  script:
-    - *test-prepare-container
-    - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
-    - *test-verify-initial
-    - *test-enable-sid-repos
-    # Ensure mariadbd will not crash on next shutdown for any reason
-    - service mariadb restart
-    - *test-enable-artifacts-repo
-    - apt-get full-upgrade -y
-    - service mariadb status
     - *test-verify-final
   variables:
     GIT_STRATEGY: none
