@@ -1,2 +1,3 @@
-main.strings               : MDEV-26644
-main.func_json_notembedded : MDEV-30518
+main.strings     : MDEV-26644
+main.plugin_auth : https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1030510
+main.func_json_notembedded : MDEV-30518 / MDEV-27955
