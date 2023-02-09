@@ -242,6 +242,9 @@ Edit the files in `debian/tests` in your favorite code editor and re-run the
 `autopkgtest -- null` until the tests are passing. When the autopkgtests work
 the container can be shut down and the valid `debian/tests` committed in git.
 
+If you want to iterate on a single test, use `--test-name`, e.g.
+`autopkgtest --no-built-binaries --test-name=configuration-tracing -- null`.
+
 If you don't want to use the MariaDB binaries from Debian Sid but instead build
 them from the source tree to be used in autopkgtest directly, simply omit
 `--no-built-binaries` from the `autopkgtest` command.
