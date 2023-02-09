@@ -21,16 +21,14 @@ in #2472 overwriting SYSTEM_LIBS was problematic.
 This is corrected in case in future SYSTEM_LIBS is changed
 elsewhere.
 
-Closes #2472.
+This is designed to permanently fix https://bugs.debian.org/1024041
 ---
  storage/rocksdb/build_rocksdb.cmake | 8 ++------
  1 file changed, 2 insertions(+), 6 deletions(-)
 
-Index: mariadb-10.11.1/storage/rocksdb/build_rocksdb.cmake
-===================================================================
---- mariadb-10.11.1.orig/storage/rocksdb/build_rocksdb.cmake
-+++ mariadb-10.11.1/storage/rocksdb/build_rocksdb.cmake
-@@ -131,10 +131,6 @@
+--- a/storage/rocksdb/build_rocksdb.cmake
++++ b/storage/rocksdb/build_rocksdb.cmake
+@@ -131,10 +131,6 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64
    ADD_DEFINITIONS(-DHAVE_POWER8 -DHAS_ALTIVEC)
  endif(CMAKE_SYSTEM_PROCESSOR MATCHES "ppc64|powerpc64")
  
@@ -41,7 +39,7 @@ Index: mariadb-10.11.1/storage/rocksdb/build_rocksdb.cmake
  option(WITH_FALLOCATE "build with fallocate" ON)
  
  if(WITH_FALLOCATE AND UNIX)
-@@ -163,9 +159,9 @@
+@@ -163,9 +159,9 @@ include_directories(SYSTEM ${ROCKSDB_SOU
  
  find_package(Threads REQUIRED)
  if(WIN32)

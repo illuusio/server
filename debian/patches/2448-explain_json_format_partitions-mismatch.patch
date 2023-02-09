@@ -5,6 +5,7 @@ Date: Thu, 9 Feb 2023 16:55:54 +1100
 Subject: [PATCH 1/2] MDEV-30411: my_timer_cycles_routine - compile time
  determination
 
+This was designed to fix https://bugs.debian.org/1029163
 ---
  include/my_rdtsc.h | 53 +++++++++++++++++++++++++++++-----------------
  mysys/my_rdtsc.c   | 24 +--------------------
