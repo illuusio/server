@@ -1,96 +1,314 @@
 Forwarded: https://github.com/MariaDB/server/pull/2448
 Origin: https://patch-diff.githubusercontent.com/raw/MariaDB/server/pull/2448.patch
 From: Daniel Black <daniel@mariadb.org>
-Date: Mon, 23 Jan 2023 17:50:53 +1100
-Subject: [PATCH] MDEV-30411: main.explain_json_format_partitions fails on
- Debian armel and armhf builders
+Date: Thu, 9 Feb 2023 16:55:54 +1100
+Subject: [PATCH 1/2] MDEV-30411: my_timer_cycles_routine - compile time
+ determination
 
-The my_timer_cycles is an impressive collection of cycle based
-timers that isn't comprehensive on all architectures.
-
-MDEV-28926 is such that if there isn't an implementation then the output
-doesn't include the r_total_time_ms values and therefore test results
-change.
-
-As an alternative to my_timer_cycles, my_timer_interval returns a
-clock_gettime based implementation. These on Linux for kernel versions
-above about 4.0 are VDSO based implementations on arm, arm64, mips,
-powerpc, ppc64le,riscv, x86, x86_64 and a few others. As these results
-are returning in nanoseconds, the measure of the time interval is
-clearer than a static CPU frequency measure at MariaDB startup.
 ---
- sql/sql_analyze_stmt.h | 25 ++++++++++++-------------
- 1 file changed, 12 insertions(+), 13 deletions(-)
+ include/my_rdtsc.h | 53 +++++++++++++++++++++++++++++-----------------
+ mysys/my_rdtsc.c   | 24 +--------------------
+ 2 files changed, 34 insertions(+), 43 deletions(-)
 
+--- a/include/my_rdtsc.h
++++ b/include/my_rdtsc.h
+@@ -72,6 +72,26 @@ struct my_timer_info
+ 
+ typedef struct my_timer_info MY_TIMER_INFO;
+ 
++#define MY_TIMER_ROUTINE_RDTSC                    5
++#define MY_TIMER_ROUTINE_ASM_IA64                 6
++#define MY_TIMER_ROUTINE_PPC_GET_TIMEBASE         7
++#define MY_TIMER_ROUTINE_GETHRTIME                9
++#define MY_TIMER_ROUTINE_READ_REAL_TIME          10
++#define MY_TIMER_ROUTINE_CLOCK_GETTIME           11
++#define MY_TIMER_ROUTINE_GETTIMEOFDAY            13
++#define MY_TIMER_ROUTINE_QUERYPERFORMANCECOUNTER 14
++#define MY_TIMER_ROUTINE_GETTICKCOUNT            15
++#define MY_TIMER_ROUTINE_TIME                    16
++#define MY_TIMER_ROUTINE_TIMES                   17
++#define MY_TIMER_ROUTINE_FTIME                   18
++#define MY_TIMER_ROUTINE_ASM_GCC_SPARC64         23
++#define MY_TIMER_ROUTINE_ASM_GCC_SPARC32         24
++#define MY_TIMER_ROUTINE_MACH_ABSOLUTE_TIME      25
++#define MY_TIMER_ROUTINE_GETSYSTEMTIMEASFILETIME 26
++#define MY_TIMER_ROUTINE_ASM_S390                28
++#define MY_TIMER_ROUTINE_AARCH64                 29
++#define MY_TIMER_ROUTINE_RISCV                   30
++
+ C_MODE_START
+ 
+ /**
+@@ -133,28 +153,36 @@ C_MODE_START
+ static inline ulonglong my_timer_cycles(void)
+ {
+ # if __has_builtin(__builtin_readcyclecounter) && !defined (__aarch64__)
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_AARCH64
+   return __builtin_readcyclecounter();
+ # elif defined _M_IX86  || defined _M_X64  || defined __i386__ || defined __x86_64__
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_RDTSC
+   return __rdtsc();
+ #elif defined _M_ARM64
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_AARCH64
+   return _ReadStatusReg(ARM64_CNTVCT);
+ # elif defined(__INTEL_COMPILER) && defined(__ia64__) && defined(HAVE_IA64INTRIN_H)
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_ASM_IA64
+   return (ulonglong) __getReg(_IA64_REG_AR_ITC); /* (3116) */
+ #elif defined(__GNUC__) && defined(__ia64__)
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_ASM_IA64
+   {
+     ulonglong result;
+     __asm __volatile__ ("mov %0=ar.itc" : "=r" (result));
+     return result;
+   }
+ #elif defined __GNUC__ && defined __powerpc__
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_PPC_GET_TIMEBASE
+   return __builtin_ppc_get_timebase();
+ #elif defined(__GNUC__) && defined(__sparcv9) && defined(_LP64)
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_ASM_GCC_SPARC64
+   {
+     ulonglong result;
+     __asm __volatile__ ("rd %%tick,%0" : "=r" (result));
+     return result;
+   }
+ #elif defined(__GNUC__) && defined(__sparc__) && !defined(_LP64)
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_ASM_GCC_SPARC32
+   {
+       union {
+               ulonglong wholeresult;
+@@ -167,6 +195,7 @@ static inline ulonglong my_timer_cycles(
+     return result.wholeresult;
+   }
+ #elif defined(__GNUC__) && defined(__s390__)
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_ASM_S390
+   /* covers both s390 and s390x */
+   {
+     ulonglong result;
+@@ -174,12 +203,14 @@ static inline ulonglong my_timer_cycles(
+     return result;
+   }
+ #elif defined(__GNUC__) && defined (__aarch64__)
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_AARCH64
+   {
+     ulonglong result;
+     __asm __volatile("mrs	%0, CNTVCT_EL0" : "=&r" (result));
+     return result;
+   }
+ #elif defined(__riscv)
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_RISCV
+   /* Use RDCYCLE (and RDCYCLEH on riscv32) */
+   {
+ # if __riscv_xlen == 32
+@@ -202,9 +233,11 @@ static inline ulonglong my_timer_cycles(
+   }
+ # endif
+ #elif defined(HAVE_SYS_TIMES_H) && defined(HAVE_GETHRTIME)
++  #define MY_TIMER_ROUTINE_CYCLES MY_TIMER_ROUTINE_GETHRTIME
+   /* gethrtime may appear as either cycle or nanosecond counter */
+   return (ulonglong) gethrtime();
+ #else
++  #define MY_TIMER_ROUTINE_CYCLES 0
+   return 0;
+ #endif
+ }
+@@ -241,25 +274,5 @@ void my_timer_init(MY_TIMER_INFO *mti);
+ 
+ C_MODE_END
+ 
+-#define MY_TIMER_ROUTINE_RDTSC                    5
+-#define MY_TIMER_ROUTINE_ASM_IA64                 6
+-#define MY_TIMER_ROUTINE_PPC_GET_TIMEBASE         7
+-#define MY_TIMER_ROUTINE_GETHRTIME                9
+-#define MY_TIMER_ROUTINE_READ_REAL_TIME          10
+-#define MY_TIMER_ROUTINE_CLOCK_GETTIME           11
+-#define MY_TIMER_ROUTINE_GETTIMEOFDAY            13
+-#define MY_TIMER_ROUTINE_QUERYPERFORMANCECOUNTER 14
+-#define MY_TIMER_ROUTINE_GETTICKCOUNT            15
+-#define MY_TIMER_ROUTINE_TIME                    16
+-#define MY_TIMER_ROUTINE_TIMES                   17
+-#define MY_TIMER_ROUTINE_FTIME                   18
+-#define MY_TIMER_ROUTINE_ASM_GCC_SPARC64         23
+-#define MY_TIMER_ROUTINE_ASM_GCC_SPARC32         24
+-#define MY_TIMER_ROUTINE_MACH_ABSOLUTE_TIME      25
+-#define MY_TIMER_ROUTINE_GETSYSTEMTIMEASFILETIME 26
+-#define MY_TIMER_ROUTINE_ASM_S390                28
+-#define MY_TIMER_ROUTINE_AARCH64                 29
+-#define MY_TIMER_ROUTINE_RISCV                   30
+-
+ #endif
+ 
+--- a/mysys/my_rdtsc.c
++++ b/mysys/my_rdtsc.c
+@@ -368,29 +368,7 @@ void my_timer_init(MY_TIMER_INFO *mti)
+ 
+   /* cycles */
+   mti->cycles.frequency= 1000000000;
+-#if defined _WIN32 || defined __i386__ || defined __x86_64__
+-  mti->cycles.routine= MY_TIMER_ROUTINE_RDTSC;
+-#elif defined(__INTEL_COMPILER) && defined(__ia64__) && defined(HAVE_IA64INTRIN_H)
+-  mti->cycles.routine= MY_TIMER_ROUTINE_ASM_IA64;
+-#elif defined(__GNUC__) && defined(__ia64__)
+-  mti->cycles.routine= MY_TIMER_ROUTINE_ASM_IA64;
+-#elif defined __GNUC__ && defined __powerpc__
+-  mti->cycles.routine= MY_TIMER_ROUTINE_PPC_GET_TIMEBASE;
+-#elif defined(__GNUC__) && defined(__sparcv9) && defined(_LP64) && (__GNUC__>2)
+-  mti->cycles.routine= MY_TIMER_ROUTINE_ASM_GCC_SPARC64;
+-#elif defined(__GNUC__) && defined(__sparc__) && !defined(_LP64) && (__GNUC__>2)
+-  mti->cycles.routine= MY_TIMER_ROUTINE_ASM_GCC_SPARC32;
+-#elif defined(__GNUC__) && defined(__s390__)
+-  mti->cycles.routine= MY_TIMER_ROUTINE_ASM_S390;
+-#elif defined(__GNUC__) && defined (__aarch64__)
+-  mti->cycles.routine= MY_TIMER_ROUTINE_AARCH64;
+-#elif defined(__GNUC__) && defined (__riscv)
+-  mti->cycles.routine= MY_TIMER_ROUTINE_RISCV;
+-#elif defined(HAVE_SYS_TIMES_H) && defined(HAVE_GETHRTIME)
+-  mti->cycles.routine= MY_TIMER_ROUTINE_GETHRTIME;
+-#else
+-  mti->cycles.routine= 0;
+-#endif
++  mti->cycles.routine= MY_TIMER_ROUTINE_CYCLES;
+ 
+   if (!mti->cycles.routine || !my_timer_cycles())
+   {
 --- a/sql/sql_analyze_stmt.h
 +++ b/sql/sql_analyze_stmt.h
-@@ -49,22 +49,22 @@ class Exec_time_tracker
- {
- protected:
-   ulonglong count;
--  ulonglong cycles;
-+  ulonglong ns;
-   ulonglong last_start;
+@@ -38,7 +38,40 @@ $stmt").
  
--  void cycles_stop_tracking(THD *thd)
-+  void ns_stop_tracking(THD *thd)
+ */
+ 
+-class Gap_time_tracker;
++/* fake microseconds as cycles if cycles isn't avilable */
++static inline double timer_tracker_frequency()
++{
++#if (MY_TIMER_ROUTINE_CYCLES)
++  return static_cast<double>(sys_timer_info.cycles.frequency);
++#else
++  return static_cast<double>(sys_timer_info.microseconds.frequency);
++#endif
++}
++
++/*
++  Tracker for time spent between the calls to Exec_time_tracker's {start|
++  stop}_tracking().
++
++  @seealso Gap_time_tracker_data in sql_class.h
++*/
++class Gap_time_tracker
++{
++  ulonglong cycles;
++public:
++  Gap_time_tracker() : cycles(0) {}
++
++  void log_time(ulonglong start, ulonglong end) {
++    cycles += end - start;
++  }
++
++  double get_time_ms() const
++  {
++    // convert 'cycles' to milliseconds.
++    return 1000.0 * static_cast<double>(cycles) / timer_tracker_frequency();
++  }
++};
++
++
+ void attach_gap_time_tracker(THD *thd, Gap_time_tracker *gap_tracker, ulonglong timeval);
+ void process_gap_time_tracker(THD *thd, ulonglong timeval);
+ 
+@@ -51,10 +84,20 @@ protected:
+   ulonglong count;
+   ulonglong cycles;
+   ulonglong last_start;
++  /*
++    The time spent between stop_tracking() call on this object and any
++    other time measurement will be billed to this tracker.
++  */
++  Gap_time_tracker *my_gap_tracker;
+ 
++  ulonglong measure() const
++  {
++    return MY_TIMER_ROUTINE_CYCLES ? my_timer_cycles()
++             : my_timer_microseconds();
++  }
+   void cycles_stop_tracking(THD *thd)
    {
 -    ulonglong end= my_timer_cycles();
--    cycles += end - last_start;
-+    ulonglong end= my_interval_timer();
-+    ns += end - last_start;
++    ulonglong end= measure();
+     cycles += end - last_start;
      if (unlikely(end < last_start))
--      cycles += ULONGLONG_MAX;
-+      ns += ULONGLONG_MAX;
- 
-     process_gap_time_tracker(thd, end);
-     if (my_gap_tracker)
-       attach_gap_time_tracker(thd, my_gap_tracker, end);
-   }
- public:
--  Exec_time_tracker() : count(0), cycles(0), my_gap_tracker(NULL) {}
-+  Exec_time_tracker() : count(0), ns(0), my_gap_tracker(NULL) {}
+       cycles += ULONGLONG_MAX;
+@@ -67,15 +110,17 @@ public:
+   Exec_time_tracker() : count(0), cycles(0), my_gap_tracker(NULL) {}
  
    /*
-     The time spent between stop_tracking() call on this object and any
-@@ -75,26 +75,25 @@ public:
+-    The time spent between stop_tracking() call on this object and any
+-    other time measurement will be billed to this tracker.
++    Set the gap_tracker
+   */
+-  Gap_time_tracker *my_gap_tracker;
++  void set_gap_tracker(Gap_time_tracker *new_gap_tracker)
++  {
++    my_gap_tracker= new_gap_tracker;
++  }
+ 
    // interface for collecting time
    void start_tracking(THD *thd)
    {
 -    last_start= my_timer_cycles();
-+    last_start= my_interval_timer();
++    last_start= measure();
      process_gap_time_tracker(thd, last_start);
    }
  
-   void stop_tracking(THD *thd)
-   {
-     count++;
--    cycles_stop_tracking(thd);
-+    ns_stop_tracking(thd);
-   }
- 
-   // interface for getting the time
-   ulonglong get_loops() const { return count; }
+@@ -90,8 +135,7 @@ public:
    double get_time_ms() const
    {
+     // convert 'cycles' to milliseconds.
+-    return 1000.0 * static_cast<double>(cycles) /
+-      static_cast<double>(sys_timer_info.cycles.frequency);
++    return 1000.0 * static_cast<double>(cycles) / timer_tracker_frequency();
+   }
+ 
+   bool has_timed_statistics() const { return cycles > 0; }
+@@ -99,32 +143,6 @@ public:
+ 
+ 
+ /*
+-  Tracker for time spent between the calls to Exec_time_tracker's {start|
+-  stop}_tracking().
+-
+-  @seealso Gap_time_tracker_data in sql_class.h
+-*/
+-class Gap_time_tracker
+-{
+-  ulonglong cycles;
+-public:
+-  Gap_time_tracker() : cycles(0) {}
+-
+-  void log_time(ulonglong start, ulonglong end) {
+-    cycles += end - start;
+-  }
+-
+-  double get_time_ms() const
+-  {
 -    // convert 'cycles' to milliseconds.
 -    return 1000.0 * static_cast<double>(cycles) /
 -      static_cast<double>(sys_timer_info.cycles.frequency);
-+    // convert 'ns' to milliseconds.
-+    return (double) ns / 1000.0;
-   }
- 
--  bool has_timed_statistics() const { return cycles > 0; }
-+  bool has_timed_statistics() const { return ns > 0; }
- };
- 
- 
-@@ -145,7 +144,7 @@ public:
-   */
-   void stop_tracking(THD *thd)
+-  }
+-};
+-
+-
+-
+-/*
+   A class for counting certain actions (in all queries), and optionally
+   collecting the timings (in ANALYZE queries).
+ */
+--- a/sql/sql_select.cc
++++ b/sql/sql_select.cc
+@@ -27748,7 +27748,7 @@ bool JOIN_TAB::save_explain_data(Explain
+   if (thd->lex->analyze_stmt)
    {
--    cycles_stop_tracking(thd);
-+    ns_stop_tracking(thd);
+     table->file->set_time_tracker(&eta->op_tracker);
+-    eta->op_tracker.my_gap_tracker = &eta->extra_time_tracker;
++    eta->op_tracker.set_gap_tracker(&eta->extra_time_tracker);
    }
- };
+   /* No need to save id and select_type here, they are kept in Explain_select */
  
