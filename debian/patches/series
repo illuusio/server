@@ -8,3 +8,4 @@ mroonga-mrn-lib-dirs-path-reproducible-build.patch
 2129-new-script-wsrep-sst-backup-fixes.patch
 2448-explain_json_format_partitions-mismatch.patch
 2477.patch
+2482-hppa-large-page-size.patch
