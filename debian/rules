@@ -73,6 +73,13 @@ ifeq ($(DEB_HOST_ARCH),alpha)
     export DEB_LDFLAGS_MAINT_APPEND += -Wl,--no-relax
 endif
 
+# Disable MTR on Debian s390x buildd as it has random crashes (Bug#1030510)
+# which are an issue of the builder, not a real issue in the MariaDB code as the
+# s390x builders elsewhere (e.g. Launchpad and upstream Builtbot) pass
+ifeq ($(DEB_HOST_ARCH),s390x)
+    export DEB_BUILD_OPTIONS += nocheck
+endif
+
 # Add support for verbose builds
 MAKEFLAGS += VERBOSE=1
 
