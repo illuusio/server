@@ -1,9 +1,19 @@
-mariadb (1:10.11.1-5) UNRELEASED; urgency=medium
+mariadb (1:10.11.1-5) unstable; urgency=medium
 
-  * Open new changelog entry. This will automatically be replaced
-    by 'gbp dch -avR' before next release.
+  [ Otto Kekäläinen ]
+  * Packages mariadb-plugin-provider-* must depend at least on MariaDB 10.11
+  * Make postinstall check work with more than one result (Closes: #1031244)
+  * Revert "Compression plugins as Depends for mariadb-server" (Closes: #1031116)
+    to not break the Cacti autopkgtests and allow the mariadb-10.6 autopkgtest
+    to fail instead (re-introducing Bug#1031116)
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 12 Feb 2023 18:05:42 -0800
+  [ Bubu ]
+  * Update French translation of debconf messages (Closes: #1030581)
+
+  [ Adriano Rafael Gomes ]
+  * Update Brazilian translation of debconf messages (Closes: #1030908)
+
+ -- Otto Kekäläinen <otto@debian.org>  Wed, 15 Feb 2023 22:57:46 -0800
 
 mariadb (1:10.11.1-4) unstable; urgency=medium
 
