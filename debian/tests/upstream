@@ -13,7 +13,7 @@ MTR_SKIP_TEST_LIST=$(mktemp)
 ARCH=$(dpkg --print-architecture)
 
 WORKDIR=$(mktemp -d)
-trap 'rm -rf $WORKDIR $SKIP_TEST_LST' 0 INT QUIT ABRT PIPE TERM
+trap 'rm -rf $WORKDIR $MTR_SKIP_TEST_LIST' 0 INT QUIT ABRT PIPE TERM
 cd "$WORKDIR"
 
 mkdir var
@@ -47,10 +47,10 @@ fi
 
 if [ "$ARCH" = "s390x" ]
 then
-  echo "main.func_regexp_pcre : recursion fails on s390x https://bugs.launchpad.net/ubuntu/+source/mariadb-10.1/+bug/1723947" >> $SKIP_TEST_LST
+  echo "main.func_regexp_pcre : recursion fails on s390x https://bugs.launchpad.net/ubuntu/+source/mariadb-10.1/+bug/1723947" >> $MTR_SKIP_TEST_LIST
 elif [ "$ARCH" = "armhf" ] || [ "$ARCH" = "i386" ]
 then
-  echo "main.failed_auth_unixsocket : Test returns wrong exit code on armhf and i386 (but only in debci) https://jira.mariadb.org/browse/MDEV-23933" >> $SKIP_TEST_LST
+  echo "main.failed_auth_unixsocket : Test returns wrong exit code on armhf and i386 (but only in debci) https://jira.mariadb.org/browse/MDEV-23933" >> $MTR_SKIP_TEST_LIST
 fi
 
 # Store skipped test list in artifacts so it can be viewed while debugging
