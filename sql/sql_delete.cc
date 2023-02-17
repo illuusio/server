@@ -284,11 +284,11 @@ int TABLE::delete_row()
   vers_update_end();
   int err= file->ha_update_row(record[1], record[0]);
   /*
-     MDEV-23644: we get HA_ERR_FOUND_DUPP_KEY iff we already got history
+     MDEV-23644: we get HA_ERR_FOREIGN_DUPLICATE_KEY iff we already got history
      row with same trx_id which is the result of foreign key action, so we
      don't need one more history row.
   */
-  if (err == HA_ERR_FOUND_DUPP_KEY)
+  if (err == HA_ERR_FOREIGN_DUPLICATE_KEY)
     return file->ha_delete_row(record[0]);
   return err;
 }
@@ -712,6 +712,10 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
   {
     table->use_all_columns();
     table->rpl_write_set= table->write_set;
+    // Initialize autoinc.
+    // We don't set next_number_field here, as it is handled manually.
+    if (table->found_next_number_field)
+      table->file->info(HA_STATUS_AUTO);
   }
   else
   {

@@ -1291,8 +1291,6 @@ void LEX::start(THD *thd_arg)
   stmt_var_list.empty();
   proc_list.elements=0;
 
-  save_group_list.empty();
-  save_order_list.empty();
   win_ref= NULL;
   win_frame= NULL;
   frame_top_bound= NULL;
@@ -2976,6 +2974,8 @@ void st_select_lex::init_query()
   prep_leaf_list_state= UNINIT;
   bzero((char*) expr_cache_may_be_used, sizeof(expr_cache_may_be_used));
   select_list_tables= 0;
+  rownum_in_field_list= 0;
+
   window_specs.empty();
   window_funcs.empty();
   tvc= 0;
@@ -9740,6 +9740,7 @@ bool Lex_ident_sys_st::to_size_number(ulonglong *to) const
 }
 
 
+#ifdef WITH_PARTITION_STORAGE_ENGINE
 bool LEX::part_values_current(THD *thd)
 {
   partition_element *elem= part_info->curr_part_elem;
@@ -9747,7 +9748,7 @@ bool LEX::part_values_current(THD *thd)
   {
     if (unlikely(part_info->part_type != VERSIONING_PARTITION))
     {
-      my_error(ER_PARTITION_WRONG_TYPE, MYF(0), "SYSTEM_TIME");
+      part_type_error(thd, NULL, "SYSTEM_TIME", part_info);
       return true;
     }
   }
@@ -9774,7 +9775,7 @@ bool LEX::part_values_history(THD *thd)
   {
     if (unlikely(part_info->part_type != VERSIONING_PARTITION))
     {
-      my_error(ER_PARTITION_WRONG_TYPE, MYF(0), "SYSTEM_TIME");
+      part_type_error(thd, NULL, "SYSTEM_TIME", part_info);
       return true;
     }
   }
@@ -9799,6 +9800,7 @@ bool LEX::part_values_history(THD *thd)
   elem->type= partition_element::HISTORY;
   return false;
 }
+#endif /* WITH_PARTITION_STORAGE_ENGINE */
 
 
 bool LEX::last_field_generated_always_as_row_start_or_end(Lex_ident *p,

@@ -400,7 +400,7 @@ public:
   bool check_vcol_func_processor(void *arg) override
   {
     return mark_unsupported_function(func_name(), "()", arg,
-                                     VCOL_NON_DETERMINISTIC | VCOL_NOT_VIRTUAL);
+                                     VCOL_NON_DETERMINISTIC | VCOL_NEXTVAL);
   }
   Item *get_copy(THD *thd) override
   {
@@ -582,6 +582,7 @@ class Item_func_left :public Item_str_func
   String tmp_value;
 public:
   Item_func_left(THD *thd, Item *a, Item *b): Item_str_func(thd, a, b) {}
+  bool hash_not_null(Hasher *hasher) override;
   String *val_str(String *) override;
   bool fix_length_and_dec(THD *thd) override;
   LEX_CSTRING func_name_cstring() const override

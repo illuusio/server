@@ -662,8 +662,6 @@ public:
     MEM_NOACCESS(frame, srv_page_size);
 #ifdef MADV_FREE
     madvise(frame, srv_page_size, MADV_FREE);
-#elif defined(_WIN32)
-    DiscardVirtualMemory(frame, srv_page_size);
 #endif
   }
 
@@ -801,7 +799,7 @@ public:
   {
     ut_ad(fsp_is_system_temporary(id().space()));
     ut_ad(in_file());
-    ut_ad(!oldest_modification() || oldest_modification() == 2);
+    ut_ad((oldest_modification() | 2) == 2);
     oldest_modification_= 2;
   }
 

@@ -248,6 +248,29 @@ public:
 };
 
 
+class Recreate_info
+{
+  ha_rows m_records_copied;
+  ha_rows m_records_duplicate;
+public:
+  Recreate_info()
+   :m_records_copied(0),
+    m_records_duplicate(0)
+  { }
+  Recreate_info(ha_rows records_copied,
+                ha_rows records_duplicate)
+   :m_records_copied(records_copied),
+    m_records_duplicate(records_duplicate)
+  { }
+  ha_rows records_copied() const { return m_records_copied; }
+  ha_rows records_duplicate() const { return m_records_duplicate; }
+  ha_rows records_processed() const
+  {
+    return m_records_copied + m_records_duplicate;
+  }
+};
+
+
 #define TC_HEURISTIC_RECOVER_COMMIT   1
 #define TC_HEURISTIC_RECOVER_ROLLBACK 2
 extern ulong tc_heuristic_recover;
@@ -4362,6 +4385,8 @@ public:
   inline bool vio_ok() const { return TRUE; }
   inline bool is_connected() { return TRUE; }
 #endif
+
+   void my_ok_with_recreate_info(const Recreate_info &info, ulong warn_count);
   /**
     Mark the current error as fatal. Warning: this does not
     set any error, it sets a property of the error, so must be
@@ -6145,7 +6170,7 @@ class select_insert :public select_result_interceptor {
   int prepare(List<Item> &list, SELECT_LEX_UNIT *u);
   virtual int prepare2(JOIN *join);
   virtual int send_data(List<Item> &items);
-  virtual bool store_values(List<Item> &values, bool ignore_errors);
+  virtual bool store_values(List<Item> &values);
   virtual bool can_rollback_data() { return 0; }
   bool prepare_eof();
   bool send_ok_packet();
@@ -6190,7 +6215,7 @@ public:
   int prepare(List<Item> &list, SELECT_LEX_UNIT *u);
 
   int binlog_show_create_table(TABLE **tables, uint count);
-  bool store_values(List<Item> &values, bool ignore_errors);
+  bool store_values(List<Item> &values);
   bool send_eof();
   virtual void abort_result_set();
   virtual bool can_rollback_data() { return 1; }
@@ -6274,6 +6299,12 @@ public:
   uint  sum_func_count;   
   uint  hidden_field_count;
   uint	group_parts,group_length,group_null_parts;
+
+  /*
+    If we're doing a GROUP BY operation, shows which one is used:
+    true  TemporaryTableWithPartialSums algorithm (see end_update()).
+    false OrderedGroupBy algorithm (see end_write_group()).
+  */
   uint	quick_group;
   /**
     Enabled when we have atleast one outer_sum_func. Needed when used
@@ -7418,7 +7449,12 @@ inline int handler::ha_ft_read(uchar *buf)
 {
   int error= ft_read(buf);
   if (!error)
+  {
     update_rows_read();
+
+    if (table->vfield && buf == table->record[0])
+      table->update_virtual_fields(this, VCOL_UPDATE_FOR_READ);
+  }
 
   table->status=error ? STATUS_NOT_FOUND: 0;
   return error;
@@ -7616,6 +7652,19 @@ public:
   ~Check_level_instant_set()
   {
     m_thd->count_cuted_fields= m_check_level;
+  }
+};
+
+
+class Use_relaxed_field_copy: public Sql_mode_save,
+                              public Check_level_instant_set
+{
+public:
+  Use_relaxed_field_copy(THD *thd) :
+      Sql_mode_save(thd), Check_level_instant_set(thd, CHECK_FIELD_IGNORE)
+  {
+    thd->variables.sql_mode&= ~(MODE_NO_ZERO_IN_DATE | MODE_NO_ZERO_DATE);
+    thd->variables.sql_mode|= MODE_INVALID_DATES;
   }
 };
 

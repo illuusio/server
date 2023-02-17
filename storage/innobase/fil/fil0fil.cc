@@ -661,6 +661,7 @@ ATTRIBUTE_COLD bool fil_space_t::prepare_acquired()
 
   if (!is_open)
     release();
+  else if (node->deferred);
   else if (auto desired_size= recv_size)
   {
     bool success;
@@ -1428,7 +1429,7 @@ inline void mtr_t::log_file_op(mfile_type_t type, uint32_t space_id,
   ut_ad(strchr(path, '/'));
   ut_ad(!strcmp(&path[strlen(path) - strlen(DOT_IBD)], DOT_IBD));
 
-  flag_modified();
+  m_modifications= true;
   if (!is_logged())
     return;
   m_last= nullptr;
@@ -2701,10 +2702,6 @@ io_error:
 			     buf, offset, len);
 	}
 
-	/* We an try to recover the page from the double write buffer if
-	the decompression fails or the page is corrupt. */
-
-	ut_a(type.type == IORequest::DBLWR_RECOVER || err == DB_SUCCESS);
 	if (!type.is_async()) {
 		if (type.is_write()) {
 release_sync_write:
