@@ -1,9 +1,13 @@
-mariadb (1:10.11.2-1) UNRELEASED; urgency=medium
+mariadb (1:10.11.2-1) unstable; urgency=medium
 
-  * Open new changelog entry. This will automatically be replaced
-    by 'gbp dch -avR' before next release.
+  * New upstream release MariaDB 10.11.2 has been announced GA
+    (general availability) with long-term support and security updates
+    until spring 2028
+  * Autopkgetest improvements
+    - Fix incomplete variable rename in a3b6f3d7f4b
+    - Extend tracing to include MariaDB client and move traces to subdirectory
 
- -- Otto Kekäläinen <otto@debian.org>  Thu, 16 Feb 2023 22:26:58 -0800
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 16 Feb 2023 23:53:02 -0800
 
 mariadb (1:10.11.1-5) unstable; urgency=medium
 
