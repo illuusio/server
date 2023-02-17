@@ -80,14 +80,6 @@ ifeq ($(DEB_HOST_ARCH),s390x)
     export DEB_BUILD_OPTIONS += nocheck
 endif
 
-# Temporarily disable post-build MTR test suite to have less of a strain on the
-# Debian buildd build machines and random failures. The 1:10.11.1-4 upload
-# already showed the passing test results and anyway the upstream 'main' test
-# suite is not really designed to run thousands of tests on a dozen different
-# architectures and creates too much noise for a pure quality assurance /
-# validation purposes.
-export DEB_BUILD_OPTIONS += nocheck
-
 # Add support for verbose builds
 MAKEFLAGS += VERBOSE=1
 
