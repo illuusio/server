@@ -304,7 +304,7 @@ This was designed to fix https://bugs.debian.org/1029163
  */
 --- a/sql/sql_select.cc
 +++ b/sql/sql_select.cc
-@@ -27748,7 +27748,7 @@ bool JOIN_TAB::save_explain_data(Explain
+@@ -27868,7 +27868,7 @@ bool JOIN_TAB::save_explain_data(Explain
    if (thd->lex->analyze_stmt)
    {
      table->file->set_time_tracker(&eta->op_tracker);
