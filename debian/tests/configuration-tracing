@@ -52,9 +52,28 @@ trace() {
     # the correctness of the MariaDB build itself
     sed 's/OpenSSL 3.*/SSL-VERSION/' -i "$TEMPFILE"
 
-    # Misc counters and variable values
-    normalize_value open-files-limit 32000  # Depends on OS environment
-    normalize_value thread-pool-size 2      # Depends on CPU cores available
+    # Normalize values that depend on build environment
+    normalize_value system-time-zone UTC    # depends on OS environment
+    normalize_value open-files-limit 32000  # depends on OS environment
+    normalize_value thread-pool-size 2      # depends on CPU cores available
+    normalize_value version-compile-machine ARCH # x86_64, aarch64, armv7l ..
+
+    # armhf/armel might have: debian-linux-gnueabi, debian-linux-gnueabihf
+    normalize_value version-compile-OS debian-linux-gnu
+
+    # In Sid 'Debian n/a', in Bookworm 'Debian 12'
+    normalize_value version-comment "Debian RELEASE"
+
+    # 32-bit systems (i386, armel, armhf) have lower values
+    normalize_value innodb-io-capacity-max 18446744073709551615 # 32-bit: 4294967295
+    normalize_value max-binlog-cache-size 18446744073709547520 # 32-bit: 4294963200
+    normalize_value max-binlog-stmt-cache-size 18446744073709547520 # 32-bit: 4294963200
+    normalize_value myisam-max-sort-file-size 18446744073709551615 # 32-bit: 2146435072
+    normalize_value myisam-mmap-size 9223372036853727232 # 32-bit: 4294967295
+    normalize_value tmp-disk-table-size 18446744073709551615 # 32-bit: 4294967295
+
+    # ppc64el has larger default value: 393216
+    normalize_value log-tc-size 24576
 
     mv "$TEMPFILE" "$TRACE_NAME.actual"
   fi
@@ -64,8 +83,10 @@ trace() {
   if ! diff --ignore-space-change -u "$TRACE_NAME.expected" "$TRACE_NAME.actual"
   then
     echo "Error: Output from '$*' did NOT match what was expected"
-    # Just keep going for debugging purposes now..
-    #exit 1
+    echo
+    echo "If the change is intentional, update the debian/tests/traces to match"
+    echo "the new values and document change to users in mariadb-server.NEWS"
+    exit 1
   fi
 }
 

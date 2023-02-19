@@ -2786,8 +2786,8 @@ min-examined-row-limit                                       0
 mrr-buffer-size                                              262144
 myisam-block-size                                            1024
 myisam-data-pointer-size                                     6
-myisam-max-sort-file-size                                    9223372036853727232
-myisam-mmap-size                                             18446744073709551615
+myisam-max-sort-file-size                                    18446744073709551615
+myisam-mmap-size                                             9223372036853727232
 myisam-recover-options                                       BACKUP,QUICK
 myisam-repair-threads                                        1
 myisam-sort-buffer-size                                      134216704
@@ -2874,7 +2874,7 @@ performance-schema-setup-objects-size                        -1
 performance-schema-users-size                                -1
 pid-file                                                     /run/mysqld/mysqld.pid
 plugin-dir                                                   /usr/lib/mysql/plugin/
-plugin-maturity                                              stable
+plugin-maturity                                              gamma
 port                                                         3306
 port-open-timeout                                            0
 preload-buffer-size                                          32768
@@ -3027,8 +3027,8 @@ user-variables                                               ON
 userstat                                                     FALSE
 verbose                                                      TRUE
 version                                                      VERSION
-version-comment                                              Debian n/a
-version-compile-machine                                      x86_64
+version-comment                                              Debian RELEASE
+version-compile-machine                                      ARCH
 version-compile-os                                           debian-linux-gnu
 version-malloc-library                                       system
 version-source-revision                                      
