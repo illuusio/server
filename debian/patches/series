@@ -10,3 +10,4 @@ mroonga-mrn-lib-dirs-path-reproducible-build.patch
 2477.patch
 2482-hppa-large-page-size.patch
 debug-order_by_innodb.patch
+2504-cross-build-uca-dump.patch

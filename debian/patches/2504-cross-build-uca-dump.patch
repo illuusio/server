@@ -1,0 +1,39 @@
+Forwarded: https://github.com/MariaDB/server/pull/2504
+Origin: https://patch-diff.githubusercontent.com/raw/MariaDB/server/pull/2504.patch
+From: Helmut Grohne <helmut@subdivi.de>
+Subject: [PATCH] Fix uca-dump crosscompiling
+ Crosscompiling MariaDB 10.11 on Debian failed with:
+  [  2%] Generating ctype-uca1400data.h
+  cd /<<PKGBUILDDIR>>/builddir/strings && uca-dump --name-prefix=uca1400
+  --levels=3 /<<PKGBUILDDIR>>/mysql-test/std_data/unicode/allkeys1400.txt
+  > ctype-uca1400data.h
+  /bin/sh: 1: uca-dump: not found
+
+ If one assumes that uca-dump behaves the same on different architectures, then
+ fixing this issue is a relatively simple matter of adding it to exported
+ executables.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -483,7 +483,7 @@ ADD_SUBDIRECTORY(support-files)
+ ADD_SUBDIRECTORY(extra/aws_sdk)
+ 
+ IF(NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CROSSCOMPILING_EMULATOR)
+-  SET(EXPORTED comp_err comp_sql factorial)
++  SET(EXPORTED comp_err comp_sql factorial uca-dump)
+   IF(NOT WITHOUT_SERVER)
+     SET(EXPORTED ${EXPORTED} gen_lex_hash gen_lex_token)
+   ENDIF()
+--- a/strings/CMakeLists.txt
++++ b/strings/CMakeLists.txt
+@@ -41,7 +41,9 @@ ADD_EXECUTABLE(conf_to_src EXCLUDE_FROM_
+ SET_TARGET_PROPERTIES(conf_to_src PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD TRUE)
+ TARGET_LINK_LIBRARIES(conf_to_src mysys strings)
+ 
+-ADD_EXECUTABLE(uca-dump uca-dump.c)
++IF(NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CROSSCOMPILING_EMULATOR)
++  ADD_EXECUTABLE(uca-dump uca-dump.c)
++ENDIF()
+ 
+ ADD_CUSTOM_COMMAND(
+   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ctype-uca1400data.h
