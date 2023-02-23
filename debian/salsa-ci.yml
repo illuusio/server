@@ -419,7 +419,9 @@ mariadb-10.5 and Bullseye upgrade:
     - *test-enable-sid-repos
     # Ensure mariadbd will not crash on next shutdown for any reason
     - service mariadb restart
-    - *test-install  # Using full-upgrade not possible here due to usrmerge
+    # Apply usrmerge workaround: https://salsa.debian.org/mariadb-team/mariadb-server/-/merge_requests/18#note_374610
+    - echo 'this system will not be supported in the future' > /etc/unsupported-skip-usrmerge-conversion
+    - *test-full-upgrade
     - service mariadb status  # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
   variables:
@@ -447,7 +449,9 @@ mariadb-10.3 and Buster upgrade:
     - *test-enable-sid-repos
     # Ensure mariadbd will not crash on next shutdown for any reason
     - service mysql restart # in 10.3 service name is still 'mysql'
-    - *test-install  # Using full-upgrade not possible here due to usrmerge
+    # Apply usrmerge workaround: https://salsa.debian.org/mariadb-team/mariadb-server/-/merge_requests/18#note_374610
+    - echo 'this system will not be supported in the future' > /etc/unsupported-skip-usrmerge-conversion
+    - *test-full-upgrade
     # mariadb-10.3 in Buster ships a /etc/init.d/mysql and it continues to exist
     # after upgrade, but is be removed on purge
     - service mysql status || service mariadb status
