@@ -321,6 +321,40 @@ blhc:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
+.salsa-ci-template-for-mariadb-upgrade:
+  stage: test
+  needs:
+    - job: build
+  image: debian:${RELEASE}
+  artifacts:
+    when: always
+    name: "$CI_BUILD_NAME"
+    paths:
+      - ${WORKING_DIR}/debug
+  before_script:
+    - *test-prepare-container
+    - apt-get -qq install --no-install-recommends --yes ca-certificates curl
+    - |
+      [[ -d /etc/apt/keyrings ]] || mkdir /etc/apt/keyrings
+      curl -sS https://mariadb.org/mariadb_release_signing_key.pgp -o /etc/apt/keyrings/mariadb-keyring.pgp
+      cat >/etc/apt/sources.list.d/mariadb.sources <<EOF
+      X-Repolib-Name: MariaDB
+      Types: deb
+      URIs: https://deb.mariadb.org/${MARIADB_VERSION}/debian
+      Suites: ${RELEASE}
+      Components: main
+      Signed-By: /etc/apt/keyrings/mariadb-keyring.pgp
+      EOF
+    - apt-get update -qq
+  script:
+    - echo "This script section must be overridden in each test" && exit 1
+  variables:
+    GIT_STRATEGY: none
+    MARIADB_VERSION: "10.0"
+  except:
+    variables:
+      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
+
 fresh install:
   extends: .salsa-ci-template-for-mariadb
   script:
@@ -665,14 +699,11 @@ mysql-community-cluster-8.0 from MySQL.com with Bullseye backports upgrade:
     - *test-verify-final
 
 mariadb.org-10.11 upgrade:
-  extends: .salsa-ci-template-for-mariadb
+  extends: .salsa-ci-template-for-mariadb-upgrade
   stage: upgrade MariaDB variant
+  variables:
+    MARIADB_VERSION: "10.11"
   script:
-    - *test-prepare-container
-    - apt install -y curl
-    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://deb.mariadb.org/10.11/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update
     - apt-get install -y mariadb-server
     - *test-verify-initial
     # Install MariaDB built in this commit
@@ -685,14 +716,11 @@ mariadb.org-10.11 upgrade:
     - *test-verify-final
 
 mariadb.org-10.10 upgrade:
-  extends: .salsa-ci-template-for-mariadb
+  extends: .salsa-ci-template-for-mariadb-upgrade
   stage: upgrade MariaDB variant
+  variables:
+    MARIADB_VERSION: "10.10"
   script:
-    - *test-prepare-container
-    - apt install -y curl
-    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://deb.mariadb.org/10.10/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update
     # this should not use Sid to begin with
     - apt-get install -y mariadb-server=1:10.10.2+maria~debunstable mariadb-client=1:10.10.2+maria~debunstable
     - *test-verify-initial
@@ -701,14 +729,11 @@ mariadb.org-10.10 upgrade:
     - *test-verify-final
 
 mariadb.org-10.9 upgrade:
-  extends: .salsa-ci-template-for-mariadb
+  extends: .salsa-ci-template-for-mariadb-upgrade
   stage: upgrade MariaDB variant
+  variables:
+    MARIADB_VERSION: "10.9"
   script:
-    - *test-prepare-container
-    - apt install -y curl
-    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://deb.mariadb.org/10.9/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update
     # this should not use Sid to begin with
     - apt-get install -y mariadb-server=1:10.9.4+maria~debunstable mariadb-client=1:10.9.4+maria~debunstable
     - *test-verify-initial
@@ -717,14 +742,11 @@ mariadb.org-10.9 upgrade:
     - *test-verify-final
 
 mariadb.org-10.8 upgrade:
-  extends: .salsa-ci-template-for-mariadb
+  extends: .salsa-ci-template-for-mariadb-upgrade
   stage: upgrade MariaDB variant
+  variables:
+    MARIADB_VERSION: "10.8"
   script:
-    - *test-prepare-container
-    - apt install -y curl
-    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://deb.mariadb.org/10.8/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update
     - apt-get install -y mariadb-server-10.8
     - *test-verify-initial
     - *test-install-all
@@ -732,14 +754,11 @@ mariadb.org-10.8 upgrade:
     - *test-verify-final
 
 mariadb.org-10.7 upgrade:
-  extends: .salsa-ci-template-for-mariadb
+  extends: .salsa-ci-template-for-mariadb-upgrade
   stage: upgrade MariaDB variant
+  variables:
+    MARIADB_VERSION: "10.7"
   script:
-    - *test-prepare-container
-    - apt install -y curl
-    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://deb.mariadb.org/10.7/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update
     - apt-get install -y mariadb-server-10.7
     - *test-verify-initial
     - *test-install-all
@@ -747,14 +766,11 @@ mariadb.org-10.7 upgrade:
     - *test-verify-final
 
 mariadb.org-10.6 upgrade:
-  extends: .salsa-ci-template-for-mariadb
+  extends: .salsa-ci-template-for-mariadb-upgrade
   stage: upgrade MariaDB variant
+  variables:
+    MARIADB_VERSION: "10.6"
   script:
-    - *test-prepare-container
-    - apt-get -qq install --no-install-recommends --yes ca-certificates curl
-    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://deb.mariadb.org/10.6/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update -qq
     # Package libmariadbclient-dev from mariadb.org conflicts with libmariadb-dev in Sid, so cannot use wildcard that would include it
     # Enable this line when there is a way to install them only from the mariadb.org repo
     # - apt-get install -y 'mariadb*' libmariadb3 'libmariadb-*' 'libmariadbd*'
@@ -766,14 +782,11 @@ mariadb.org-10.6 upgrade:
 
 # archive.mariadb.org for Debian Sid latest is 10.5.13
 mariadb.org-10.5 upgrade:
-  extends: .salsa-ci-template-for-mariadb
+  extends: .salsa-ci-template-for-mariadb-upgrade
   stage: upgrade MariaDB variant
+  variables:
+    MARIADB_VERSION: "10.5"
   script:
-    - *test-prepare-container
-    - apt-get -qq install --no-install-recommends --yes ca-certificates curl
-    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://archive.mariadb.org/mariadb-10.5/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update -qq
     - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.5
     - *test-verify-initial
@@ -783,14 +796,11 @@ mariadb.org-10.5 upgrade:
 
 # archive.mariadb.org for Debian Sid latest is 10.4.17
 mariadb.org-10.4 upgrade:
-  extends: .salsa-ci-template-for-mariadb
+  extends: .salsa-ci-template-for-mariadb-upgrade
   stage: upgrade MariaDB variant
+  variables:
+    MARIADB_VERSION: "10.4"
   script:
-    - *test-prepare-container
-    - apt-get -qq install --no-install-recommends --yes ca-certificates curl systemctl # systemctl shim needed on platforms that don't have systemd
-    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://archive.mariadb.org/mariadb-10.4/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update -qq
     - *test-install-readline-in-sid-for-backwards-compat
     - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.4
@@ -806,14 +816,11 @@ mariadb.org-10.4 upgrade:
 
 # archive.mariadb.org for Debian Sid latest is 10.3.27
 mariadb.org-10.3 upgrade:
-  extends: .salsa-ci-template-for-mariadb
+  extends: .salsa-ci-template-for-mariadb-upgrade
   stage: upgrade MariaDB variant
+  variables:
+    MARIADB_VERSION: "10.3"
   script:
-    - *test-prepare-container
-    - apt-get -qq install --no-install-recommends --yes ca-certificates curl
-    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://archive.mariadb.org/mariadb-10.3/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update -qq
     - *test-install-readline-in-sid-for-backwards-compat
     - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.3
@@ -829,14 +836,11 @@ mariadb.org-10.3 upgrade:
 
 # archive.mariadb.org for Debian Sid latest is 10.2.21
 mariadb.org-10.2 upgrade:
-  extends: .salsa-ci-template-for-mariadb
+  extends: .salsa-ci-template-for-mariadb-upgrade
   stage: upgrade MariaDB variant
+  variables:
+    MARIADB_VERSION: "10.2"
   script:
-    - *test-prepare-container
-    - apt-get -qq install --no-install-recommends --yes ca-certificates curl
-    - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://archive.mariadb.org/mariadb-10.2/repo/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
-    - apt-get update -qq
     - *test-install-readline-in-sid-for-backwards-compat
     - *test-install-openssl1-in-sid-for-backwards-compat
     - apt-get install -y mariadb-server-10.2
