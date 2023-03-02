@@ -64,11 +64,11 @@ https://mariadb.com/kb/en/mariadb/development/release-notes/
 
 Download new source package:
 
-    git checkout 10.6
-    git pull --tags upstream 10.6
-    git tag -v mariadb-10.6.12
+    git checkout 10.11
+    git pull --tags upstream 10.11
+    git tag -v mariadb-10.11.3
     git checkout debian/latest
-    git merge -v mariadb-10.6.12
+    git merge -v mariadb-10.11.3
 
 Refresh patches:
 
@@ -136,7 +136,7 @@ Once you are sure there are no regressions, finally upload to Debian:
     dput ftp-master *.changes
 
 After the upload, check that everything is OK at
-* https://tracker.debian.org/mariadb-10.6 (Debian)
+* https://tracker.debian.org/mariadb (Debian)
 * https://launchpad.net/ubuntu/+source/mariadb-10.6 (Ubuntu)
 
 ## Maintaining translations

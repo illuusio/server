@@ -264,7 +264,7 @@ The source files of the Debian maintainer scripts are not the final ones, as the
 package building stage may make changes and additions to them. To view a
 maintainer script in the final form on an installed system run:
 
-    cat /var/lib/dpkg/info/mariadb-server-10.5.postinst
+    cat /var/lib/dpkg/info/mariadb-server.postinst
 
 To review the my.cnf status run:
 
