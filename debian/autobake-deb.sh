@@ -17,6 +17,7 @@ set -e
 export DEB_BUILD_OPTIONS="nocheck $DEB_BUILD_OPTIONS"
 
 source ./VERSION
+
 # General CI optimizations to keep build output smaller
 if [[ $GITLAB_CI ]]
 then
@@ -34,7 +35,7 @@ then
   then
     cp -v storage/columnstore/columnstore/debian/mariadb-plugin-columnstore.* debian/
     echo >> debian/control
-    cat storage/columnstore/columnstore/debian/control >> debian/control
+    sed "s/-10.6//" <storage/columnstore/columnstore/debian/control >> debian/control
   fi
 fi
 
@@ -65,6 +66,12 @@ disable_pmem()
 {
   sed '/libpmem-dev/d' -i debian/control
   sed '/-DWITH_PMEM=YES/d' -i debian/rules
+}
+
+disable_libfmt()
+{
+  # 7.0+ required
+  sed '/libfmt-dev/d' -i debian/control
 }
 
 architecture=$(dpkg-architecture -q DEB_BUILD_ARCH)
@@ -105,6 +112,7 @@ in
     disable_pmem
     ;&
   buster)
+    disable_libfmt
     replace_uring_with_aio
     if [ ! "$architecture" = amd64 ]
     then
@@ -134,8 +142,9 @@ in
     ;&
   focal)
     replace_uring_with_aio
+    disable_libfmt
     ;&
-  impish|jammy|kinetic)
+  impish|jammy|kinetic|lunar)
     # mariadb-plugin-rocksdb s390x not supported by us (yet)
     # ubuntu doesn't support mips64el yet, so keep this just
     # in case something changes.
