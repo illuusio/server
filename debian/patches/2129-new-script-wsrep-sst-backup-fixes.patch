@@ -1,6 +1,6 @@
 Forwarded: https://github.com/MariaDB/server/pull/2129
 Origin: https://patch-diff.githubusercontent.com/raw/MariaDB/server/pull/2129.patch
-From: =?UTF-8?q?Otto=20Kek=C3=A4l=C3=A4inen?= <otto@kekalainen.net>
+From: Otto Kekäläinen <otto@kekalainen.net>
 Date: Sun, 22 May 2022 10:13:33 -0700
 Subject: [PATCH] Properly introduce wsrep_sst_backup script in project
  packaging

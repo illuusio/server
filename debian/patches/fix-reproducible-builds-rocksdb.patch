@@ -1,4 +1,4 @@
-Origin: upstream, https://github.com/facebook/rocksdb/commit/0a9a05ae12943b1529ef1eabbca5ce5a71c986bf
+Origin: https://github.com/facebook/rocksdb/commit/0a9a05ae12943b1529ef1eabbca5ce5a71c986bf
 # Merged in RocksDB 6.19.3, but not updated into MariaDB yet
 Bug: https://github.com/facebook/rocksdb/issues/7035
 Author: Otto Kekäläinen <otto@kekalainen.net>

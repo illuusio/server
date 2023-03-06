@@ -1,8 +1,5 @@
-Origin: https://github.com/MariaDB/server/pull/2477
-Author: Daniel Black <daniel@mariadb.org>
-Subject: [PATCH] MDEV-30554 RockDB libatomic linking on riscv64
-
-From 845e00f06c14b319e7c8511329f2d6f5afc82fbb Mon Sep 17 00:00:00 2001
+Forwarded: https://github.com/MariaDB/server/pull/2477
+Origin: https://patch-diff.githubusercontent.com/raw/MariaDB/server/pull/2477.patch
 From: Daniel Black <daniel@mariadb.org>
 Date: Fri, 3 Feb 2023 11:51:20 +1100
 Subject: [PATCH] MDEV-30554 RockDB libatomic linking on riscv64

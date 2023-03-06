@@ -4,10 +4,9 @@ env-perl-usr-bin-perl.patch
 fix-spelling-rocksdb.patch
 fix-reproducible-builds-rocksdb.patch
 mroonga-mrn-lib-dirs-path-reproducible-build.patch
-2006-kfreebsd-amd64.patch
 2129-new-script-wsrep-sst-backup-fixes.patch
 2448-explain_json_format_partitions-mismatch.patch
-2477.patch
+2477-rocksdb-atomic-riscv64.patch
 2482-hppa-large-page-size.patch
 debug-order_by_innodb.patch
 2504-cross-build-uca-dump.patch

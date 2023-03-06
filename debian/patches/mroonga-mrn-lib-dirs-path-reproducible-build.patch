@@ -1,7 +1,7 @@
-Origin: upstream, https://github.com/mroonga/mroonga/issues/298#issuecomment-1030815927
-Bug: https://github.com/mroonga/mroonga/issues/298
 Forwarded: not-needed
-Author: Sutou Kouhei <kou@clear-code.com>
+Origin: https://github.com/mroonga/mroonga/issues/298#issuecomment-1030815927
+Bug: https://github.com/mroonga/mroonga/issues/298
+From: Sutou Kouhei <kou@clear-code.com>
 Date: Sat, 5 Feb 2022 11:05:39 +0900
 Subject: [PATCH] cmake: add support for reproducible buildS
  .

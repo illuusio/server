@@ -1,6 +1,7 @@
 Forwarded: https://github.com/MariaDB/server/pull/2504
 Origin: https://patch-diff.githubusercontent.com/raw/MariaDB/server/pull/2504.patch
 From: Helmut Grohne <helmut@subdivi.de>
+Date: Tue, 21 Feb 2023 12:04:45 +0200
 Subject: [PATCH] Fix uca-dump crosscompiling
  Crosscompiling MariaDB 10.11 on Debian failed with:
   [  2%] Generating ctype-uca1400data.h

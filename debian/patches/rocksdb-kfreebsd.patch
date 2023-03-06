@@ -1,6 +1,8 @@
 Forwarded: https://github.com/facebook/rocksdb/pull/6992
+From: Andrew Kryczka <andrewkr@fb.com>
+Date: Tue, 16 Jun 2020 19:34:21 -0700
 # Merged in RocksDB 6.13.fb, but not updated into MariaDB yet
-Forwarded: https://jira.mariadb.org/browse/MDEV-19251
+Bug: https://jira.mariadb.org/browse/MDEV-19251
 Description:
  Upstream has merged this but we still need to wait for it to be included
  in a RocksDB release and imported into MariaDB and then into Debian.
