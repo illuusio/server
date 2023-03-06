@@ -128,7 +128,9 @@ then
 fi
 
 # If there is no debian-*.flag, and no version was detected, but a file that
-# indicated MySQL 8.0 is found, assume so and trigger data directory moval.
+# indicated MySQL 8.0 is found (undo_001 is created by default in MySQL 8.0+
+# installs), then that file is enough of additional indication to trigger the
+# move of the data directory.
 if [ -z "$found_version" ] &&
    [ -z "$(find $mysql_datadir/debian-*.flag 2> /dev/null)" ] &&
    [ -f "$mysql_datadir/undo_001" ]
