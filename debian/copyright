@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: MariaDB Server
-Upstream-Contact: https://mariadb.org/jira
+Upstream-Contact: https://jira.mariadb.org
 Source: https://github.com/MariaDB/server
 Comment:
  Originally produced by a modified version of licensecheck2dep5
@@ -725,7 +725,6 @@ License: BSD-2-Clause
 Files: storage/archive/azio.c
  storage/archive/azlib.h
  zlib/*
- libmariadb/zlib/*
 Copyright:
  1995-2005 Jean-loup Gailly
  1995-2005 Mark Adler
@@ -745,13 +744,6 @@ License: zlib/libpng
   2. Altered source versions must be plainly marked as such, and must not be
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
-
-Files: */CMakeLists.txt
-Copyright:
- 2006-2011,2013 Oracle and/or its affiliates
- 2009, 2010 Sun Microsystems, Inc
- 2006,2007 MySQL AB
-License: GPL-2
 
 Files: mysys/CMakeLists.txt
 Copyright: 2006, 2014, Oracle and/or its affiliates

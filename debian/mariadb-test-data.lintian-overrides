@@ -1,8 +1,6 @@
 # These should be moved, see https://jira.mariadb.org/browse/MDEV-21654
 arch-dependent-file-in-usr-share [usr/share/mysql/mysql-test/suite/plugins/pam/pam_mariadb_mtr.so]
 arch-independent-package-contains-binary-or-object [usr/share/mysql/mysql-test/suite/plugins/pam/pam_mariadb_mtr.so]
-arch-dependent-file-in-usr-share usr/share/mysql/mysql-test/suite/plugins/pam/pam_mariadb_mtr.so
-arch-independent-package-contains-binary-or-object usr/share/mysql/mysql-test/suite/plugins/pam/pam_mariadb_mtr.so
 # Intentional for test files
 national-encoding [usr/share/mysql/mysql-test/*]
 # Extra test documentation files that really need to be kept in context in test directory
@@ -23,5 +21,6 @@ repeated-path-segment sphinx [usr/share/mysql/mysql-test/plugin/sphinx/sphinx/]
 repeated-path-segment spider [usr/share/mysql/mysql-test/plugin/spider/spider/]
 repeated-path-segment type_inet [usr/share/mysql/mysql-test/plugin/type_inet/type_inet/]
 repeated-path-segment type_test [usr/share/mysql/mysql-test/plugin/type_test/type_test/]
+repeated-path-segment type_uuid [usr/share/mysql/mysql-test/plugin/type_uuid/type_uuid/]
 repeated-path-segment user_variables [usr/share/mysql/mysql-test/plugin/user_variables/user_variables/]
 repeated-path-segment wsrep_info [usr/share/mysql/mysql-test/plugin/wsrep_info/wsrep_info/]
