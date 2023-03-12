@@ -303,7 +303,7 @@ blhc:
     g++ b1031863.cpp -l mysqlclient && ./a.out
 
 
-fresh install:
+.salsa-ci-template-for-mariadb:
   stage: test
   needs:
     - job: build
@@ -314,48 +314,37 @@ fresh install:
     paths:
       - ${WORKING_DIR}/debug
   script:
-    - *test-prepare-container
-    - *test-install-all
-    - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
-    - *test-verify-final
+    - echo "This script section must be overridden in each test" && exit 1
   variables:
     GIT_STRATEGY: none
   except:
     variables:
       - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
+fresh install:
+  extends: .salsa-ci-template-for-mariadb
+  script:
+    - *test-prepare-container
+    - *test-install-all
+    - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
+    - *test-verify-final
+
 simple upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get install -y 'default-mysql*' ${BUILT_PACKAGES}
     - *test-full-upgrade
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb-10.5 with Bullseye backports upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB
   needs:
     - job: build bullseye-backports
   image: debian:bullseye
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     # Install everything MariaDB currently in Debian Buster
@@ -366,22 +355,11 @@ mariadb-10.5 with Bullseye backports upgrade:
     - *test-full-upgrade
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb-10.6 and Bookworm-20230208 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB and distro
-  needs:
-    - job: build
   image: debian:bookworm-20230208
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - |
@@ -398,22 +376,11 @@ mariadb-10.6 and Bookworm-20230208 upgrade:
     - *test-full-upgrade
     - service mariadb status  # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb-10.5 and Bullseye upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB and distro
-  needs:
-    - job: build
   image: debian:bullseye
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     # Install everything MariaDB currently in Debian Bullseye
@@ -426,22 +393,11 @@ mariadb-10.5 and Bullseye upgrade:
     - *test-full-upgrade
     - service mariadb status  # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb-10.3 and Buster upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB and distro
-  needs:
-    - job: build
   image: debian:buster
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     # Install everything MariaDB currently in Debian Buster
@@ -456,22 +412,9 @@ mariadb-10.3 and Buster upgrade:
     # after upgrade, but is be removed on purge
     - service mysql status || service mariadb status
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 test basic features:
-  stage: test
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
+  extends: .salsa-ci-template-for-mariadb
   script:
     - *test-prepare-container
     - *test-install-all
@@ -537,38 +480,22 @@ test basic features:
       grep --quiet TLSv1.3 result
       mariadb -Bse 'SHOW SESSION STATUS' | grep -i -e tls -e ssl | tee result
       grep --quiet TLSv1.3 result
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # Install Cacti, which in uses dbconfig-common to configure the MariaDB user and
 # connection automatically in order to validate that at least one downstream
 # server consumer continues to work.
 test consumer cacti:
-  stage: test
-  needs:
-    - job: build
-  image: debian:${RELEASE}
+  extends: .salsa-ci-template-for-mariadb
   script:
     - *test-prepare-container
     - *test-enable-artifacts-repo
     - apt-get install -y cacti
     - mariadb -E -e "SHOW CREATE TABLE version;" cacti
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # Build a piece of software that was designed for libmysqlclient-dev but using the
 # libmariadb-dev-compat layer. Should always end up using libmariadb.so.3 run-time.
 build mariadbclient consumer Python-MySQLdb:
-  stage: test
-  needs:
-    - job: build
-  image: debian:${RELEASE}
+  extends: .salsa-ci-template-for-mariadb
   script:
     - *test-prepare-container
     - *test-install-all-libs
@@ -582,22 +509,10 @@ build mariadbclient consumer Python-MySQLdb:
     - pip3 install --break-system-packages mysqlclient # Compiles module against libmysqlclient
     - apt-get purge -y libmariadb-dev # Not needed for run-time
     - python3 -c "import MySQLdb; print(MySQLdb.get_client_info())"
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 libmysql* to libmariadb* upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     # Install all libmysql* available in Debian unstable
@@ -617,40 +532,21 @@ libmysql* to libmariadb* upgrade:
     - pkg-config --list-all
     - apt-get install -y default-libmysqlclient-dev default-libmysqld-dev
     - *test-verify-libs
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 default-libmysqlclient-dev upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get install -y pkg-config default-libmysqlclient-dev default-libmysqld-dev
     - pkg-config --list-all
     - *test-full-upgrade-libs
     - *test-verify-libs
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 default-libmysqlclient-dev and Bullseye upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB and distro
-  needs:
-    - job: build
   image: debian:bullseye
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get install -y pkg-config default-libmysqlclient-dev
@@ -658,20 +554,11 @@ default-libmysqlclient-dev and Bullseye upgrade:
     - *test-enable-sid-repos
     - *test-full-upgrade-libs
     - *test-verify-libs
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 default-libmysqlclient-dev and Buster upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB and distro
-  needs:
-    - job: build
   image: debian:buster
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get install -y pkg-config default-libmysqlclient-dev
@@ -679,20 +566,13 @@ default-libmysqlclient-dev and Buster upgrade:
     - *test-enable-sid-repos
     - *test-full-upgrade-libs
     - *test-verify-libs
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 default-libmysqlclient-dev with Bullseye backports upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB
   needs:
     - job: build bullseye-backports
   image: debian:bullseye
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get install -y pkg-config default-libmysqlclient-dev
@@ -700,22 +580,13 @@ default-libmysqlclient-dev with Bullseye backports upgrade:
     - *test-enable-bullseye-backports-repos
     - *test-full-upgrade-libs
     - *test-verify-libs
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # Upgrading from MySQL 8.0 with datadir in place is not possible. Users need to do a data dump.
 # The Debian maintainer scripts detect this situation and simply moves old datadir aside and start fresh.
 mysql-8.0 in Sid upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
   image: debian:sid
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     # The postinst fails often if 'ps' is missing from system, so install procps
@@ -733,11 +604,6 @@ mysql-8.0 in Sid upgrade:
     - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
     - service mysql status || service mariadb status
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # Upgrading from MySQL 8.0 with datadir in place is not possible. Users need to do a data dump.
 # The Debian maintainer scripts detect this situation and simply moves old datadir aside and start fresh.
@@ -745,15 +611,11 @@ mysql-8.0 in Sid upgrade:
 # Testing on Focal binaries on Buster works. Using Jammy binaries on Bullseye
 # does not work as libc in Jammy is too new.
 mysql-8.0 from Ubuntu 22.04 with Bullseye backports upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
   needs:
     - job: build bullseye-backports
   image: debian:bullseye
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     # Add Ubuntu Focal archive keys and repository
@@ -771,24 +633,15 @@ mysql-8.0 from Ubuntu 22.04 with Bullseye backports upgrade:
     - service mysql status
     - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # Upgrading from MySQL 8.0 with datadir in place is not possible. Users need to do a data dump.
 # The Debian maintainer scripts detect this situation and simply moves old datadir aside and start fresh.
 mysql-community-cluster-8.0 from MySQL.com with Bullseye backports upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
   needs:
     - job: build bullseye-backports
   image: debian:bullseye
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get install --no-install-recommends --yes ca-certificates curl systemctl
@@ -810,22 +663,10 @@ mysql-community-cluster-8.0 from MySQL.com with Bullseye backports upgrade:
     - mysql -e 'SELECT VERSION()' || true
     - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb.org-10.11 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt install -y curl
@@ -842,22 +683,10 @@ mariadb.org-10.11 upgrade:
     - mariadb --version # Client version
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb.org-10.10 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt install -y curl
@@ -870,22 +699,10 @@ mariadb.org-10.10 upgrade:
     - *test-full-upgrade
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb.org-10.9 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt install -y curl
@@ -898,22 +715,10 @@ mariadb.org-10.9 upgrade:
     - *test-full-upgrade
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb.org-10.8 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt install -y curl
@@ -925,22 +730,10 @@ mariadb.org-10.8 upgrade:
     - *test-install-all
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb.org-10.7 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt install -y curl
@@ -952,22 +745,10 @@ mariadb.org-10.7 upgrade:
     - *test-install-all
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mariadb.org-10.6 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get -qq install --no-install-recommends --yes ca-certificates curl
@@ -982,23 +763,11 @@ mariadb.org-10.6 upgrade:
     - *test-install-all
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # archive.mariadb.org for Debian Sid latest is 10.5.13
 mariadb.org-10.5 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get -qq install --no-install-recommends --yes ca-certificates curl
@@ -1011,23 +780,11 @@ mariadb.org-10.5 upgrade:
     - *test-install-all
     - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # archive.mariadb.org for Debian Sid latest is 10.4.17
 mariadb.org-10.4 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get -qq install --no-install-recommends --yes ca-certificates curl systemctl # systemctl shim needed on platforms that don't have systemd
@@ -1046,23 +803,11 @@ mariadb.org-10.4 upgrade:
     - service mysql status
     - service mariadb status
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # archive.mariadb.org for Debian Sid latest is 10.3.27
 mariadb.org-10.3 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get -qq install --no-install-recommends --yes ca-certificates curl
@@ -1081,23 +826,11 @@ mariadb.org-10.3 upgrade:
     # fail on non-existing mariadb.sys user
     - sleep 15
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 # archive.mariadb.org for Debian Sid latest is 10.2.21
 mariadb.org-10.2 upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
-  needs:
-    - job: build
-  image: debian:${RELEASE}
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - apt-get -qq install --no-install-recommends --yes ca-certificates curl
@@ -1124,22 +857,13 @@ mariadb.org-10.2 upgrade:
     # fail on non-existing mariadb.sys user
     - sleep 15
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 mysql.com-5.7 with Bullseye backports upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
   needs:
     - job: build bullseye-backports
   image: debian:bullseye
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - |
@@ -1164,22 +888,13 @@ mysql.com-5.7 with Bullseye backports upgrade:
     - service mysql status || service mariadb status
     - sleep 15 # Give the mysql_upgrade a bit of extra time to complete with MySQL 5.7 before querying the server
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
 
 percona-xtradb-5.7 with Bullseye backports upgrade:
+  extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
   needs:
     - job: build bullseye-backports
   image: debian:bullseye
-  artifacts:
-    when: always
-    name: "$CI_BUILD_NAME"
-    paths:
-      - ${WORKING_DIR}/debug
   script:
     - *test-prepare-container
     - |
@@ -1196,8 +911,3 @@ percona-xtradb-5.7 with Bullseye backports upgrade:
     - service mysql status
     - sleep 15 # Give the mysql_upgrade a bit of extra time to complete with MySQL 5.7 before querying the server
     - *test-verify-final
-  variables:
-    GIT_STRATEGY: none
-  except:
-    variables:
-      - $CI_COMMIT_TAG != null && $SALSA_CI_ENABLE_PIPELINE_ON_TAGS !~ /^(1|yes|true)$/
