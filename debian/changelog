@@ -1,9 +1,19 @@
-mariadb (1:10.11.2-2) UNRELEASED; urgency=medium
+mariadb (1:10.11.2-2~exp1) experimental; urgency=medium
 
-  * Open new changelog entry. This will automatically be replaced
-    by 'gbp dch -avR' before next release.
+  [ Otto Kekäläinen ]
+  * Update NEWS to summarize what is new in MariaDB 10.11 (compared to 10.6)
+  * Add patch to better diagnose potential failures in main.order_by_innodb
+  * Add patch to fix cross-compilation failure on uca-dump (Closes: #1029165)
+  * Update and activate configuration tracing in autopkgtests
+  * Refresh patches metadata
+  * Update upstream signing key
+  * Fix dependency of obsolete libncurses5-dev
+  * Sync downstream (where applicable) with upstream 10.11 debian/* contents
 
- -- Otto Kekäläinen <otto@debian.org>  Fri, 17 Feb 2023 08:03:04 -0800
+  [ Ekaterine Papava ]
+  * Add Georgian translation (error messages)
+
+ -- Otto Kekäläinen <otto@debian.org>  Sun, 12 Mar 2023 16:32:03 -0700
 
 mariadb (1:10.11.2-1) unstable; urgency=medium
 
