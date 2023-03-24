@@ -11,3 +11,4 @@ mroonga-mrn-lib-dirs-path-reproducible-build.patch
 debug-order_by_innodb.patch
 2504-cross-build-uca-dump.patch
 2524-georgian-translation.patch
+2541-fix-stack-overflow-in-pinbox-allocator.patch
