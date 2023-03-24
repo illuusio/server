@@ -14,3 +14,4 @@ debug-order_by_innodb.patch
 2541-fix-stack-overflow-in-pinbox-allocator.patch
 2555-mysql-5.7-migration-innodb-table-stats.patch
 2509-fix-compiler-warnings.patch
+2547-addr2line-improvements.patch

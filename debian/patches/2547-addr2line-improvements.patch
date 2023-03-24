@@ -1,0 +1,79 @@
+Forwarded: https://github.com/MariaDB/server/pull/2457
+Origin: https://patch-diff.githubusercontent.com/raw/MariaDB/server/pull/2547.patch
+From: Hugo Wen <wenhug@amazon.com>
+Date: Fri, 10 Mar 2023 23:59:31 +0000
+Subject: [PATCH] Handle meaningless addr2line results and increase timeout
+
+MariaDB server prints the stack information if a crash happens.
+
+It traverses the stack frames in function `print_with_addr_resolve`.
+For *EACH* frame, it tries to parse the file name and line number of the
+frame using `addr2line`, or prints `backtrace_symbols_fd` if `addr2line`
+fails.
+
+1. Logic in `addr_resolve` function uses addr2line to get the file name
+   and line numbers. It has a timeout of 500ms to wait for the response
+   from addr2line. However, that's not enough on small instances
+   especially if the debug information is in a separate file or
+   compressed.
+
+   Increase the timeout to 5 seconds to support some edge case that
+   addr2line is slow.
+
+2. While parsing a frame inside of a shared library using `addr2line`,
+   the file name and line numbers could be `??`, empty or `0` if the
+   debug info is not loaded.
+   It's easy to reproduce when glibc-debuginfo is not installed.
+
+   Instead of printing a meaningless frame like:
+
+       :0(__GI___poll)[0x1505e9197639]
+       ...
+       ??:0(__libc_start_main)[0x7ffff6c8913a]
+
+   We want to print the frame information using `backtrace_symbols_fd`,
+   with the shared library name and a hexadecimal offset.
+   Stacktrace example on a real instance with this commit:
+
+       /lib64/libc.so.6(__poll+0x49)[0x145cbf71a639]
+       ...
+       /lib64/libc.so.6(__libc_start_main+0xea)[0x7f4d0034d13a]
+
+   `addr_resolve` has considered the case of meaningless combination of
+   file name and line number returned by `addr2line`. e.g. `??:?`
+   However, conditions like `:0` and `??:0` are not handled. So now the
+   function will rollback to `backtrace_symbols_fd` in above cases.
+
+All new code of the whole pull request, including one or several files
+that are either new files or modified ones, are contributed under the
+BSD-new license. I am contributing on behalf of my employer Amazon Web
+Services, Inc.
+---
+ mysys/my_addr_resolve.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+--- a/mysys/my_addr_resolve.c
++++ b/mysys/my_addr_resolve.c
+@@ -239,10 +239,10 @@ static int addr_resolve(void *ptr, my_ad
+   }
+ 
+ 
+-  /* 500 ms should be plenty of time for addr2line to issue a response. */
++  /* 5000 ms should be plenty of time for addr2line to issue a response. */
+   /* Read in a loop till all the output from addr2line is complete. */
+   while (parsed == total_bytes_read &&
+-         (ret= poll(&poll_fds, 1, 500)))
++         (ret= poll(&poll_fds, 1, 5000)))
+   {
+     /* error during poll */
+     if (ret < 0)
+@@ -286,7 +286,8 @@ static int addr_resolve(void *ptr, my_ad
+   loc->line= atoi(output + line_number_start);
+ 
+   /* Addr2line was unable to extract any meaningful information. */
+-  if (strcmp(loc->file, "??") == 0 && loc->func[0] == '?')
++  if ((strcmp(loc->file, "??") == 0 || strcmp(loc->file, "") == 0) &&
++      (loc->func[0] == '?' || loc->line == 0))
+     return 6;
+ 
+   loc->file= strip_path(loc->file);
