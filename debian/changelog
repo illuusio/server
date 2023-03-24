@@ -1,4 +1,4 @@
-mariadb (1:10.11.2-2~exp1) experimental; urgency=medium
+mariadb (1:10.11.2-2~exp2) experimental; urgency=medium
 
   [ Otto Kekäläinen ]
   * Update NEWS to summarize what is new in MariaDB 10.11 (compared to 10.6)
@@ -9,11 +9,24 @@ mariadb (1:10.11.2-2~exp1) experimental; urgency=medium
   * Update upstream signing key
   * Fix dependency of obsolete libncurses5-dev
   * Sync downstream (where applicable) with upstream 10.11 debian/* contents
+  * Enable mariadb-plugin-rocksdb for riscv64
+  * Add important upstream 10.11.2+ fixes as packes:
+    * Stack overflow in pinbox allocator (PR#2541)
+    * Upgrades from MySQL 5.7 to MariaDB 10.11 (MDEV-30483)
+    * Misc compiler warnings in upstream build
+    * Incomplete stack traces if MariaDB crashes
+    * Make mariadbd emit warnings if mariadb-upgrade was not run
+    * Binlog failures due to 'character_set_client' (MDEV-30824)
+  * Instrument post-build mtr as requested in MDEV-30728 for debugging
+  * Sort MTR skiplists and add statistics_upgrade_not_done (MDEV-30084) for s390x
 
   [ Ekaterine Papava ]
   * Add Georgian translation (error messages)
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 12 Mar 2023 16:32:03 -0700
+  [ Tuukka Pasanen ]
+  * Update README files to correct versions
+
+ -- Otto Kekäläinen <otto@debian.org>  Thu, 23 Mar 2023 23:15:19 -0700
 
 mariadb (1:10.11.2-1) unstable; urgency=medium
 
