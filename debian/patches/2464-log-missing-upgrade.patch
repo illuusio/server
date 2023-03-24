@@ -47,14 +47,14 @@ https://github.com/MariaDB/server/commit/3622644836f3d5be8ff4d075eae3a21183d8811
 --- a/client/mysql_upgrade.c
 +++ b/client/mysql_upgrade.c
 @@ -72,7 +72,7 @@ static char **defaults_argv;
-
+ 
  static my_bool not_used; /* Can't use GET_BOOL without a value pointer */
-
+ 
 -char upgrade_from_version[1024];
 +char upgrade_from_version[64];
-
+ 
  static my_bool opt_write_binlog;
-
+ 
 --- /dev/null
 +++ b/mysql-test/main/upgrade-check.result
 @@ -0,0 +1,3 @@
@@ -143,7 +143,7 @@ https://github.com/MariaDB/server/commit/3622644836f3d5be8ff4d075eae3a21183d8811
 @@ -205,6 +205,8 @@ typedef fp_except fp_except_t;
  #define fcntl(X,Y,Z) 0
  #endif
-
+ 
 +#define CHECK_UPGRADE_TIMEOUT_MS 10000
 +
  inline void setup_fpu()
@@ -157,11 +157,11 @@ https://github.com/MariaDB/server/commit/3622644836f3d5be8ff4d075eae3a21183d8811
 +static void check_upgrade(void);
  #endif
  #endif /* HAVE_OPENSSL */
-
+ 
 @@ -5586,6 +5590,71 @@ static void test_lc_time_sz()
  }
  #endif//DBUG_OFF
-
+ 
 +static void check_upgrade(void)
 +{
 +  File info_file;
@@ -227,7 +227,7 @@ https://github.com/MariaDB/server/commit/3622644836f3d5be8ff4d075eae3a21183d8811
 +  my_close(info_file, MYF(0));
 +  DBUG_VOID_RETURN;
 +}
-
+ 
  int mysqld_main(int argc, char **argv)
  {
 @@ -5989,6 +6058,7 @@ int mysqld_main(int argc, char **argv)
@@ -236,7 +236,7 @@ https://github.com/MariaDB/server/commit/3622644836f3d5be8ff4d075eae3a21183d8811
  #else
 +  check_upgrade();
    handle_connections_sockets();
-
+ 
    mysql_mutex_lock(&LOCK_start_thread);
 @@ -6253,6 +6323,10 @@ void handle_connections_sockets()
    Dynamic_array<struct pollfd> fds(PSI_INSTRUMENT_MEM);
@@ -247,7 +247,7 @@ https://github.com/MariaDB/server/commit/3622644836f3d5be8ff4d075eae3a21183d8811
 +  tv.tv_sec = CHECK_UPGRADE_TIMEOUT_MS / 1000;
 +  tv.tv_usec = 0;
  #endif
-
+ 
    DBUG_ENTER("handle_connections_sockets");
 @@ -6284,10 +6358,10 @@ void handle_connections_sockets()
    while (!abort_loop)
@@ -260,7 +260,7 @@ https://github.com/MariaDB/server/commit/3622644836f3d5be8ff4d075eae3a21183d8811
 -    retval= select(FD_SETSIZE, &readFDs, NULL, NULL, NULL);
 +    retval= select(FD_SETSIZE, &readFDs, NULL, NULL, &tv);
  #endif
-
+ 
      if (retval < 0)
 @@ -6305,6 +6379,11 @@ void handle_connections_sockets()
        }
@@ -271,6 +271,6 @@ https://github.com/MariaDB/server/commit/3622644836f3d5be8ff4d075eae3a21183d8811
 +      check_upgrade();
 +      continue;
 +    }
-
+ 
      if (abort_loop)
        break;
