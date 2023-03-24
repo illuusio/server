@@ -1,0 +1,276 @@
+Forwarded: https://github.com/MariaDB/server/pull/2464
+Origin: https://patch-diff.githubusercontent.com/raw/MariaDB/server/pull/2464.patch
+From: Christian Gonzalez <gondchri@amazon.com>
+Date: Mon, 23 Jan 2023 22:47:54 +0000
+Subject: [PATCH] Automatically check if an upgrade is required in mysqld
+ server
+
+Leverages the existence of `mysql_upgrade_info` and
+implements an automatic check in a similar way to `mysql_upgrade`
+printing a warning message in the logs when running `mysql_upgrade`
+might be required. A warning will be printed in the following cases:
+
+   - When the `mysql_upgrade_info` file is empty.
+   - When the `mysql_upgrade_info` content format is unrecognized.
+   - When an incomplete major version upgrade is detected.
+
+Also, an information message will be logged when the `mysql_upgrade_info`
+file doesn't exists. An information message is printed instead of a
+warning for this case to avoid printing warnings for fresh installations.
+
+The check will be executed once when the server starts, and every
+time `CHECK_UPGRADE_TIMEOUT_MS` ms have passed without receiving a new
+connection to the server. This way we can use the `mysqld` main thread
+to execute the periodic check without affecting the server when new
+connections are being accepted.
+
+All new code of the whole pull request, including one or several files
+that are either new files or modified ones, are contributed under the
+BSD-new license. I am contributing on behalf of my employer
+Amazon Web Services, Inc.
+
+Debian note:
+
+This on 10.11 uses filename mysql_upgrade_info while in 11.0 it has been
+renamed to mariadb_upgrade_info in
+https://github.com/MariaDB/server/commit/3622644836f3d5be8ff4d075eae3a21183d88119
+
+---
+ client/mysql_upgrade.c               |  2 +-
+ mysql-test/main/upgrade-check.result |  3 +
+ mysql-test/main/upgrade-check.test   | 74 +++++++++++++++++++++++++
+ sql/mysqld.cc                        | 83 +++++++++++++++++++++++++++-
+ 4 files changed, 159 insertions(+), 3 deletions(-)
+ create mode 100644 mysql-test/main/upgrade-check.result
+ create mode 100644 mysql-test/main/upgrade-check.test
+
+--- a/client/mysql_upgrade.c
++++ b/client/mysql_upgrade.c
+@@ -72,7 +72,7 @@ static char **defaults_argv;
+
+ static my_bool not_used; /* Can't use GET_BOOL without a value pointer */
+
+-char upgrade_from_version[1024];
++char upgrade_from_version[64];
+
+ static my_bool opt_write_binlog;
+
+--- /dev/null
++++ b/mysql-test/main/upgrade-check.result
+@@ -0,0 +1,3 @@
++CALL mtr.add_suppression(".*[/\]mysql_upgrade_info is empty. Please run mariadb-upgrade.");
++CALL mtr.add_suppression("The content of .*[/\]mysql_upgrade_info cannot be parsed. Please run mariadb-upgrade.");
++CALL mtr.add_suppression(".*Server version .* is currently running, but the data directory contains mysql_upgrade_info from older version .*\..*");
+--- /dev/null
++++ b/mysql-test/main/upgrade-check.test
+@@ -0,0 +1,74 @@
++#
++# Test upgrade warning appears when mariadb-upgrade tool has not being executed
++#
++
++--source include/not_embedded.inc
++
++# This test uses POSIX-specific shell tools to verify log files' contents, AND
++# the log file check is not implemented for Windows.
++--source include/not_windows.inc
++
++--let $MYSQL_LOG_ERR  = `SELECT @@log_error`
++--let $MYSQL_DATA_DIR = `SELECT @@datadir`
++--let $SERVER_VERSION = `SELECT version()`
++
++#
++# Testing the correct info message is printed in the log when mysql_upgrade_info
++# file does not exists.
++#
++# NOTE: mysql_upgrade_info file is not created unless mariadb-upgrade is executed,
++# so when the tests starts it won't exists.
++#
++--replace_regex /[\/\\].*[\/\\]mysql_upgrade_info/PATH\/mysql_upgrade_info/
++--exec egrep -q "Cannot open .*[/\\]mysql_upgrade_info. Please run mariadb-upgrade." "$MYSQL_LOG_ERR"
++
++#
++# Testing the correct warning is printed in the log when mysql_upgrade_info
++# file is empty.
++#
++CALL mtr.add_suppression(".*[/\]mysql_upgrade_info is empty. Please run mariadb-upgrade.");
++--write_file $MYSQL_DATA_DIR/mysql_upgrade_info
++EOF
++--sleep 10
++--replace_regex /[\/\\].*[\/\\]mysql_upgrade_info/PATH\/mysql_upgrade_info/
++--exec egrep -q ".*[/\]mysql_upgrade_info is empty. Please run mariadb-upgrade." "$MYSQL_LOG_ERR"
++--remove_file $MYSQL_DATA_DIR/mysql_upgrade_info
++
++#
++# Testing the correct warning is printed in the log when mysql_upgrade_info
++# content cannot be parsed.
++#
++CALL mtr.add_suppression("The content of .*[/\]mysql_upgrade_info cannot be parsed. Please run mariadb-upgrade.");
++--write_file $MYSQL_DATA_DIR/mysql_upgrade_info
++wrong_format
++EOF
++--sleep 10
++--replace_regex /[\/\\].*[\/\\]mysql_upgrade_info/PATH\/mysql_upgrade_info/
++--exec egrep -q "The content of .*[/\]mysql_upgrade_info cannot be parsed. Please run mariadb-upgrade." "$MYSQL_LOG_ERR"
++--remove_file $MYSQL_DATA_DIR/mysql_upgrade_info
++
++#
++# Testing the correct warning is printed in the log when a majore version
++# upgrade is detected.
++#
++CALL mtr.add_suppression(".*Server version .* is currently running, but the data directory contains mysql_upgrade_info from older version .*\..*");
++--write_file $MYSQL_DATA_DIR/mysql_upgrade_info
++1.0.0-MariaDB
++EOF
++--sleep 10
++--replace_regex /[0-9]*\.[0-9]*.[0-9]*-MariaDB/VERSION-MariaDB/
++--exec egrep -q "Server version .* is currently running, but the data directory contains mysql_upgrade_info from older version .*\." "$MYSQL_LOG_ERR"
++--remove_file $MYSQL_DATA_DIR/mysql_upgrade_info
++
++#
++# Testing that no warnings are printed when mysql_upgrade_info contains the current version
++#
++--exec echo "$SERVER_VERSION" > "$MYSQL_DATA_DIR/mysql_upgrade_info"
++--exec egrep -c "\[Warning\]" "$MYSQL_LOG_ERR" > "$MYSQL_TMP_DIR/warnnings_count_before"
++--sleep 10
++--exec egrep -c "\[Warning\]" "$MYSQL_LOG_ERR" > "$MYSQL_TMP_DIR/warnnings_count_after"
++--diff_files $MYSQL_TMP_DIR/warnnings_count_before $MYSQL_TMP_DIR/warnnings_count_after
++
++--remove_file $MYSQL_TMP_DIR/warnnings_count_before
++--remove_file $MYSQL_TMP_DIR/warnnings_count_after
++--remove_file $MYSQL_DATA_DIR/mysql_upgrade_info
+--- a/sql/mysqld.cc
++++ b/sql/mysqld.cc
+@@ -205,6 +205,8 @@ typedef fp_except fp_except_t;
+ #define fcntl(X,Y,Z) 0
+ #endif
+
++#define CHECK_UPGRADE_TIMEOUT_MS 10000
++
+ inline void setup_fpu()
+ {
+ #if defined(__FreeBSD__) && defined(HAVE_IEEEFP_H) && !defined(HAVE_FEDISABLEEXCEPT)
+@@ -1489,6 +1491,8 @@ static void openssl_lock(int, openssl_lo
+ char *des_key_file;
+ #ifndef EMBEDDED_LIBRARY
+ struct st_VioSSLFd *ssl_acceptor_fd;
++static char upgrade_info_file[FN_REFLEN]= {0};
++static void check_upgrade(void);
+ #endif
+ #endif /* HAVE_OPENSSL */
+
+@@ -5586,6 +5590,71 @@ static void test_lc_time_sz()
+ }
+ #endif//DBUG_OFF
+
++static void check_upgrade(void)
++{
++  File info_file;
++  char upgrade_from_version[64]= {0};
++  size_t length;
++  ulong version_id;
++
++  uint major, minor, version;
++  char *point= upgrade_from_version, *end_point, *pos;
++
++  DBUG_ENTER("check_upgrade");
++
++  if (upgrade_info_file != 0)
++  {
++    fn_format(upgrade_info_file, "mysql_upgrade_info", mysql_real_data_home_ptr, "", MYF(0));
++    DBUG_PRINT("info", ("mysql_upgrade_info path: %s", mysql_real_data_home_ptr));
++  }
++
++  if ((info_file= my_open(upgrade_info_file, O_RDONLY, MYF(0))) < 0)
++  {
++    sql_print_information("Cannot open %s. Please run mariadb-upgrade.", upgrade_info_file);
++    DBUG_VOID_RETURN;
++  }
++
++  if (my_lock(info_file, F_RDLCK, 0, 1, MYF(0)))
++    goto end; // If Another process is holding a write lock avoid checking
++
++  (void) my_seek(info_file, 0, SEEK_SET, MYF(0));
++  /* We have -3 here to make conversion below safe (similar to mysql_upgrade), note the 3 consecutive calls to strtoul */
++  length= my_read(info_file, (uchar*) upgrade_from_version,
++                  sizeof(upgrade_from_version)-3, MYF(0));
++
++  if (!length)
++  {
++    sql_print_warning("%s is empty. Please run mariadb-upgrade.", upgrade_info_file);
++    goto unlock_end;
++  }
++
++  /* Remove possible \ŋ that may end in output */
++  if ((pos= strchr(upgrade_from_version, '\n')))
++    *pos= 0;
++
++  major=   (uint) strtoul(point, &end_point, 10);   point=end_point+1;
++  minor=   (uint) strtoul(point, &end_point, 10);   point=end_point+1;
++  version= (uint) strtoul(point, &end_point, 10);
++
++  if (!(major || minor || version))
++  {
++    sql_print_warning("The content of %s cannot be parsed. Please run mariadb-upgrade.", upgrade_info_file);
++    goto unlock_end;
++  }
++
++  version_id = static_cast<ulong>(major) * 10000L + static_cast<ulong>(minor * 100 + version);
++  if (MYSQL_VERSION_ID - version_id > 99)
++    sql_print_warning("It appears that your database has begun an upgrade but has not completed it. Server version %s is currently running,"
++                      " but the data directory contains mysql_upgrade_info from older version %s. Please run mariadb-upgrade to ensure your"
++                      " database format is updated to match the version of the running server.",
++                      MYSQL_SERVER_VERSION, upgrade_from_version);
++
++unlock_end:
++  my_lock(info_file, F_UNLCK, 0, 1, MYF(0));
++end:
++  my_close(info_file, MYF(0));
++  DBUG_VOID_RETURN;
++}
+
+ int mysqld_main(int argc, char **argv)
+ {
+@@ -5989,6 +6058,7 @@ int mysqld_main(int argc, char **argv)
+ #ifdef _WIN32
+   handle_connections_win();
+ #else
++  check_upgrade();
+   handle_connections_sockets();
+
+   mysql_mutex_lock(&LOCK_start_thread);
+@@ -6253,6 +6323,10 @@ void handle_connections_sockets()
+   Dynamic_array<struct pollfd> fds(PSI_INSTRUMENT_MEM);
+ #else
+   fd_set readFDs,clientFDs;
++
++  struct timeval tv;
++  tv.tv_sec = CHECK_UPGRADE_TIMEOUT_MS / 1000;
++  tv.tv_usec = 0;
+ #endif
+
+   DBUG_ENTER("handle_connections_sockets");
+@@ -6284,10 +6358,10 @@ void handle_connections_sockets()
+   while (!abort_loop)
+   {
+ #ifdef HAVE_POLL
+-    retval= poll(fds.get_pos(0), fds.size(), -1);
++    retval= poll(fds.get_pos(0), fds.size(), CHECK_UPGRADE_TIMEOUT_MS);
+ #else
+     readFDs=clientFDs;
+-    retval= select(FD_SETSIZE, &readFDs, NULL, NULL, NULL);
++    retval= select(FD_SETSIZE, &readFDs, NULL, NULL, &tv);
+ #endif
+
+     if (retval < 0)
+@@ -6305,6 +6379,11 @@ void handle_connections_sockets()
+       }
+       continue;
+     }
++    else if (retval == 0)
++    {
++      check_upgrade();
++      continue;
++    }
+
+     if (abort_loop)
+       break;
