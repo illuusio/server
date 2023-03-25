@@ -1,4 +1,6 @@
 main.func_json_notembedded : MDEV-30518 / MDEV-27955
+innodb.create_isl_with_direct : Will always have result mismatch when MTR running with --mysqld=--loose-innodb-flush-method=fsync
 main.plugin_auth : https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1030510
 main.statistics_upgrade_not_done : MDEV-30084
 main.strings : MDEV-26644
+sys_vars.innodb_flush_method_func : Will always have result mismatch when MTR running with --mysqld=--loose-innodb-flush-method=fsync

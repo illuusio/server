@@ -1,1 +1,3 @@
+innodb.create_isl_with_direct : Will always have result mismatch when MTR running with --mysqld=--loose-innodb-flush-method=fsync
 main.strings : MDEV-26644
+sys_vars.innodb_flush_method_func : Will always have result mismatch when MTR running with --mysqld=--loose-innodb-flush-method=fsync
