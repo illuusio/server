@@ -1,24 +1,41 @@
-mariadb (1:10.11.2-2~exp2) experimental; urgency=medium
+mariadb (1:10.11.2-2) unstable; urgency=medium
 
   [ Otto Kekäläinen ]
+  * SUMMARY: This version has a lot of bug fixes, quality fixes, documentation
+    and translation updates and it is tailored for the Debian 12 "Bookworm"
+    release and all potentially functional changes have been left out and
+    are pending review and merge post-Bookworm release at
+    https://salsa.debian.org/mariadb-team/mariadb-server/-/merge_requests,
+    where contributions both as reviews and new submissions are welcome!
   * Update NEWS to summarize what is new in MariaDB 10.11 (compared to 10.6)
-  * Add patch to better diagnose potential failures in main.order_by_innodb
-  * Add patch to fix cross-compilation failure on uca-dump (Closes: #1029165)
-  * Update and activate configuration tracing in autopkgtests
-  * Refresh patches metadata
-  * Update upstream signing key
-  * Fix dependency of obsolete libncurses5-dev
+  * Update and activate configuration tracing in autopkgtests to ensure that
+    for the Debian 12 "Bookworm" release cycle no upstream server config change
+    would slip in unnoticed
+  * Enable mariadb-plugin-rocksdb for riscv64 (fixes autopkgtests for riscv64)
   * Sync downstream (where applicable) with upstream 10.11 debian/* contents
-  * Enable mariadb-plugin-rocksdb for riscv64
+    so that using diff/meld to compare changes are easier
   * Add important upstream 10.11.2+ fixes as packes:
     * Stack overflow in pinbox allocator (PR#2541)
-    * Upgrades from MySQL 5.7 to MariaDB 10.11 (MDEV-30483)
+    * Upgrades from MySQL 5.7 to MariaDB 10.11 (MDEV-30483) (Closes: #866751)
     * Misc compiler warnings in upstream build
     * Incomplete stack traces if MariaDB crashes
     * Make mariadbd emit warnings if mariadb-upgrade was not run
     * Binlog failures due to 'character_set_client' (MDEV-30824)
-  * Instrument post-build mtr as requested in MDEV-30728 for debugging
-  * Sort MTR skiplists and add statistics_upgrade_not_done (MDEV-30084) for s390x
+  * Prevent mariadb-test-run from using native I/O on ppc64el and s390x due to
+    Linux kernel bug (Related: #1031656)
+  * Add patch to better diagnose potential failures in main.order_by_innodb
+  * Add patch to fix cross-compilation failure on uca-dump (Closes: #1029165)
+  * Update mariadb-test-run skip test lists to not run tests that are known
+    to be broken or unstable, and that have been reported upstream
+  * Limit check of running mysqld/mariadbd to system users (Closes: #1032047)
+  * Make error more helpful in case server restart fails (Related: #1033234)
+  * Update Lintian overrides after rigorous review of all Lintian issues
+    * Remove incorrect Multi-Arch definitions
+    * Fix man pages syntax issues (Closes: #1032861)
+    * Fix spelling in MariaDB and components (Closes: #1032860)
+    * Refresh patches metadata
+    * Update upstream signing key
+    * Fix dependency of obsolete libncurses5-dev
 
   [ Ekaterine Papava ]
   * Add Georgian translation (error messages)
@@ -26,7 +43,7 @@ mariadb (1:10.11.2-2~exp2) experimental; urgency=medium
   [ Tuukka Pasanen ]
   * Update README files to correct versions
 
- -- Otto Kekäläinen <otto@debian.org>  Thu, 23 Mar 2023 23:15:19 -0700
+ -- Otto Kekäläinen <otto@debian.org>  Sat, 25 Mar 2023 23:26:42 -0700
 
 mariadb (1:10.11.2-1) unstable; urgency=medium
 
