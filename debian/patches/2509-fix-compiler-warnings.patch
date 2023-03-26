@@ -10,7 +10,7 @@ Following files emits the warning with gcc-12.2.0:
   - storage/myisam/ha_myisam.cc (fix in storage/myisam/mi_info.c)
   - strings/json_lib.c
 
-The values are now initilized to 0, which should be a safe choice.
+The values are now initialized to 0, which should be a safe choice.
 
 Subject: [PATCH 2/2] Fix compiler warning: -Wstringop-overflow
 
