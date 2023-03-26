@@ -1,4 +1,5 @@
 main.features : MDEV-27954
+main.func_json_notembedded : MDEV-27955 / MDEV-30518
 main.func_like : MDEV-27954
 main.func_math : MDEV-27954
 main.func_str : MDEV-27954
