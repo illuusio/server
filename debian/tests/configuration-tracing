@@ -59,7 +59,7 @@ trace() {
     normalize_value version-compile-machine ARCH # x86_64, aarch64, armv7l ..
 
     # armhf/armel might have: debian-linux-gnueabi, debian-linux-gnueabihf
-    normalize_value version-compile-OS debian-linux-gnu
+    normalize_value version-compile-os debian-linux-gnu
 
     # In Sid 'Debian n/a', in Bookworm 'Debian 12'
     normalize_value version-comment "Debian RELEASE"
