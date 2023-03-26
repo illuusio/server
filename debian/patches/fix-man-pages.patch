@@ -1,0 +1,2067 @@
+Forwarded: https://github.com/MariaDB/server/pull/2544
+Origin: https://patch-diff.githubusercontent.com/raw/MariaDB/server/pull/2544.patch
+Author: Otto Kekäläinen <otto@kekalainen.net>
+Date:   Sat Mar 11 13:01:39 2023 -0800
+
+    Fix unnecessary acute accents in man pages
+    
+    The man pages has several places where \' is intended to escape the single
+    quote and just print '. However, in reality this will print an ` (acute
+    accent). Fix this by removing excess backslashes. Also remove some excess
+    & in front of dots, such escaping is also unnecessary.
+    
+    Also join several lines to avoid lone words in quotes to be read by groff
+    as macros when they are just text.
+    
+    In a table (t{}) the content must be on new lines separately, so groff
+    will try to read them as macros too, so use \(aq that renders to '
+    (single quote).
+    
+    This error was originally detected by Lintian:
+    https://lintian.debian.org/tags/acute-accent-in-manual-page
+    
+    Example of man page sections before and after:
+    
+      Make a backup of each table´s data file using the name tbl_name.OLD.
+      ->
+      Make a backup of each table's data file using the name tbl_name.OLD.
+    
+      A typical debug_options string is ´d:t:o,file_name´.
+      The default is ´d:t:o,/tmp/my_print_defaults.trace´.
+      ->
+      A typical debug_options string is 'd:t:o,file_name'.
+      The default is 'd:t:o,/tmp/my_print_defaults.trace'.
+    
+      shell> mysql --xml -uroot -e "SHOW VARIABLES LIKE ´version%´"
+      <?xml version="1.0"?>
+      <resultset statement="SHOW VARIABLES LIKE ´version%´" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      ->
+      shell> mysql --xml -uroot -e "SHOW VARIABLES LIKE 'version%'"
+      <?xml version="1.0"?>
+      <resultset statement="SHOW VARIABLES LIKE 'version%'" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    
+    This command was used to validate no man pages have syntax errors:
+    
+      for x in *.?
+      do
+        echo "##### $x #####"
+        LC_ALL=C.UTF-8 MANROFFSEQ='' MANWIDTH=80 man --warnings -E UTF-8 -l -Tutf8 -Z $x >/dev/null
+      done
+    
+    The man pages are not perfect after this, there are still a lot of
+    suboptimal syntax, but this helps towards better man pages.
+    
+    All new code of the whole pull request, including one or several files
+    that are either new files or modified ones, are contributed under the
+    BSD-new license. I am contributing on behalf of my employer Amazon Web
+    Services, Inc.
+
+--- a/man/my_print_defaults.1
++++ b/man/my_print_defaults.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMY_PRINT_DEFAULTS" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMY_PRINT_DEFAULTS\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -80,8 +80,8 @@ Display a help message and exit\&.
+ \fB\-\-defaults\-file=\fR\fB\fIfile_name\fR\fR,
+ \fB\-c \fR\fB\fIfile_name\fR\fR
+ .sp
+-Read only the given option file\&. If no extension is given, default extension(.ini or .cnf) will 
+-be used\&. If \fB\-\-defaults\-file\fR is 
++Read only the given option file\&. If no extension is given, default extension(.ini or .cnf) will
++be used\&. If \fB\-\-defaults\-file\fR is
+ the first option, then read this file only, do not read global or per\-user config files; should be the first option.
+ .RE
+ .sp
+@@ -100,9 +100,7 @@ the first option, then read this file on
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default is
+-\'d:t:o,/tmp/my_print_defaults\&.trace\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default is 'd:t:o,/tmp/my_print_defaults.trace'.
+ .RE
+ .sp
+ .RS 4
+@@ -120,7 +118,7 @@ string is
+ .\" extra-file option: my_print_defaults
+ \fB\-e \fR\fB\fIfile_name\fR\fR
+ .sp
+-Read this option file after the global option file but (on Unix) before the user option 
++Read this option file after the global option file but (on Unix) before the user option
+ file\&. Should be the first option\&.
+ .RE
+ .sp
+--- a/man/myisam_ftdump.1
++++ b/man/myisam_ftdump.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMYISAM_FTDUMP\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMYISAM_FTDUMP\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -56,7 +56,7 @@ table\&. You can also specify a table by
+ \&.MYI
+ suffix)\&. If you do not invoke
+ \fBmyisam_ftdump\fR
+-in the directory where the table files are located, the table or index file name must be preceded by the path name to the table\'s database directory\&. Index numbers begin with 0\&.
++in the directory where the table files are located, the table or index file name must be preceded by the path name to the table's database directory\&. Index numbers begin with 0\&.
+ .PP
+ Example: Suppose that the
+ test
+--- a/man/myisamchk.1
++++ b/man/myisamchk.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMYISAMCHK\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMYISAMCHK\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -189,7 +189,7 @@ Otherwise, when you run
+ .RS 4
+ .\}
+ .nf
+-warning: clients are using or haven\'t closed the table properly
++warning: clients are using or haven't closed the table properly
+ .fi
+ .if n \{\
+ .RE
+@@ -197,7 +197,7 @@ warning: clients are using or haven\'t c
+ .PP
+ This means that you are trying to check a table that has been updated by another program (such as the
+ \fBmysqld\fR
+-server) that hasn\'t yet closed the file or that has died without closing the file properly, which can sometimes lead to the corruption of one or more
++server) that hasn't yet closed the file or that has died without closing the file properly, which can sometimes lead to the corruption of one or more
+ MyISAM
+ tables\&.
+ .PP
+@@ -273,9 +273,7 @@ Display a help message and exit\&. Optio
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default is
+-\'d:t:o,/tmp/myisamchk\&.trace\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default is 'd:t:o,/tmp/myisamchk.trace'.
+ .RE
+ .sp
+ .RS 4
+@@ -729,7 +727,7 @@ the section called \(lqMYISAMCHK TABLE I
+ \fB\-\-fast\fR,
+ \fB\-F\fR
+ .sp
+-Check only tables that haven\'t been closed properly\&.
++Check only tables that haven't been closed properly\&.
+ .RE
+ .sp
+ .RS 4
+@@ -751,7 +749,7 @@ finds any errors in the table\&. The rep
+ \fB\-\-recover\fR
+ or
+ \fB\-r\fR
+-option\&. States will be updated as with 
++option\&. States will be updated as with
+ \fB\-\-update\-state\fR\&.
+ .RE
+ .sp
+@@ -826,7 +824,7 @@ Store information in the
+ \&.MYI
+ file to indicate when the table was checked and whether the table crashed\&. This should be used to get full benefit of the
+ \fB\-\-check\-only\-changed\fR
+-option, but you shouldn\'t use this option if the
++option, but you shouldn't use this option if the
+ \fBmysqld\fR
+ server is using the table and you are running it with external locking disabled\&.
+ .RE
+@@ -902,8 +900,8 @@ Correct the checksum information for the
+ .\" create-missing-keys option: myisamchk
+ \fB\-\-create\-missing\-keys\fR
+ .sp
+-Create missing keys. This assumes that the data file is correct and that the 
+-number of rows stored in the index file is correct\&. Enables 
++Create missing keys. This assumes that the data file is correct and that the
++number of rows stored in the index file is correct\&. Enables
+ \fB\-\-quick\fR\&.
+ 
+ .RE
+@@ -960,8 +958,8 @@ the section called \(lqMYISAMCHK TABLE I
+ Overwrite old intermediate files (files with names like
+ \fItbl_name\fR\&.TMD) instead of aborting\&. Add another
+ \fB\-\-force\fR
+-to avoid 'myisam_sort_buffer_size is too small' errors\&. In this case 
+-we will attempt to do the repair with the given 
++to avoid 'myisam_sort_buffer_size is too small' errors\&. In this case
++we will attempt to do the repair with the given
+ \fBmyisam_sort_buffer_size\fR
+ and dynamically allocate as many management buffers as needed\&.
+ .RE
+@@ -1287,8 +1285,8 @@ Sort records according to a particular i
+ SELECT
+ and
+ ORDER BY
+-operations that use this index\&. (The first time you use this option to sort a table, it may be very slow\&.) To determine a table\'s index numbers, use
+-SHOW INDEX, which displays a table\'s indexes in the same order that
++operations that use this index\&. (The first time you use this option to sort a table, it may be very slow\&.) To determine a table's index numbers, use
++SHOW INDEX, which displays a table's indexes in the same order that
+ \fBmyisamchk\fR
+ sees them\&. Indexes are numbered beginning with 1\&.
+ .sp
+@@ -1311,7 +1309,7 @@ must unpack key blocks first, then re\-c
+ .\" stats_method option: myisamchk
+ \fB\-\-stats\-method=name\fR
+ .sp
+-Specifies how index statistics collection code should treat NULLs\&. Possible values 
++Specifies how index statistics collection code should treat NULLs\&. Possible values
+ of name are "nulls_unequal" (default), "nulls_equal" (emulate MySQL 4 behavior), and "nulls_ignored"\&.
+ .RE
+ .SH "MYISAMCHK TABLE INFORMATION"
+@@ -1616,7 +1614,7 @@ sorted index pages\&.
+ Auto increment key,
+ Last value
+ .sp
+-The key number associated the table\'s
++The key number associated the table's
+ AUTO_INCREMENT
+ column, and the most recently generated value for this column\&. These fields do not appear if there is no such column\&.
+ .RE
+@@ -1757,7 +1755,7 @@ displays some low\-level information:
+ .\}
+ Key
+ .sp
+-This key\'s number\&. This value is shown only for the first column of the key\&. If this value is missing, the line corresponds to the second or later column of a multiple\-column key\&. For the table shown in the example, there are two
++This key's number\&. This value is shown only for the first column of the key\&. If this value is missing, the line corresponds to the second or later column of a multiple\-column key\&. For the table shown in the example, there are two
+ table description
+ lines for the second index\&. This indicates that it is a multiple\-part index with two parts\&.
+ .RE
+--- a/man/myisampack.1
++++ b/man/myisampack.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMYISAMPACK\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMYISAMPACK\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -125,7 +125,7 @@ Display a help message and exit\&.
+ \fB\-\-backup\fR,
+ \fB\-b\fR
+ .sp
+-Make a backup of each table\'s data file using the name
++Make a backup of each table's data file using the name
+ \fItbl_name\fR\&.OLD\&.
+ .RE
+ .sp
+@@ -160,9 +160,7 @@ Section\ \&9.5, \(lqCharacter Set Config
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default is
+-\'d:t:o\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default is 'd:t:o'.
+ .RE
+ .sp
+ .RS 4
+--- a/man/mysql-test-run.pl.1
++++ b/man/mysql-test-run.pl.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMYSQL\-TEST\-RUN\" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMYSQL\-TEST\-RUN\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -191,7 +191,7 @@ shell> \fBmake test force="\-\-skip\-tes
+ .PP
+ To run
+ \fBmysql\-test\-run\&.pl\fR
+-on Windows, you\'ll need either Cygwin or ActiveState Perl to run it\&. You may also need to install the modules required by the script\&. To run the test script, change location into the
++on Windows, you'll need either Cygwin or ActiveState Perl to run it\&. You may also need to install the modules required by the script\&. To run the test script, change location into the
+ mysql\-test
+ directory, set the
+ MTR_VS_CONFIG
+@@ -829,7 +829,7 @@ Add setting from the named file to all g
+ .sp
+ Run all test cases having a name that begins with the given
+ \fIprefix\fR
+-value, or fulfils the 
++value, or fulfils the
+ \fIregex\fR\&. This option provides a convenient way to run a family of similarly named tests\&.
+ .sp
+ The argument for the
+@@ -1038,7 +1038,7 @@ file per source and header file\&.
+ .\" gcov-src-dir option: mysql-test-run.pl
+ \fB\-\-gcov\-src\-dir\fR
+ .sp
+-Colllect coverage only within the given subdirectory\&. For example, if you're only developing the SQL layer, 
++Colllect coverage only within the given subdirectory\&. For example, if you're only developing the SQL layer,
+ it makes sense to use \fB--gcov-src-dir=sql\fR\&.
+ .RE
+ .sp
+@@ -1513,7 +1513,7 @@ number of times\&.
+ .\" report-features option: mysql-test-run.pl
+ \fB\-\-report\-features\fR
+ .sp
+-First run a "test" that reports MariaDB features, displaying the output of SHOW ENGINES and SHOW VARIABLES\&. This can be 
++First run a "test" that reports MariaDB features, displaying the output of SHOW ENGINES and SHOW VARIABLES\&. This can be
+ used to verify that binaries are built with all required features\&.
+ .RE
+ .sp
+@@ -1546,7 +1546,7 @@ Report how much time has been spent on d
+ .sp
+ If a test fails, it is retried up to a maximum of
+ \fIN\fR
+-runs (default 1)\&. Retries are also limited by the maximum number of failures before stopping, 
++runs (default 1)\&. Retries are also limited by the maximum number of failures before stopping,
+ set with the \fB-\-retry\-failure\fR option\&. This option has no effect unless
+ \fB\-\-force\fR
+ is also used; without it, test execution will terminate after the first failure\&.
+@@ -1572,7 +1572,7 @@ may fail in total, as each repetition is
+ .\" retry-failure option: mysql-test-run.pl
+ \fB\-\-retry\-failure=\fR\fB\fIN\fR\fR
+ .sp
+-When using the \fB-\-retry\fR option to retry failed tests, 
++When using the \fB-\-retry\fR option to retry failed tests,
+ stop when N failures have occurred (default 2)\&. Setting it to 0 or 1 effectively turns off retries\&.
+ .RE
+ .sp
+@@ -1744,7 +1744,7 @@ option, it sets up a secure connection f
+ does not support SSL,
+ \fBmysql\-test\-run\&.pl\fR
+ exits with an error message:
+-Couldn\'t find support for SSL
++Couldn't find support for SSL
+ .RE
+ .sp
+ .RS 4
+@@ -1810,7 +1810,7 @@ will stop once the server has been start
+ .\" start-and-exit option: mysql-test-run.pl
+ \fB\-\-start\-and\-exit\fR
+ .sp
+-Same 
++Same
+ \fB\-\-start\fR, but mysql-test-run terminates and leaves just the server running\&.
+ .RE
+ .sp
+@@ -1877,7 +1877,7 @@ Run the "mysqld" executables using strac
+ Create
+ \fBstrace\fR
+ output for
+-\fBmysqltest\fR, optionally specifying name and path 
++\fBmysqltest\fR, optionally specifying name and path
+ to the trace program to use\&.
+ .sp
+ Example: \&./mysql\-test\-run\&.pl \-\-strace\-client=ktrace
+@@ -1895,8 +1895,8 @@ Example: \&./mysql\-test\-run\&.pl \-\-s
+ .\" strace-option option: mysql-test-run.pl
+ \fB\-\-strace\-option\fR=\fR\fB\fIARGS\fR\fR
+ .sp
+-Option to give 
+-\fBstrace\fR, 
++Option to give
++\fBstrace\fR,
+ replaces default option(s)\&.
+ .RE
+ .sp
+@@ -2144,9 +2144,9 @@ server with
+ .\" valgrind-mysqltest option: mysql-test-run.pl
+ \fB\-\-valgrind\-mysqltest\fR
+ .sp
+-Run the 
++Run the
+ \fBmysqltest\fR
+-and 
++and
+ \fBmysql_client_test\fR
+ executables with
+ \fBvalgrind\fR\&.
+--- a/man/mysql.1
++++ b/man/mysql.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -340,9 +340,7 @@ The database to use\&.
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default is
+-\'d:t:o,/tmp/mysql\&.trace\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default is 'd:t:o,/tmp/mysql.trace'.
+ .RE
+ .sp
+ .RS 4
+@@ -884,7 +882,7 @@ Directory for client-side plugins\&.
+ \fB\-\-port=\fR\fB\fIport_num\fR\fR,
+ \fB\-P \fR\fB\fIport_num\fR\fR
+ .sp
+-The TCP/IP port number to use for the connection or 0 for default to, in order of preference, my.cnf, $MYSQL_TCP_PORT, /etc/services, built-in default (3306)\&. 
++The TCP/IP port number to use for the connection or 0 for default to, in order of preference, my.cnf, $MYSQL_TCP_PORT, /etc/services, built-in default (3306)\&.
+ Forces --protocol=tcp when specified on the command line without other connection properties\&.
+ .RE
+ .sp
+@@ -1238,7 +1236,7 @@ Forces --protocol=socket when specified
+ .\" SSL options: mysql
+ \fB\-\-ssl\fR
+ .sp
+-Enable SSL for connection (automatically enabled with other flags). Disable with 
++Enable SSL for connection (automatically enabled with other flags). Disable with
+ \fB\-\-skip-ssl\fR\&.
+ .RE
+ .sp
+@@ -1529,9 +1527,9 @@ The XML output also uses an XML namespac
+ .RS 4
+ .\}
+ .nf
+-shell> \fBmysql \-\-xml \-uroot \-e "SHOW VARIABLES LIKE \'version%\'"\fR
++shell> \fBmysql \-\-xml \-uroot \-e "SHOW VARIABLES LIKE 'version%'"\fR
+ <?xml version="1\&.0"?>
+-<resultset statement="SHOW VARIABLES LIKE \'version%\'" xmlns:xsi="http://www\&.w3\&.org/2001/XMLSchema\-instance">
++<resultset statement="SHOW VARIABLES LIKE 'version%'" xmlns:xsi="http://www\&.w3\&.org/2001/XMLSchema\-instance">
+ <row>
+ <field name="Variable_name">version</field>
+ <field name="Value">5\&.0\&.40\-debug</field>
+@@ -1665,7 +1663,7 @@ if it exists, and then use either of the
+ Set the
+ MYSQL_HISTFILE
+ variable to
+-/dev/null\&. To cause this setting to take effect each time you log in, put the setting in one of your shell\'s startup files\&.
++/dev/null\&. To cause this setting to take effect each time you log in, put the setting in one of your shell's startup files\&.
+ .RE
+ .sp
+ .RS 4
+@@ -1713,8 +1711,8 @@ prompt:
+ .nf
+ mysql> \fBhelp\fR
+ List of all MySQL commands:
+-Note that all text commands must be first on line and end with \';\'
+-?         (\e?) Synonym for `help\'\&.
++Note that all text commands must be first on line and end with ';'
++?         (\e?) Synonym for 'help'\&.
+ clear     (\ec) Clear command\&.
+ connect   (\er) Reconnect to the server\&. Optional arguments are db and host\&.
+ delimiter (\ed) Set statement delimiter\&.
+@@ -1724,7 +1722,7 @@ exit      (\eq) Exit mysql\&. Same as qu
+ go        (\eg) Send command to mysql server\&.
+ help      (\eh) Display this help\&.
+ nopager   (\en) Disable pager, print to stdout\&.
+-notee     (\et) Don\'t write into outfile\&.
++notee     (\et) Don't write into outfile\&.
+ pager     (\eP) Set PAGER [to_pager]\&. Print the query results via PAGER\&.
+ print     (\ep) Print current command\&.
+ prompt    (\eR) Change your mysql prompt\&.
+@@ -1739,8 +1737,8 @@ use       (\eu) Use another database\&.
+ charset   (\eC) Switch to another charset\&. Might be needed for processing
+                binlog with multi\-byte charsets\&.
+ warnings  (\eW) Show warnings after every statement\&.
+-nowarning (\ew) Don\'t show warnings after every statement\&.
+-For server side help, type \'help contents\'
++nowarning (\ew) Don't show warnings after every statement\&.
++For server side help, type 'help contents'
+ .fi
+ .if n \{\
+ .RE
+@@ -1848,7 +1846,7 @@ Change the string that
+ \fBmysql\fR
+ interprets as the separator between SQL statements\&. The default is the semicolon character (\(lq;\(rq)\&.
+ .sp
+-The delimiter can be specified as an unquoted or quoted argument\&. Quoting can be done with either single quote (\') or douple quote (") characters\&. To include a quote within a quoted string, either quote the string with the other quote character or escape the quote with a backslash (\(lq\e\(rq) character\&. Backslash should be avoided outside of quoted strings because it is the escape character for MariaDB\&. For an unquoted argument, the delmiter is read up to the first space or end of line\&. For a quoted argument, the delimiter is read up to the matching quote on the line\&.
++The delimiter can be specified as an unquoted or quoted argument\&. Quoting can be done with either single quote (') or douple quote (") characters\&. To include a quote within a quoted string, either quote the string with the other quote character or escape the quote with a backslash (\(lq\e\(rq) character\&. Backslash should be avoided outside of quoted strings because it is the escape character for MariaDB\&. For an unquoted argument, the delmiter is read up to the first space or end of line\&. For a quoted argument, the delimiter is read up to the matching quote on the line\&.
+ .sp
+ When the delimiter recognized by
+ \fBmysql\fR
+@@ -2556,7 +2554,7 @@ T}:T{
+ A space (a space follows the backslash)
+ T}
+ T{
+-\e\'
++\e'
+ T}:T{
+ Single quote
+ T}
+@@ -2702,7 +2700,7 @@ prompt
+ .\}
+ .nf
+ mysql> \fBprompt (\eu@\eh) [\ed]>\e_\fR
+-PROMPT set to \'(\eu@\eh) [\ed]>\e_\'
++PROMPT set to '(\eu@\eh) [\ed]>\e_'
+ (\fIuser\fR@\fIhost\fR) [\fIdatabase\fR]>
+ (\fIuser\fR@\fIhost\fR) [\fIdatabase\fR]> prompt
+ Returning to default PROMPT of mysql>
+@@ -2740,7 +2738,7 @@ If there is no match for the search stri
+ .nf
+ mysql> \fBhelp me\fR
+ Nothing found
+-Please try to run \'help contents\' for a list of all accessible topics
++Please try to run 'help contents' for a list of all accessible topics
+ .fi
+ .if n \{\
+ .RE
+@@ -2756,7 +2754,7 @@ to see a list of the help categories:
+ .nf
+ mysql> \fBhelp contents\fR
+ You asked for help about help category: "Contents"
+-For more information, type \'help <item>\', where <item> is one of the
++For more information, type 'help <item>', where <item> is one of the
+ following categories:
+    Account Management
+    Administration
+@@ -2788,7 +2786,7 @@ shows a list of matching topics:
+ .nf
+ mysql> \fBhelp logs\fR
+ Many help items for your request exist\&.
+-To make a more specific request, please type \'help <item>\',
++To make a more specific request, please type 'help <item>',
+ where <item> is one of the following topics:
+    SHOW
+    SHOW BINARY LOGS
+@@ -2806,7 +2804,7 @@ Use a topic as the search string to see
+ .\}
+ .nf
+ mysql> \fBhelp show binary logs\fR
+-Name: \'SHOW BINARY LOGS\'
++Name: 'SHOW BINARY LOGS'
+ Description:
+ Syntax:
+ SHOW BINARY LOGS
+@@ -2906,7 +2904,7 @@ Sometimes you may want your script to di
+ .RS 4
+ .\}
+ .nf
+-SELECT \'<info_to_display>\' AS \' \';
++SELECT '<info_to_display>' AS ' ';
+ .fi
+ .if n \{\
+ .RE
+@@ -2953,7 +2951,7 @@ mail_from: Monty
+       sbj: UTF\-8
+       txt: >>>>> "Thimble" == Thimble Smith writes:
+ Thimble> Hi\&.  I think this is a good idea\&.  Is anyone familiar
+-Thimble> with UTF\-8 or Unicode? Otherwise, I\'ll put this on my
++Thimble> with UTF\-8 or Unicode? Otherwise, I'll put this on my
+ Thimble> TODO list and see what happens\&.
+ Yes, please do that\&.
+ Regards,
+--- a/man/mysql_client_test.1
++++ b/man/mysql_client_test.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-CLIENT-TEST" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-CLIENT-TEST\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -123,8 +123,7 @@ The database to use\&.
+ .sp
+ Write a debugging log if MariaDB is built with debugging support\&. The default
+ \fIdebug_options\fR
+-value is
+-\'d:t:o,/tmp/mysql_client_test\&.trace\'\&.
++value is 'd:t:o,/tmp/mysql_client_test.trace'.
+ .RE
+ .sp
+ .RS 4
+--- a/man/mysql_tzinfo_to_sql.1
++++ b/man/mysql_tzinfo_to_sql.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-TZINFO-TO-S" "1" "22 April 2022" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-TZINFO-TO-SQL\fR" "1" "22 April 2022" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -64,7 +64,7 @@ shell> \fBmysql_tzinfo_to_sql /usr/share
+ .\}
+ .PP
+ \fBmysql_tzinfo_to_sql\fR
+-reads your system\'s time zone files and generates SQL statements from them\&.
++reads your system's time zone files and generates SQL statements from them\&.
+ \fBmysql\fR
+ processes those statements to load the time zone tables\&.
+ .PP
+--- a/man/mysqlaccess.1
++++ b/man/mysqlaccess.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-ACCESS\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-ACCESS\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -400,7 +400,7 @@ script at approximately line 18\&. Searc
+ .RS 4
+ .\}
+ .nf
+-$MYSQL     = \'/usr/local/bin/mysql\';    # path to mysql executable
++$MYSQL     = '/usr/local/bin/mysql';    # path to mysql executable
+ .fi
+ .if n \{\
+ .RE
+--- a/man/mysqladmin.1
++++ b/man/mysqladmin.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-ADMIN\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-ADMIN\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -22,7 +22,7 @@ mariadb-admin \- client for administerin
+ .SH "DESCRIPTION"
+ .PP
+ \fBmysqladmin\fR
+-is a client for performing administrative operations\&. You can use it to check the server\'s configuration and current status, to create and drop databases, and more\&.
++is a client for performing administrative operations\&. You can use it to check the server's configuration and current status, to create and drop databases, and more\&.
+ .PP
+ Invoke
+ \fBmysqladmin\fR
+@@ -763,7 +763,7 @@ If you execute
+ \fBmysqladmin shutdown\fR
+ when connecting to a local server using a Unix socket file,
+ \fBmysqladmin\fR
+-waits until the server\'s process ID file has been removed, to ensure that the server has stopped properly\&.
++waits until the server's process ID file has been removed, to ensure that the server has stopped properly\&.
+ .\" mysqladmin command options
+ .\" command options: mysqladmin
+ .\" options: command-line: mysqladmin
+@@ -871,9 +871,7 @@ option is given\&.
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default is
+-\'d:t:o,/tmp/mysqladmin\&.trace\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default is 'd:t:o,/tmp/mysqladmin.trace'.
+ .RE
+ .sp
+ .RS 4
+@@ -1103,7 +1101,7 @@ On Windows, connect to the server via a
+ \fB\-\-port=\fR\fB\fIport_num\fR\fR,
+ \fB\-P \fR\fB\fIport_num\fR\fR
+ .sp
+-The TCP/IP port number to use for the connection or 0 for default to, 
++The TCP/IP port number to use for the connection or 0 for default to,
+ in order of preference, my.cnf, $MYSQL_TCP_PORT, /etc/services, built-in default (3306)\&.
+ Forces --protocol=tcp when specified on the command line without other connection properties\&.
+ .RE
+@@ -1243,7 +1241,7 @@ Forces --protocol=socket when specified
+ .\" SSL options: mysqladmin
+ \fB\-\-ssl\fR
+ .sp
+-Enable SSL for connection (automatically enabled with other flags). Disable with 
++Enable SSL for connection (automatically enabled with other flags). Disable with
+ \fB\-\-skip-ssl\fR\&.
+ .RE
+ .sp
+@@ -1386,7 +1384,7 @@ Verify server's "Common Name" in its cer
+ .\" TLS Version option: mysqladmin
+ \fB\-\-tls\-version=\fR\fB\fIname\fR\fR,
+ .sp
+-Accepts a comma-separated list of TLS protocol versions\&. A TLS protocol version will only be enabled if it 
++Accepts a comma-separated list of TLS protocol versions\&. A TLS protocol version will only be enabled if it
+ is present in this list\&. All other TLS protocol versions will not be permitted\&.
+ .RE
+ .sp
+@@ -1485,7 +1483,7 @@ value is given, it indicates the number
+ .\" --wait-for-all-slaves option: mysqladmin
+ \fB\-\-wait\-for\-all\-slaves\fR
+ .sp
+-Wait for the last binlog event to be sent to all connected slaves before shutting down\&. 
++Wait for the last binlog event to be sent to all connected slaves before shutting down\&.
+ This option is off by default\&.
+ .RE
+ .PP
+--- a/man/mysqlbinlog.1
++++ b/man/mysqlbinlog.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-BINLOG\FR" "1" "14 April 2021" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-BINLOG\fR" "1" "14 April 2021" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -19,7 +19,7 @@ mariadb-binlog \- utility for processing
+ \fBmysqlbinlog [\fR\fBoptions\fR\fB] \fR\fB\fIlog_file\fR\fR\fB \&.\&.\&.\fR
+ .SH "DESCRIPTION"
+ .PP
+-The server\'s binary log consists of files containing
++The server's binary log consists of files containing
+ \(lqevents\(rq
+ that describe modifications to database contents\&. The server writes these files in binary format\&. To display their contents in text format, use the
+ \fBmysqlbinlog\fR
+@@ -400,7 +400,7 @@ INSERT
+ statements following
+ USE db2\&.
+ .PP
+-\fBRow-based logging\fR. 
++\fBRow-based logging\fR.
+ \fBmysqlbinlog\fR
+ outputs only entries that change tables belonging to
+ \fIdb_name\fR\&. The default database has no effect on this\&. Suppose that the binary log just described was created using row\-based logging rather than statement\-based logging\&.
+@@ -455,9 +455,7 @@ with row\-based logging prior to MySQL 5
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default is
+-\'d:t:o,/tmp/mysqlbinlog\&.trace\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default is 'd:t:o,/tmp/mysqlbinlog.trace'.
+ .RE
+ .sp
+ .RS 4
+@@ -725,7 +723,7 @@ option on the command line,
+ \fBmysqlbinlog\fR
+ prompts for one\&.
+ .sp
+-Specifying a password on the command line should be considered insecure\&. You 
++Specifying a password on the command line should be considered insecure\&. You
+ can use an option file to avoid giving the password on the command line\&.
+ .RE
+ .sp
+@@ -772,8 +770,8 @@ Print the program argument list from all
+ \fB\-\-port=\fR\fB\fIport_num\fR\fR,
+ \fB\-P \fR\fB\fIport_num\fR\fR
+ .sp
+-The TCP/IP port number to use for connecting to a remote server, 
+-or \fB0\fR for default to, in order of preference, \fBmy.cnf\fR, 
++The TCP/IP port number to use for connecting to a remote server,
++or \fB0\fR for default to, in order of preference, \fBmy.cnf\fR,
+ \fB$MYSQL_TCP_PORT\fR, \fB/etc/services\fR, \fRbuilt-in default (3306)\fR\&.
+ Forces --protocol=tcp when specified on the command line without other connection properties\&.
+ .RE
+@@ -861,16 +859,16 @@ Direct output to the given file\&. With
+ \fB\-\-rewrite\-db=\fR\fB\fIname\fR\fR,
+ \fB\-r \fR\fB\fIname\fR\fR
+ .sp
+-Updates to a database with a different name than the original. 
+-Example: \fBrewrite-db='from->to'\fR\&. For events that are 
+-binlogged as statements, rewriting the database constitutes changing a 
+-statement's default database from \fIdb1\fB to \fIdb2\fR\&. There is no statement 
++Updates to a database with a different name than the original.
++Example: \fBrewrite-db='from->to'\fR\&. For events that are
++binlogged as statements, rewriting the database constitutes changing a
++statement's default database from \fIdb1\fB to \fIdb2\fR\&. There is no statement
+ analysis or rewrite of any kind, that is, if one specifies \fB"db1.tbl"\fR
+-in the statement explicitly, that occurrence won't be changed to 
+-\fB"db2.tbl"\fR\&. Row-based events are rewritten correctly to use the new 
+-database name\&. Filtering (e.g. with \fB--database=name\fR) happens after 
+-the database rewrites have been performed\&. If you use this option on the 
+-command line and \fB">"\fR has a special meaning to your command interpreter, 
++in the statement explicitly, that occurrence won't be changed to
++\fB"db2.tbl"\fR\&. Row-based events are rewritten correctly to use the new
++database name\&. Filtering (e.g. with \fB--database=name\fR) happens after
++the database rewrites have been performed\&. If you use this option on the
++command line and \fB">"\fR has a special meaning to your command interpreter,
+ quote the value (e.g. \fB--rewrite-db="oldname->newname"\fR\&.
+ .RE
+ .sp
+@@ -919,9 +917,9 @@ statement to the output to specify the c
+ \fB\-\-short\-form\fR,
+ \fB\-s\fR
+ .sp
+-Display only the statements contained in the log, no extra info 
+-and no row-based events\&. This is for testing only, and should 
+-not be used in production systems. If you want to suppress 
++Display only the statements contained in the log, no extra info
++and no row-based events\&. This is for testing only, and should
++not be used in production systems. If you want to suppress
+ base64-output, consider using \fB--base64-output=never\fR instead\&.
+ .RE
+ .sp
+@@ -1210,7 +1208,7 @@ You can pipe the output of
+ \fBmysqlbinlog\fR
+ into the
+ \fBmysql\fR
+-client to execute the events contained in the binary log\&. This technique is used to recover from a crash when you have an old 
++client to execute the events contained in the binary log\&. This technique is used to recover from a crash when you have an old
+ backup\&. For example:
+ .sp
+ .if n \{\
+@@ -1422,11 +1420,8 @@ Position: The byte position within the l
+ .sp -1
+ .IP \(bu 2.3
+ .\}
+-Timestamp: The event timestamp\&. In the example shown,
+-\'9d fc 5c 43\'
+-is the representation of
+-\'051024 17:24:13\'
+-in hexadecimal\&.
++Timestamp: The event timestamp\&. In the example shown, '9d fc 5c 43'
++is the representation of '051024 17:24:13' in hexadecimal\&.
+ .RE
+ .sp
+ .RS 4
+@@ -1437,9 +1432,7 @@ in hexadecimal\&.
+ .sp -1
+ .IP \(bu 2.3
+ .\}
+-Type: The event type code\&. In the example shown,
+-\'0f\'
+-indicates a
++Type: The event type code\&. In the example shown, '0f' indicates a
+ FORMAT_DESCRIPTION_EVENT\&. The following table lists the possible type codes\&.
+ .TS
+ allbox tab(:);
+@@ -1731,8 +1724,7 @@ LOG_EVENT_BINLOG_IN_USE_F
+ T}:T{
+ Log file correctly closed\&. (Used only in
+ FORMAT_DESCRIPTION_EVENT\&.) If
+-this flag is set (if the flags are, for example,
+-\'01 00\') in a
++this flag is set (if the flags are, for example, '01 00') in a
+ FORMAT_DESCRIPTION_EVENT, the log
+ file has not been properly closed\&. Most probably
+ this is because of a master crash (for example, due
+@@ -1752,7 +1744,7 @@ T}:T{
+ LOG_EVENT_THREAD_SPECIFIC_F
+ T}:T{
+ Set if the event is dependent on the connection it was executed in (for
+-example, \'04 00\'), for example,
++example, '04 00'), for example,
+ if the event uses temporary tables\&.
+ T}
+ T{
+@@ -1794,8 +1786,8 @@ CREATE TABLE t
+   date DATE NULL
+ ) ENGINE = InnoDB;
+ START TRANSACTION;
+-INSERT INTO t VALUES(1, \'apple\', NULL);
+-UPDATE t SET name = \'pear\', date = \'2009\-01\-01\' WHERE id = 1;
++INSERT INTO t VALUES(1, 'apple', NULL);
++UPDATE t SET name = 'pear', date = '2009\-01\-01' WHERE id = 1;
+ DELETE FROM t WHERE id = 1;
+ COMMIT;
+ .fi
+@@ -1817,24 +1809,18 @@ shell> \fBmysqlbinlog \fR\fB\fIlog_file\
+ \&.\&.\&.
+ # at 218
+ #080828 15:03:08 server id 1  end_log_pos 258 	Write_rows: table id 17 flags: STMT_END_F
+-BINLOG \'
+-fAS3SBMBAAAALAAAANoAAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
+-fAS3SBcBAAAAKAAAAAIBAAAQABEAAAAAAAEAA//8AQAAAAVhcHBsZQ==
+-\'/*!*/;
++BINLOG 'fAS3SBMBAAAALAAAANoAAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
++fAS3SBcBAAAAKAAAAAIBAAAQABEAAAAAAAEAA//8AQAAAAVhcHBsZQ=='/*!*/;
+ \&.\&.\&.
+ # at 302
+ #080828 15:03:08 server id 1  end_log_pos 356 	Update_rows: table id 17 flags: STMT_END_F
+-BINLOG \'
+-fAS3SBMBAAAALAAAAC4BAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
+-fAS3SBgBAAAANgAAAGQBAAAQABEAAAAAAAEAA////AEAAAAFYXBwbGX4AQAAAARwZWFyIbIP
+-\'/*!*/;
++BINLOG 'fAS3SBMBAAAALAAAAC4BAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
++fAS3SBgBAAAANgAAAGQBAAAQABEAAAAAAAEAA////AEAAAAFYXBwbGX4AQAAAARwZWFyIbIP'/*!*/;
+ \&.\&.\&.
+ # at 400
+ #080828 15:03:08 server id 1  end_log_pos 442 	Delete_rows: table id 17 flags: STMT_END_F
+-BINLOG \'
+-fAS3SBMBAAAALAAAAJABAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
+-fAS3SBkBAAAAKgAAALoBAAAQABEAAAAAAAEAA//4AQAAAARwZWFyIbIP
+-\'/*!*/;
++BINLOG 'fAS3SBMBAAAALAAAAJABAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
++fAS3SBkBAAAAKgAAALoBAAAQABEAAAAAAAEAA//4AQAAAARwZWFyIbIP'/*!*/;
+ .fi
+ .if n \{\
+ .RE
+@@ -1859,43 +1845,37 @@ shell> \fBmysqlbinlog \-v \fR\fB\fIlog_f
+ \&.\&.\&.
+ # at 218
+ #080828 15:03:08 server id 1  end_log_pos 258 	Write_rows: table id 17 flags: STMT_END_F
+-BINLOG \'
+-fAS3SBMBAAAALAAAANoAAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
+-fAS3SBcBAAAAKAAAAAIBAAAQABEAAAAAAAEAA//8AQAAAAVhcHBsZQ==
+-\'/*!*/;
++BINLOG 'fAS3SBMBAAAALAAAANoAAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
++fAS3SBcBAAAAKAAAAAIBAAAQABEAAAAAAAEAA//8AQAAAAVhcHBsZQ=='/*!*/;
+ ### INSERT INTO test\&.t
+ ### SET
+ ###   @1=1
+-###   @2=\'apple\'
++###   @2='apple'
+ ###   @3=NULL
+ \&.\&.\&.
+ # at 302
+ #080828 15:03:08 server id 1  end_log_pos 356 	Update_rows: table id 17 flags: STMT_END_F
+-BINLOG \'
+-fAS3SBMBAAAALAAAAC4BAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
+-fAS3SBgBAAAANgAAAGQBAAAQABEAAAAAAAEAA////AEAAAAFYXBwbGX4AQAAAARwZWFyIbIP
+-\'/*!*/;
++BINLOG 'fAS3SBMBAAAALAAAAC4BAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
++fAS3SBgBAAAANgAAAGQBAAAQABEAAAAAAAEAA////AEAAAAFYXBwbGX4AQAAAARwZWFyIbIP'/*!*/;
+ ### UPDATE test\&.t
+ ### WHERE
+ ###   @1=1
+-###   @2=\'apple\'
++###   @2='apple'
+ ###   @3=NULL
+ ### SET
+ ###   @1=1
+-###   @2=\'pear\'
+-###   @3=\'2009:01:01\'
++###   @2='pear'
++###   @3='2009:01:01'
+ \&.\&.\&.
+ # at 400
+ #080828 15:03:08 server id 1  end_log_pos 442 	Delete_rows: table id 17 flags: STMT_END_F
+-BINLOG \'
+-fAS3SBMBAAAALAAAAJABAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
+-fAS3SBkBAAAAKgAAALoBAAAQABEAAAAAAAEAA//4AQAAAARwZWFyIbIP
+-\'/*!*/;
++BINLOG 'fAS3SBMBAAAALAAAAJABAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
++fAS3SBkBAAAAKgAAALoBAAAQABEAAAAAAAEAA//4AQAAAARwZWFyIbIP'/*!*/;
+ ### DELETE FROM test\&.t
+ ### WHERE
+ ###   @1=1
+-###   @2=\'pear\'
+-###   @3=\'2009:01:01\'
++###   @2='pear'
++###   @3='2009:01:01'
+ .fi
+ .if n \{\
+ .RE
+@@ -1915,43 +1895,37 @@ shell> \fBmysqlbinlog \-vv \fR\fB\fIlog_
+ \&.\&.\&.
+ # at 218
+ #080828 15:03:08 server id 1  end_log_pos 258 	Write_rows: table id 17 flags: STMT_END_F
+-BINLOG \'
+-fAS3SBMBAAAALAAAANoAAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
+-fAS3SBcBAAAAKAAAAAIBAAAQABEAAAAAAAEAA//8AQAAAAVhcHBsZQ==
+-\'/*!*/;
++BINLOG 'fAS3SBMBAAAALAAAANoAAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
++fAS3SBcBAAAAKAAAAAIBAAAQABEAAAAAAAEAA//8AQAAAAVhcHBsZQ=='/*!*/;
+ ### INSERT INTO test\&.t
+ ### SET
+ ###   @1=1 /* INT meta=0 nullable=0 is_null=0 */
+-###   @2=\'apple\' /* VARSTRING(20) meta=20 nullable=0 is_null=0 */
++###   @2='apple' /* VARSTRING(20) meta=20 nullable=0 is_null=0 */
+ ###   @3=NULL /* VARSTRING(20) meta=0 nullable=1 is_null=1 */
+ \&.\&.\&.
+ # at 302
+ #080828 15:03:08 server id 1  end_log_pos 356 	Update_rows: table id 17 flags: STMT_END_F
+-BINLOG \'
+-fAS3SBMBAAAALAAAAC4BAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
+-fAS3SBgBAAAANgAAAGQBAAAQABEAAAAAAAEAA////AEAAAAFYXBwbGX4AQAAAARwZWFyIbIP
+-\'/*!*/;
++BINLOG 'fAS3SBMBAAAALAAAAC4BAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
++fAS3SBgBAAAANgAAAGQBAAAQABEAAAAAAAEAA////AEAAAAFYXBwbGX4AQAAAARwZWFyIbIP'/*!*/;
+ ### UPDATE test\&.t
+ ### WHERE
+ ###   @1=1 /* INT meta=0 nullable=0 is_null=0 */
+-###   @2=\'apple\' /* VARSTRING(20) meta=20 nullable=0 is_null=0 */
++###   @2='apple' /* VARSTRING(20) meta=20 nullable=0 is_null=0 */
+ ###   @3=NULL /* VARSTRING(20) meta=0 nullable=1 is_null=1 */
+ ### SET
+ ###   @1=1 /* INT meta=0 nullable=0 is_null=0 */
+-###   @2=\'pear\' /* VARSTRING(20) meta=20 nullable=0 is_null=0 */
+-###   @3=\'2009:01:01\' /* DATE meta=0 nullable=1 is_null=0 */
++###   @2='pear' /* VARSTRING(20) meta=20 nullable=0 is_null=0 */
++###   @3='2009:01:01' /* DATE meta=0 nullable=1 is_null=0 */
+ \&.\&.\&.
+ # at 400
+ #080828 15:03:08 server id 1  end_log_pos 442 	Delete_rows: table id 17 flags: STMT_END_F
+-BINLOG \'
+-fAS3SBMBAAAALAAAAJABAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
+-fAS3SBkBAAAAKgAAALoBAAAQABEAAAAAAAEAA//4AQAAAARwZWFyIbIP
+-\'/*!*/;
++BINLOG 'fAS3SBMBAAAALAAAAJABAAAAABEAAAAAAAAABHRlc3QAAXQAAwMPCgIUAAQ=
++fAS3SBkBAAAAKgAAALoBAAAQABEAAAAAAAEAA//4AQAAAARwZWFyIbIP'/*!*/;
+ ### DELETE FROM test\&.t
+ ### WHERE
+ ###   @1=1 /* INT meta=0 nullable=0 is_null=0 */
+-###   @2=\'pear\' /* VARSTRING(20) meta=20 nullable=0 is_null=0 */
+-###   @3=\'2009:01:01\' /* DATE meta=0 nullable=1 is_null=0 */
++###   @2='pear' /* VARSTRING(20) meta=20 nullable=0 is_null=0 */
++###   @3='2009:01:01' /* DATE meta=0 nullable=1 is_null=0 */
+ .fi
+ .if n \{\
+ .RE
+@@ -1982,7 +1956,7 @@ shell> \fBmysqlbinlog \-v \-\-base64\-ou
+ ### INSERT INTO test\&.t
+ ### SET
+ ###   @1=1
+-###   @2=\'apple\'
++###   @2='apple'
+ ###   @3=NULL
+ \&.\&.\&.
+ # at 302
+@@ -1990,20 +1964,20 @@ shell> \fBmysqlbinlog \-v \-\-base64\-ou
+ ### UPDATE test\&.t
+ ### WHERE
+ ###   @1=1
+-###   @2=\'apple\'
++###   @2='apple'
+ ###   @3=NULL
+ ### SET
+ ###   @1=1
+-###   @2=\'pear\'
+-###   @3=\'2009:01:01\'
++###   @2='pear'
++###   @3='2009:01:01'
+ \&.\&.\&.
+ # at 400
+ #080828 15:03:08 server id 1  end_log_pos 442 	Delete_rows: table id 17 flags: STMT_END_F
+ ### DELETE FROM test\&.t
+ ### WHERE
+ ###   @1=1
+-###   @2=\'pear\'
+-###   @3=\'2009:01:01\'
++###   @2='pear'
++###   @3='2009:01:01'
+ .fi
+ .if n \{\
+ .RE
+--- a/man/mysqlcheck.1
++++ b/man/mysqlcheck.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-CHECK\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-CHECK\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -79,7 +79,7 @@ table, an attempt to check it produces t
+ .nf
+ shell> \fBmysqlcheck test t\fR
+ test\&.t
+-note     : The storage engine for the table doesn\'t support check
++note     : The storage engine for the table doesn't support check
+ .fi
+ .if n \{\
+ .RE
+@@ -179,7 +179,7 @@ supports the following options, which ca
+ and
+ [client]
+ option file groups\&.
+-The \fB-c\fR, \fB-r\fR, \fB-a\fR and \fB-o\fR options are exclusive to each other\&. 
++The \fB-c\fR, \fB-r\fR, \fB-a\fR and \fB-o\fR options are exclusive to each other\&.
+ .sp
+ .RS 4
+ .ie n \{\
+@@ -381,9 +381,7 @@ treats the first name argument on the co
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default is
+-\'d:t:o\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default is 'd:t:o'.
+ .RE
+ .sp
+ .RS 4
+@@ -495,7 +493,7 @@ Must be given as first option\&.
+ .sp
+ If you are using this option to check tables, it ensures that they are 100% consistent but takes a long time\&.
+ .sp
+-If you are using this option to repair tables, it will force using the old, slow, repair with keycache method, 
++If you are using this option to repair tables, it will force using the old, slow, repair with keycache method,
+ instead of the much faster repair by sorting.
+ .RE
+ .sp
+@@ -890,7 +888,7 @@ Forces --protocol=socket when specified
+ .\" SSL options: mysqladmin
+ \fB\-\-ssl\fR
+ .sp
+-Enable SSL for connection (automatically enabled with other flags). Disable with 
++Enable SSL for connection (automatically enabled with other flags). Disable with
+ \fB\-\-skip-ssl\fR\&.
+ .RE
+ .sp
+@@ -1091,7 +1089,7 @@ The MariaDB user name to use when connec
+ \fB\-v\fR
+ .sp
+ Verbose mode\&. Print information about the various stages of program operation\&.
+-Using one \fB--verbose\fR option will give you more information about what mysqlcheck is 
++Using one \fB--verbose\fR option will give you more information about what mysqlcheck is
+ doing\&.
+ .sp
+ Using two \fB--verbose\fR options will also give you connection information\&.
+--- a/man/mysqld_multi.1
++++ b/man/mysqld_multi.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADBD-MULTI\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADBD-MULTI\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -368,8 +368,8 @@ Silent mode; disable warnings\&.
+ .\" tcp-ip option: mysqld_multi
+ \fB\-\-tcp\-ip\fR
+ .sp
+-Connect to the MariaDB server(s) via the TCP/IP port instead of the UNIX socket\&. This affects stopping 
+-and reporting. If a socket file is missing, the server may still be running, but can be accessed only 
++Connect to the MariaDB server(s) via the TCP/IP port instead of the UNIX socket\&. This affects stopping
++and reporting. If a socket file is missing, the server may still be running, but can be accessed only
+ via the TCP/IP port\&. By default connecting is done via the UNIX socket\&. This option affects
+ stop and report operations\&.
+ .RE
+@@ -511,7 +511,7 @@ account by executing the following comma
+ shell> \fBmysql \-u root \-S /tmp/mysql\&.sock \-p\fR
+ Enter password:
+ mysql> \fBGRANT SHUTDOWN ON *\&.*\fR
+-    \-> \fBTO \'multi_admin\'@\'localhost\' IDENTIFIED BY \'multipass\';\fR
++    \-> \fBTO 'multi_admin'@'localhost' IDENTIFIED BY 'multipass';\fR
+ .fi
+ .if n \{\
+ .RE
+@@ -606,7 +606,7 @@ option for
+ \fBmysqld_multi\fR
+ script as the Unix
+ root
+-user\&. Having the option in the option file doesn\'t matter; you just get a warning if you are not the superuser and the
++user\&. Having the option in the option file doesn't matter; you just get a warning if you are not the superuser and the
+ \fBmysqld\fR
+ processes are started under your own Unix account\&.
+ .RE
+--- a/man/mysqld_safe.1
++++ b/man/mysqld_safe.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADBD-SAFE\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADBD-SAFE\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -327,7 +327,7 @@ directory\&.
+ .sp
+ Use the
+ nice
+-program to set the server\'s scheduling priority to the given value\&.
++program to set the server's scheduling priority to the given value\&.
+ .RE
+ .sp
+ .RS 4
+--- a/man/mysqldump.1
++++ b/man/mysqldump.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-DUMP\FR" "1" "24 October 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-DUMP\fR" "1" "24 October 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -63,7 +63,7 @@ option, entire databases are dumped\&.
+ \fBmysqldump\fR
+ does not dump the
+ INFORMATION_SCHEMA or performance_schema
+-databases by default\&. To dump these, 
++databases by default\&. To dump these,
+ name them explicitly on the command line, although you must also use the
+ \fB\-\-skip\-lock\-tables\fR
+ option\&.
+@@ -504,7 +504,7 @@ Compress all information sent between th
+ .\" copy-s3-tables option: mysqldump
+ \fB\-\-copy\-s3\-tables\fR
+ .sp
+-By default S3 tables are ignored\&. With this option set, the result file will contain a CREATE statement 
++By default S3 tables are ignored\&. With this option set, the result file will contain a CREATE statement
+ for a similar Aria table, followed by the table data and ending with an ALTER TABLE xxx ENGINE=S3\&.
+ .RE
+ .sp
+@@ -563,9 +563,7 @@ statements are included in the output be
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default value is
+-\'d:t:o,/tmp/mysqldump\&.trace\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default value is 'd:t:o,/tmp/mysqldump.trace'.
+ .RE
+ .sp
+ .RS 4
+@@ -793,14 +791,14 @@ suppresses date printing\&
+ .\" dump-slave option: mysqldump
+ \fB\-\-dump\-slave[=\fR\fB\fIvalue\fR\fR\fB]\fR
+ .sp
+-Used for producing a dump file from a replication slave server that can be used to set up another slave server 
+-with the same master\&. Causes the binary log position and filename of the master to be appended to the dumped 
+-data output\&. Setting the value to 1 (the default) will print it as a CHANGE MASTER command in the dumped data 
+-output; if set to 2, that command will be prefixed with a comment symbol\&. This option will turn 
+-\-\-lock\-all\-tables on, unless \-\-single-transaction is specified too (in which case a global read lock is only 
+-taken a short time at the beginning of the dump \- don't forget to read about \-\-single-transaction below)\&. In 
+-all cases any action on logs will happen at the exact moment of the dump\&. Option automatically turns 
+-\-\-lock\-tables off\&. Using this option causes mysqldump to stop the slave SQL thread before beginning the dump, 
++Used for producing a dump file from a replication slave server that can be used to set up another slave server
++with the same master\&. Causes the binary log position and filename of the master to be appended to the dumped
++data output\&. Setting the value to 1 (the default) will print it as a CHANGE MASTER command in the dumped data
++output; if set to 2, that command will be prefixed with a comment symbol\&. This option will turn
++\-\-lock\-all\-tables on, unless \-\-single-transaction is specified too (in which case a global read lock is only
++taken a short time at the beginning of the dump \- don't forget to read about \-\-single-transaction below)\&. In
++all cases any action on logs will happen at the exact moment of the dump\&. Option automatically turns
++\-\-lock\-tables off\&. Using this option causes mysqldump to stop the slave SQL thread before beginning the dump,
+ and restart it again after completion\&.
+ .RE
+ .sp
+@@ -1022,9 +1020,7 @@ Used together with --tab. When enabled,
+ .\" hex-blob option: mysqldump
+ \fB\-\-hex\-blob\fR
+ .sp
+-Dump binary columns using hexadecimal notation (for example,
+-\'abc\'
+-becomes
++Dump binary columns using hexadecimal notation (for example, 'abc' becomes
+ 0x616263)\&. The affected data types are
+ BINARY,
+ VARBINARY, the
+@@ -1077,7 +1073,7 @@ Do not dump the given table, which must
+ .\" include-master-host-port option: mysqldump
+ \fB\-\-include\-master\-host\-port\fR
+ .sp
+-Add the MASTER_HOST and MASTER_PORT options for the CHANGE MASTER TO statement when using 
++Add the MASTER_HOST and MASTER_PORT options for the CHANGE MASTER TO statement when using
+ the \fB--dump-slave\fR option for a slave dump\&.
+ .RE
+ .sp
+@@ -1197,7 +1193,7 @@ Log warnings and errors by appending the
+ .\" log-queries option: mysqldump
+ \fB\-\-log\-queries\fR\fR
+ .sp
+-When restoring the dump, the server will, if logging is turned on, log the queries to the general and slow query log\&. 
++When restoring the dump, the server will, if logging is turned on, log the queries to the general and slow query log\&.
+ Defaults to on; use \fB--skip-log-queries\fR to disable\&.
+ .RE
+ .sp
+@@ -1243,7 +1239,7 @@ It is also possible to set up a slave by
+ .sp -1
+ .IP "  1." 4.2
+ .\}
+-Stop the slave\'s SQL thread and get its current status:
++Stop the slave's SQL thread and get its current status:
+ .sp
+ .if n \{\
+ .RS 4
+@@ -1355,7 +1351,7 @@ On the new slave, set the replication co
+ .\}
+ .nf
+ mysql> \fBCHANGE MASTER TO\fR
+-    \-> \fBMASTER_LOG_FILE = \'\fR\fB\fIfile_name\fR\fR\fB\', MASTER_LOG_POS = \fR\fB\fIfile_pos\fR\fR\fB;\fR
++    \-> \fBMASTER_LOG_FILE = '\fR\fB\fIfile_name\fR\fR\fB', MASTER_LOG_POS = \fR\fB\fIfile_pos\fR\fR\fB;\fR
+ .fi
+ .if n \{\
+ .RE
+@@ -1564,7 +1560,7 @@ See the discussion at the beginning of t
+ .\" order-by-primary option: mysqldump
+ \fB\-\-order\-by\-primary\fR
+ .sp
+-Dump each table\'s rows sorted by its primary key, or by its first unique index, if such an index exists\&. This is useful when dumping a
++Dump each table's rows sorted by its primary key, or by its first unique index, if such an index exists\&. This is useful when dumping a
+ MyISAM
+ table to be loaded into an
+ InnoDB
+@@ -1880,7 +1876,7 @@ option with
+ .\" skip-add-drop-table option: mysqldump
+ \fB\-\-skip\-add\-drop\-table\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-add\-drop\-table\fR
+ option\&.
+ .RE
+@@ -1897,7 +1893,7 @@ option\&.
+ .\" skip-add-locks option: mysqldump
+ \fB\-\-skip\-add\-locks\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-add\-locks\fR
+ option\&.
+ .RE
+@@ -1914,7 +1910,7 @@ option\&.
+ .\" skip-comments option: mysqldump
+ \fB\-\-skip\-comments\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-comments\fR
+ option\&.
+ .RE
+@@ -1931,7 +1927,7 @@ option\&.
+ .\" skip-compact option: mysqldump
+ \fB\-\-skip\-compact\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-compact\fR
+ option\&.
+ .RE
+@@ -1948,7 +1944,7 @@ option\&.
+ .\" skip-disable-keys option: mysqldump
+ \fB\-\-skip\-disable\-keys\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-disable\-keys\fR
+ option\&.
+ .RE
+@@ -1965,7 +1961,7 @@ option\&.
+ .\" skip-extended-insert option: mysqldump
+ \fB\-\-skip\-extended\-insert\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-extended\-insert\fR
+ option\&.
+ .RE
+@@ -1999,7 +1995,7 @@ option\&.
+ .\" skip-quick option: mysqldump
+ \fB\-\-skip\-quick\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-quick\fR
+ option\&.
+ .RE
+@@ -2016,7 +2012,7 @@ option\&.
+ .\" skip-quote-names option: mysqldump
+ \fB\-\-skip\-quote\-names\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-quote\-names\fR
+ option\&.
+ .RE
+@@ -2033,7 +2029,7 @@ option\&.
+ .\" skip-set-charset option: mysqldump
+ \fB\-\-skip\-set\-charset\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-set\-charset\fR
+ option\&.
+ .RE
+@@ -2050,7 +2046,7 @@ option\&.
+ .\" skip-triggers option: mysqldump
+ \fB\-\-skip\-triggers\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-triggers\fR
+ option\&.
+ .RE
+@@ -2067,7 +2063,7 @@ option\&.
+ .\" skip-tz-utc option: mysqldump
+ \fB\-\-skip\-tz\-utc\fR
+ .sp
+-Disable the 
++Disable the
+ \fB\-\-tz\-utc\fR
+ option\&.
+ .RE
+@@ -2102,7 +2098,7 @@ Forces --protocol=socket when specified
+ .\" SSL options: mysqladmin
+ \fB\-\-ssl\fR
+ .sp
+-Enable SSL for connection (automatically enabled with other flags). Disable with 
++Enable SSL for connection (automatically enabled with other flags). Disable with
+ \fB\-\-skip-ssl\fR\&.
+ .RE
+ .sp
+@@ -2446,7 +2442,7 @@ TIMESTAMP
+ columns to be dumped and reloaded between servers in different time zones\&.
+ \fBmysqldump\fR
+ sets its connection time zone to UTC and adds
+-SET TIME_ZONE=\'+00:00\'
++SET TIME_ZONE='+00:00'
+ to the dump file\&. Without this option,
+ TIMESTAMP
+ columns are dumped and reloaded in the time zones local to the source and destination servers, which can cause the values to change if the servers are in different time zones\&.
+@@ -2515,8 +2511,8 @@ Display version information and exit\&.
+ .\}
+ .\" mysqldump: where option
+ .\" where option: mysqldump
+-\fB\-\-where=\'\fR\fB\fIwhere_condition\fR\fR\fB\'\fR,
+-\fB\-w \'\fR\fB\fIwhere_condition\fR\fR\fB\'\fR
++\fB\-\-where='\fR\fB\fIwhere_condition\fR\fR\fB'\fR,
++\fB\-w '\fR\fB\fIwhere_condition\fR\fR\fB'\fR
+ .sp
+ Dump only rows selected by the given
+ WHERE
+@@ -2528,7 +2524,7 @@ Examples:
+ .RS 4
+ .\}
+ .nf
+-\-\-where="user=\'jimf\'"
++\-\-where="user='jimf'"
+ \-w"userid>1"
+ \-w"userid<1"
+ .fi
+@@ -2552,11 +2548,8 @@ Examples:
+ .sp
+ Write dump output as well\-formed XML\&.
+ .sp
+-\fBNULL\fR\fB, \fR\fB\'NULL\'\fR\fB, and Empty Values\fR: For a column named
+-\fIcolumn_name\fR, the
+-NULL
+-value, an empty string, and the string value
+-\'NULL\'
++\fBNULL\fR\fB, \fR\fB'NULL'\fR\fB, and Empty Values\fR: For a column named
++\fIcolumn_name\fR, the NULL value, an empty string, and the string value 'NULL'
+ are distinguished from one another in the output generated by this option as follows\&.
+ .TS
+ allbox tab(:);
+@@ -2572,12 +2565,12 @@ T}:T{
+ <field name="\fIcolumn_name\fR" xsi:nil="true" />
+ T}
+ T{
+-\'\' (\fIempty string\fR)
++\(aq\(aq (\fIempty string\fR)
+ T}:T{
+ <field name="\fIcolumn_name\fR"></field>
+ T}
+ T{
+-\'NULL\' (\fIstring value\fR)
++\(aqNULL\(aq (\fIstring value\fR)
+ T}:T{
+ <field name="\fIcolumn_name\fR">NULL</field>
+ T}
+--- a/man/mysqldumpslow.1
++++ b/man/mysqldumpslow.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-DUMPSLOW\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-DUMPSLOW\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -27,11 +27,7 @@ Normally,
+ \fBmysqldumpslow\fR
+ groups queries that are similar except for the particular values of number and string data values\&. It
+ \(lqabstracts\(rq
+-these values to
+-N
+-and
+-\'S\'
+-when displaying summary output\&. The
++these values to N and 'S' when displaying summary output\&. The
+ \fB\-a\fR
+ and
+ \fB\-n\fR
+@@ -79,10 +75,7 @@ Display a help message and exit\&.
+ .\}
+ \fB\-a\fR
+ .sp
+-Do not abstract all numbers to
+-N
+-and strings to
+-\'S\'\&.
++Do not abstract all numbers to N and strings to 'S'.
+ .RE
+ .sp
+ .RS 4
+--- a/man/mysqlimport.1
++++ b/man/mysqlimport.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-IMPORT\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-IMPORT\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -49,7 +49,7 @@ shell> \fBmysqlimport [\fR\fB\fIoptions\
+ .PP
+ For each text file named on the command line,
+ \fBmysqlimport\fR
+-strips any extension from the file name and uses the result to determine the name of the table into which to import the file\'s contents\&. For example, files named
++strips any extension from the file name and uses the result to determine the name of the table into which to import the file's contents\&. For example, files named
+ patient\&.txt,
+ patient\&.text, and
+ patient
+@@ -144,9 +144,7 @@ Compress all information sent between th
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default is
+-\'d:t:o\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default is 'd:t:o'.
+ .RE
+ .sp
+ .RS 4
+@@ -633,7 +631,7 @@ Forces --protocol=socket when specified
+ .\" SSL options: mysqladmin
+ \fB\-\-ssl\fR
+ .sp
+-Enable SSL for connection (automatically enabled with other flags). Disable with 
++Enable SSL for connection (automatically enabled with other flags). Disable with
+ \fB\-\-skip-ssl\fR\&.
+ .RE
+ .sp
+@@ -836,7 +834,7 @@ Here is a sample session that demonstrat
+ .RS 4
+ .\}
+ .nf
+-shell> \fBmysql \-e \'CREATE TABLE imptest(id INT, n VARCHAR(30))\' test\fR
++shell> \fBmysql \-e 'CREATE TABLE imptest(id INT, n VARCHAR(30))' test\fR
+ shell> \fBed\fR
+ a
+ 100     Max Sydow
+@@ -851,7 +849,7 @@ shell> \fBod \-c imptest\&.txt\fR
+ 0000040
+ shell> \fBmysqlimport \-\-local test imptest\&.txt\fR
+ test\&.imptest: Records: 2  Deleted: 0  Skipped: 0  Warnings: 0
+-shell> \fBmysql \-e \'SELECT * FROM imptest\' test\fR
++shell> \fBmysql \-e 'SELECT * FROM imptest' test\fR
+ +\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
+ | id   | n             |
+ +\-\-\-\-\-\-+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-+
+--- a/man/mysqlshow.1
++++ b/man/mysqlshow.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-SHOW\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-SHOW\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -26,7 +26,7 @@ mariadb-show \- display database, table,
+ .PP
+ The
+ \fBmysqlshow\fR
+-client can be used to quickly see which databases exist, their tables, or a table\'s columns or indexes\&.
++client can be used to quickly see which databases exist, their tables, or a table's columns or indexes\&.
+ .PP
+ \fBmysqlshow\fR
+ provides a command\-line interface to several SQL
+@@ -191,9 +191,7 @@ tables\&.
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default is
+-\'d:t:o\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default is 'd:t:o'.
+ .RE
+ .sp
+ .RS 4
+@@ -510,7 +508,7 @@ Forces --protocol=socket when specified
+ .\" SSL options: mysqlshow
+ \fB\-\-ssl\fR
+ .sp
+-Enable SSL for connection (automatically enabled with other flags). Disable with 
++Enable SSL for connection (automatically enabled with other flags). Disable with
+ \fB\-\-skip-ssl\fR\&.
+ .RE
+ .sp
+--- a/man/mysqlslap.1
++++ b/man/mysqlslap.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-SLAP\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-SLAP\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -105,7 +105,7 @@ build the query SQL statement with a tab
+ INT
+ columns and three
+ VARCHAR
+-columns\&. Use five clients querying 20 times each\&. Do not create the table or insert the data (that is, use the previous test\'s schema and data):
++columns\&. Use five clients querying 20 times each\&. Do not create the table or insert the data (that is, use the previous test's schema and data):
+ .sp
+ .if n \{\
+ .RS 4
+@@ -119,15 +119,11 @@ mysqlslap \-\-concurrency=5 \-\-iteratio
+ .RE
+ .\}
+ .PP
+-Tell the program to load the create, insert, and query SQL statements from the specified files, where the
+-create\&.sql
+-file has multiple table creation statements delimited by
+-\';\'
+-and multiple insert statements delimited by
+-\';\'\&. The
++Tell the program to load the create, insert, and query SQL statements from the specified files, where the create\&.sql
++file has multiple table creation statements delimited by ';' and multiple insert statements delimited by ';'\&. The
+ \fB\-\-query\fR
+-file will have multiple queries delimited by
+-\';\'\&. Run all the load statements, then run all the queries in the query file with five clients (five times each):
++file will have multiple queries delimited by ';'\&.
++Run all the load statements, then run all the queries in the query file with five clients (five times each):
+ .sp
+ .if n \{\
+ .RS 4
+@@ -427,9 +423,7 @@ Generate output in comma\-separated valu
+ .sp
+ Write a debugging log\&. A typical
+ \fIdebug_options\fR
+-string is
+-\'d:t:o,\fIfile_name\fR\'\&. The default is
+-\'d:t:o,/tmp/mysqlslap\&.trace\'\&.
++string is 'd:t:o,\fIfile_name\fR'. The default is 'd:t:o,/tmp/mysqlslap.trace'.
+ .RE
+ .sp
+ .RS 4
+@@ -556,7 +550,7 @@ statements\&. The default is 0 (connecti
+ \fB\-\-engine=\fR\fB\fIengine_name\fR\fR,
+ \fB\-e \fR\fB\fIengine_name\fR\fR
+ .sp
+-Comma separated list of storage engines to use for creating the table\&. The test is run for 
++Comma separated list of storage engines to use for creating the table\&. The test is run for
+ each engine\&. You can also specify an option for an engine after a colon, for example
+ \fBmemory:max_row=2300\fR\&.
+ .RE
+@@ -976,7 +970,7 @@ Forces --protocol=socket when specified
+ .\" SSL options: mysqlshow
+ \fB\-\-ssl\fR
+ .sp
+-Enable SSL for connection (automatically enabled with other flags). Disable with 
++Enable SSL for connection (automatically enabled with other flags). Disable with
+ \fB\-\-skip-ssl\fR\&.
+ .RE
+ .sp
+--- a/man/mysqltest.1
++++ b/man/mysqltest.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-TEST\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-TEST\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+@@ -218,9 +218,9 @@ This can be used to set the MYSQL_OPT_CO
+ .\" continue-on-error option: mysqltest
+ \fB\-\-continue\-on\-error\fR
+ .sp
+-Continue test even if we got an error\&. This is mostly 
+-useful when testing a storage engine to see what from a 
+-test file it can execute, or to find all syntax errors in 
++Continue test even if we got an error\&. This is mostly
++useful when testing a storage engine to see what from a
++test file it can execute, or to find all syntax errors in
+ a newly created big test file\&.
+ .RE
+ .sp
+@@ -270,8 +270,7 @@ The default database to use\&.
+ .sp
+ Write a debugging log if MariaDB is built with debugging support\&. The default
+ \fIdebug_options\fR
+-value is
+-\'d:t:S:i:O,/tmp/mysqltest\&.trace\'\&.
++value is 'd:t:S:i:O,/tmp/mysqltest.trace'.
+ .RE
+ .sp
+ .RS 4
+@@ -478,7 +477,7 @@ Directory for client-side plugins\&.
+ \fB\-\-port=\fR\fB\fIport_num\fR\fR,
+ \fB\-P \fR\fB\fIport_num\fR\fR
+ .sp
+-The TCP/IP port number to use for the connection or 0 for default to, in order of preference, 
++The TCP/IP port number to use for the connection or 0 for default to, in order of preference,
+ my.cnf, $MYSQL_TCP_PORT, /etc/services, built-in default (3306)\&.
+ .RE
+ .sp
+@@ -792,7 +791,7 @@ creates and invokes a stored procedure t
+ .\" SSL options: mysqltest
+ \fB\-\-ssl\fR
+ .sp
+-Enable SSL for connection (automatically enabled with other flags). Disable with 
++Enable SSL for connection (automatically enabled with other flags). Disable with
+ \fB\-\-skip-ssl\fR\&.
+ .RE
+ .sp
+--- a/man/mariadb-conv.1
++++ b/man/mariadb-conv.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-CONV" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-CONV\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql-stress-test.pl.1
++++ b/man/mysql-stress-test.pl.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMYSQL\-STRESS\-TE" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMYSQL\-STRESS\-TEST\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_convert_table_format.1
++++ b/man/mysql_convert_table_format.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-CONVERT-TAB" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-CONVERT-TABLE-FORMAT\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_find_rows.1
++++ b/man/mysql_find_rows.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-FIND-ROWS\F" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-FIND-ROWS\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_fix_extensions.1
++++ b/man/mysql_fix_extensions.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-FIX-EXTENSI" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-FIX-EXTENSIONS\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_secure_installation.1
++++ b/man/mysql_secure_installation.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-SECURE-INST" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-SECURE-INSTALLATION\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_setpermission.1
++++ b/man/mysql_setpermission.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-SETPERMISSI" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-SETPERMISSION\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/resolve_stack_dump.1
++++ b/man/resolve_stack_dump.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBRESOLVE_STACK_DUM" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBRESOLVE_STACK_DUMP\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/comp_err.1
++++ b/man/comp_err.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBCOMP_ERR\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBCOMP_ERR\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/galera_new_cluster.1
++++ b/man/galera_new_cluster.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBGALERA_NEW_CLUSTER\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBGALERA_NEW_CLUSTER\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/galera_recovery.1
++++ b/man/galera_recovery.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBGALERA_RECOVERY\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBGALERA_RECOVERY\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/innochecksum.1
++++ b/man/innochecksum.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBINNOCHECKSUM\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBINNOCHECKSUM\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mariabackup.1
++++ b/man/mariabackup.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIABACKUP\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIABACKUP\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mariadb-service-convert.1
++++ b/man/mariadb-service-convert.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-SERVICE-CONVERT\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-SERVICE-CONVERT\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mbstream.1
++++ b/man/mbstream.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMBSTREAM\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMBSTREAM\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/msql2mysql.1
++++ b/man/msql2mysql.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMSQL2MYSQL\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMSQL2MYSQL\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/my_safe_process.1
++++ b/man/my_safe_process.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMY_SAFE_PROCESS\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMY_SAFE_PROCESS\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/myisamlog.1
++++ b/man/myisamlog.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMYISAMLOG\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMYISAMLOG\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/myrocks_hotbackup.1
++++ b/man/myrocks_hotbackup.1
+@@ -1,4 +1,4 @@
+-.TH MYROCKS_HOTBACKUP "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH MYROCKS_HOTBACKUP "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .SH NAME
+ myrocks_hotbackup \- streaming backup for MariaDB MyRocks
+ .SH DESCRIPTION
+--- a/man/mysql.server.1
++++ b/man/mysql.server.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMYSQL\&.SERVER\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMYSQL\&.SERVER\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_config.1
++++ b/man/mysql_config.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMYSQL_CONFIG\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMYSQL_CONFIG\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_install_db.1
++++ b/man/mysql_install_db.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-INSTALL-DB\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-INSTALL-DB\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_ldb.1
++++ b/man/mysql_ldb.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-LDB\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-LDB\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_plugin.1
++++ b/man/mysql_plugin.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-PLUGIN\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-PLUGIN\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * Define some portability stuff
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_upgrade.1
++++ b/man/mysql_upgrade.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-UPGRADE\FR" "1" "20 July 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-UPGRADE\fR" "1" "20 July 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysql_waitpid.1
++++ b/man/mysql_waitpid.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-WAITPID\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-WAITPID\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysqld.8
++++ b/man/mysqld.8
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADBD\FR" "8" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADBD\fR" "8" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysqld_safe_helper.1
++++ b/man/mysqld_safe_helper.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADBD-SAFE-HELPER\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADBD-SAFE-HELPER\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mysqlhotcopy.1
++++ b/man/mysqlhotcopy.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBMARIADB-HOTCOPY\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBMARIADB-HOTCOPY\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/mytop.1
++++ b/man/mytop.1
+@@ -1,4 +1,4 @@
+-.TH MYTOP "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH MYTOP "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .SH NAME
+ mytop \- display MariaDB server performance info like 'top'
+ .SH "SEE ALSO"
+--- a/man/perror.1
++++ b/man/perror.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBPERROR\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBPERROR\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/replace.1
++++ b/man/replace.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBREPLACE\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBREPLACE\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/resolveip.1
++++ b/man/resolveip.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBRESOLVEIP\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBRESOLVEIP\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/wsrep_sst_common.1
++++ b/man/wsrep_sst_common.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBWSREP_SST_COMMON\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBWSREP_SST_COMMON\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/wsrep_sst_mariabackup.1
++++ b/man/wsrep_sst_mariabackup.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBWSREP_SST_MARIABACKUP\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBWSREP_SST_MARIABACKUP\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/wsrep_sst_mysqldump.1
++++ b/man/wsrep_sst_mysqldump.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBWSREP_SST_MYSQLDUMP\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBWSREP_SST_MYSQLDUMP\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/wsrep_sst_rsync.1
++++ b/man/wsrep_sst_rsync.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBWSREP_SST_RSYNC\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBWSREP_SST_RSYNC\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------
+--- a/man/wsrep_sst_rsync_wan.1
++++ b/man/wsrep_sst_rsync_wan.1
+@@ -1,6 +1,6 @@
+ '\" t
+ .\"
+-.TH "\FBWSREP_SST_RSYNC_WAN\FR" "1" "15 May 2020" "MariaDB 10\&.10" "MariaDB Database System"
++.TH "\fBWSREP_SST_RSYNC_WAN\fR" "1" "15 May 2020" "MariaDB 10.11" "MariaDB Database System"
+ .\" -----------------------------------------------------------------
+ .\" * set default formatting
+ .\" -----------------------------------------------------------------

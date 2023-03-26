@@ -17,3 +17,4 @@ debug-order_by_innodb.patch
 2547-addr2line-improvements.patch
 2464-log-missing-upgrade.patch
 2557-binlog-character-set.patch
+fix-man-pages.patch
