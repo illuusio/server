@@ -270,6 +270,38 @@ blhc:
     echo "Testing -l mariadbclient"
     g++ b933063.cpp -l mariadbclient && ./a.out | tee result
     if grep --quiet latin result; then echo "ERROR: Charset latin found!"; exit 1; fi
+  - |
+    # Build a test binary to verify API version strings
+    cat > b1031863.cpp <<EOF
+    #include <cstring>
+    #include <iostream>
+    #include <mysql/mysql.h>
+    using namespace std;
+
+    void test_if_starts_with(const string expected, const string tested, const string name) {
+      int r = strncmp(tested.c_str(), expected.c_str(), expected.size());
+      if (r == 0) {
+        cout << name << ": " << tested << "\n";
+      } else {
+        cout << "ERROR: " << name << " started with " << tested << " instead of the expected " << expected << "!\n";
+        exit(1);
+      }
+    }
+
+    int main()
+    {
+      MYSQL h;
+      // Constants refer to server version
+      test_if_starts_with("1011", to_string(MARIADB_VERSION_ID), "MARIADB_VERSION_ID");
+      test_if_starts_with("1011", to_string(MYSQL_VERSION_ID), "MYSQL_VERSION_ID");
+      // Client ABI returns connector version
+      test_if_starts_with("303", to_string(mysql_get_client_version()), "mysql_get_client_version()");
+      test_if_starts_with("3.3", mysql_get_client_info(), "mysql_get_client_info()");
+      return 0;
+    }
+    EOF
+    g++ b1031863.cpp -l mysqlclient && ./a.out
+
 
 fresh install:
   stage: test
