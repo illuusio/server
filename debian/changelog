@@ -1,3 +1,9 @@
+mariadb (1:10.11.2-4) UNRELEASED; urgency=medium
+
+  * Open new changelog entry. This will be replaced with 'gbp dch -avR'.
+
+ -- Otto Kekäläinen <otto@debian.org>  Fri, 21 Apr 2023 16:38:46 -0700
+
 mariadb (1:10.11.2-3) unstable; urgency=medium
 
   * Fix typo in autopkgtests configuration-tracing affecting armhf and armel
