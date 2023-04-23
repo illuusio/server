@@ -25,7 +25,7 @@ MARIADBD_USERS="root"
 
 # Check if user 'mysql' exists before referring to it in pgrep
 # to avoid pgrep erroring on 'invalid user name'
-if id mysql
+if id mysql >/dev/null 2>&1
 then
   MARIADBD_USERS="$MARIADBD_USERS,mysql"
 fi
@@ -192,7 +192,7 @@ if ! getent passwd mysql >/dev/null; then
 	  --home /nonexistent \
 	  --gecos "MySQL Server" \
 	  --shell /bin/false \
-	  mysql  >/dev/null
+	  mysql  >/dev/null 2>&1
 fi
 
 # end of NIS tolerance zone
