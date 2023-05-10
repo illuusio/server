@@ -1,8 +1,9 @@
-mariadb (1:10.11.2-4) UNRELEASED; urgency=medium
+mariadb (1:10.11.2-4) unstable; urgency=medium
 
-  * Open new changelog entry. This will be replaced with 'gbp dch -avR'.
+  [ Mathias Gibbens ]
+  * Silence superfluous warnings in mariadb-server preinst (Closes: #1034684)
 
- -- Otto Kekäläinen <otto@debian.org>  Fri, 21 Apr 2023 16:38:46 -0700
+ -- Otto Kekäläinen <otto@debian.org>  Wed, 10 May 2023 11:48:12 -0700
 
 mariadb (1:10.11.2-3) unstable; urgency=medium
 
