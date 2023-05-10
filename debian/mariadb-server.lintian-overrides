@@ -1,0 +1,2 @@
+# False-Positive as package is needed Debian 10 and 11
+depends-on-obsolete-package Depends: lsb-base *
