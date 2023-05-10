@@ -33,7 +33,7 @@ Services, Inc.
 
 --- a/storage/innobase/row/row0purge.cc
 +++ b/storage/innobase/row/row0purge.cc
-@@ -1017,8 +1017,8 @@ row_purge_parse_undo_rec(
+@@ -1022,8 +1022,8 @@ row_purge_parse_undo_rec(
  	dict_index_t*	clust_index;
  	undo_no_t	undo_no;
  	table_id_t	table_id;
@@ -77,7 +77,7 @@ Services, Inc.
  
 --- a/sql/log_event_server.cc
 +++ b/sql/log_event_server.cc
-@@ -6992,7 +6992,7 @@ static inline
+@@ -7019,7 +7019,7 @@ static inline
  void store_compressed_length(String &str_buf, ulonglong length)
  {
    // Store Type and packed length

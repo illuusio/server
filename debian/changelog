@@ -1,9 +1,16 @@
-mariadb (1:10.11.2-4) unstable; urgency=medium
+mariadb (1:10.11.3-1) UNRELEASED; urgency=medium
+
+  * New upstream version 10.11.3. Includes security fixes for
+    - CVE-2022-47015 (Closes: #1034889)
+  * This is the first bug fixing maintenance release from upstream in the 10.11
+    series as the 10.11.2 release was the first one announced GA (general
+    availability). For a full list of all bug fixes see release notes at
+    https://mariadb.com/kb/en/mariadb-10-11-3-release-notes/.
 
   [ Mathias Gibbens ]
   * Silence superfluous warnings in mariadb-server preinst (Closes: #1034684)
 
- -- Otto Kekäläinen <otto@debian.org>  Wed, 10 May 2023 11:48:12 -0700
+ -- Otto Kekäläinen <otto@debian.org>  Wed, 10 May 2023 12:29:00 -0700
 
 mariadb (1:10.11.2-3) unstable; urgency=medium
 

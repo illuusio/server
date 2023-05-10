@@ -24,7 +24,7 @@ Amazon Web Services, Inc.
 
 --- a/scripts/mysql_system_tables_fix.sql
 +++ b/scripts/mysql_system_tables_fix.sql
-@@ -757,8 +757,27 @@ if @have_innodb then
+@@ -756,8 +756,27 @@ if @have_innodb then
    delete from innodb_table_stats where length(table_name) > 64;
  
    # update table_name and timestamp fields in the innodb stat tables

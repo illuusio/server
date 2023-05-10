@@ -28,7 +28,7 @@ Subject: [PATCH] MDEV-30629 Add optimizer trace to main/order_by_innodb.test
  explain
  select
  t1.id,t2.id
-@@ -244,9 +245,489 @@ d1 > '2019-02-06 00:00:00'
+@@ -244,9 +245,488 @@ d1 > '2019-02-06 00:00:00'
  dd.d1, dd.d2, dd.id limit 1
  );
  id	select_type	table	type	possible_keys	key	key_len	ref	rows	Extra
@@ -381,7 +381,6 @@ Subject: [PATCH] MDEV-30629 Add optimizer trace to main/order_by_innodb.test
 +                              {
 +                                "access_type": "ref",
 +                                "index": "id2",
-+                                "rowid_filter_skipped": "cost_factor <= 0",
 +                                "rows": 1,
 +                                "cost": 2.00009765,
 +                                "chosen": true
