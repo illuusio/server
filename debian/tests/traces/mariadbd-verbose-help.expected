@@ -276,7 +276,7 @@ The following specify which files/extra groups are read (specified before remain
                       connect packet before responding with 'Bad handshake'
   --console           Write error output on screen; don't remove the console
                       window on windows.
-  --core-file         Write core on errors.
+  --core-file         Write core on crashes
   -h, --datadir=name  Path to the database root directory
   --date-format=name  The DATE format (ignored)
   --datetime-format=name 
@@ -1462,7 +1462,8 @@ The following specify which files/extra groups are read (specified before remain
                       extended_keys, exists_to_in, orderby_uses_equalities, 
                       condition_pushdown_for_derived, split_materialized, 
                       condition_pushdown_for_subquery, rowid_filter, 
-                      condition_pushdown_from_having, not_null_range_scan
+                      condition_pushdown_from_having, not_null_range_scan,
+                      hash_join_cardinality
   --optimizer-trace=name 
                       Controls tracing of the Optimizer:
                       optimizer_trace=option=val[,option=val...], where option
@@ -2461,6 +2462,7 @@ completion-type                                              NO_CHAIN
 concurrent-insert                                            AUTO
 connect-timeout                                              10
 console                                                      FALSE
+core-file                                                    FALSE
 datadir                                                      /var/lib/mysql/
 date-format                                                  %Y-%m-%d
 datetime-format                                              %Y-%m-%d %H:%i:%s
@@ -2505,7 +2507,7 @@ feedback                                                     ON
 feedback-http-proxy                                          (No default value)
 feedback-send-retry-wait                                     60
 feedback-send-timeout                                        60
-feedback-url                                                 https://mariadb.org/feedback_plugin/post
+feedback-url                                                 https://feedback.mariadb.org/rest/v1/post
 feedback-user-info                                           
 flashback                                                    FALSE
 flush                                                        FALSE
