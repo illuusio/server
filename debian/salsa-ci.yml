@@ -455,6 +455,26 @@ mariadb-10.3 and Buster upgrade:
     - service mysql status || service mariadb status
     - *test-verify-final
 
+# Similar to the Cacti install test, check that MariaDB consumer Zoph upgrades
+default-mysql-server and Bullseye upgrade:
+  extends: .salsa-ci-template-for-mariadb
+  stage: upgrade MariaDB and distro
+  image: debian:bullseye
+  script:
+    - *test-prepare-container
+    # Install everything MariaDB currently in Debian Bullseye
+    - apt-get install -y default-mysql-server zoph
+    # Verify installation of MariaDB from Bullseye
+    - *test-verify-initial
+    - *test-enable-sid-repos
+    - *test-enable-artifacts-repo
+    # Start with partial upgrade
+    - apt-get install -y default-mysql-server
+    - *test-full-upgrade
+    - service mariadb status  # There is no init.d/mysql in MariaDB 10.5+
+    - *test-verify-final
+  allow_failure: true # Currently fails on Bug#1035949
+
 test basic features:
   extends: .salsa-ci-template-for-mariadb
   script:
