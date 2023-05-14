@@ -1,2 +1,0 @@
-# False positive from Lintian, these strings are nowhere in test in source code
-spelling-error-in-binary wTH with [usr/bin/aria_s3_copy]

@@ -7,7 +7,6 @@ spelling-error-in-binary thats that's [usr/bin/*]
 spelling-error-in-binary theres there's [usr/bin/*]
 # False positive from Lintian, these strings are nowhere in test in source code
 spelling-error-in-binary AfE Safe [usr/bin/*]
-spelling-error-in-binary wTH with [usr/bin/*]
 # Valid reason for documentation in context in directory
 package-contains-documentation-outside-usr-share-doc [usr/share/mysql/mysql-test/README*]
 # Test plugins intentionally not fully featured
