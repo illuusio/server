@@ -114,14 +114,16 @@ blhc:
   echo -e '#!/bin/sh\necho "N 5"' > /sbin/runlevel; chmod +x /sbin/runlevel
   # Avoid the warnings of "debconf: unable to initialize frontend: Dialog"
   echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+  # Emit non-zero exit code also on warnings
+  echo 'APT::Update::Error-Mode "any";' > /etc/apt/apt.conf.d/non-zero-exit-on-warnings
   # Prime the apt cache so later apt commands can run
   apt-get update -qq
 
 # Readline was removed from Debian Sid (and Bullseye) in Feb 2021. To be able to install older
 # versions of MariaDB that depend on it, fetch and install it from Buster.
 .test-install-readline-in-sid-for-backwards-compat: &test-install-readline-in-sid-for-backwards-compat |
-  curl -sS -O http://ftp.de.debian.org/debian/pool/main/r/readline5/libreadline5_5.2+dfsg-3+b13_amd64.deb
-  apt-get -qq install --no-install-recommends --yes ./libreadline5_5.2+dfsg-3+b13_amd64.deb
+  curl -sS -O https://snapshot.debian.org/archive/debian/20190316T031117Z/pool/main/r/readline5/libreadline5_5.2%2Bdfsg-3%2Bb13_amd64.deb
+  apt-get -qq install --no-install-recommends --yes ./libreadline5_5.2%2Bdfsg-3%2Bb13_amd64.deb
 
 # OpenSSL 1.1 was Debian Sid in Dec 2022 (as Bookworm will ship with OpenSSL 3.0
 # only). To be able to install versions of MariaDB that depend on OpenSSL 1.1,
@@ -381,9 +383,10 @@ mariadb-10.5 with Bullseye backports upgrade:
   image: debian:bullseye
   script:
     - *test-prepare-container
-    # Install everything MariaDB currently in Debian Buster
+    # Install everything MariaDB currently in Debian Bullseye
     - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
-    # Verify installation of MariaDB from Buster
+    # Verify installation of MariaDB from Bullseye
+    - dpkg -l | grep -e "mariadb-server.*10.5"
     - *test-verify-initial
     - *test-enable-bullseye-backports-repos
     - *test-full-upgrade
@@ -402,6 +405,7 @@ mariadb-10.6 and Bookworm-20230208 upgrade:
       apt-get update -qq
     # In February 2023 Bookworm snapshot this will install MariaDB 10.6
     - apt-get install -y mariadb-server
+    - dpkg -l | grep -e "mariadb-server.*10.6"
     - *test-verify-initial
     - *test-enable-sid-repos
     # Ensure mariadbd will not crash on next shutdown for any reason
@@ -420,6 +424,7 @@ mariadb-10.5 and Bullseye upgrade:
     # Install everything MariaDB currently in Debian Bullseye
     - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
     # Verify installation of MariaDB from Bullseye
+    - dpkg -l | grep -e "mariadb-server.*10.5"
     - *test-verify-initial
     - *test-enable-sid-repos
     # Ensure mariadbd will not crash on next shutdown for any reason
@@ -437,6 +442,7 @@ mariadb-10.3 and Buster upgrade:
     # Install everything MariaDB currently in Debian Buster
     - apt-get install -y 'default-mysql*' 'mariadb-*' 'libmariadb*'
     # Verify installation of MariaDB from Buster
+    - dpkg -l | grep -e "mariadb-server.*10.3"
     - *test-verify-initial
     - *test-enable-sid-repos
     # Ensure mariadbd will not crash on next shutdown for any reason
@@ -625,6 +631,8 @@ mysql-8.0 in Sid upgrade:
     - *test-prepare-container
     # The postinst fails often if 'ps' is missing from system, so install procps
     - apt-get install -y procps mysql-server 'libmysqlc*'
+    # Ensure MySQL 8.0 package actually got installed
+    - dpkg -l | grep -e "mysql-server.*8.0"
     - *test-verify-initial
     - *test-install-all
     # Due to some (currently unknown) changes in MySQL 8.0 packaging or apt
@@ -659,6 +667,8 @@ mysql-8.0 from Ubuntu 22.04 with Bullseye backports upgrade:
     - apt-get update -qq
     # First install often fail due to bug in mysql-8.0
     - apt-get install -y mysql-server 'libmysqlc*' || true
+    # Ensure MySQL 8.0 package actually got installed
+    - dpkg -l | grep -e "mysql-server.*8.0"
     - sleep 10 && apt-get install -f
     - *test-verify-initial
     # Enable backports to make galera-4 available
@@ -862,23 +872,24 @@ mariadb.org-10.2 upgrade:
     - sleep 15
     - *test-verify-final
 
-mysql.com-5.7 with Bullseye backports upgrade:
+mysql.com-5.7 with Buster upgrade:
   extends: .salsa-ci-template-for-mariadb
   stage: upgrade MariaDB variant
   needs:
-    - job: build bullseye-backports
-  image: debian:bullseye
+    - job: build
+  image: debian:buster
   script:
     - *test-prepare-container
     - |
       apt-get install --no-install-recommends --yes gpg gpg-agent dirmngr ca-certificates # Bare minimal (<4MB) for apt-key to work
       apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 467B942D3A79BD29
-      echo "deb https://repo.mysql.com/apt/debian/ bullseye mysql-5.7" > /etc/apt/sources.list.d/mysql.list
+      echo "deb https://repo.mysql.com/apt/debian/ buster mysql-5.7" > /etc/apt/sources.list.d/mysql.list
       apt-get update -qq
       apt-get install -y 'mysql*' 'libmysqlc*'
+    # Ensure MySQL 5.7 package actually got installed
+    - dpkg -l | grep -e "mysql-server.*5.7"
     - *test-verify-initial
-    # Enable backports to make galera-4 available
-    - echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list.d/backports.list && apt-get update -qq
+    - *test-enable-sid-repos
     - *test-install-all
     # Due to some (currently unknown) changes in MySQL 5.7 packaging or apt
     # behaviour changes, a system with a previous installation of MySQL will
