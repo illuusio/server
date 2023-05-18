@@ -88,6 +88,9 @@ build bullseye-backports:
 # Buster only has libfmt 6.1 but 7.0 is required, so backport build for Buster
 # is not possible unless somebody packages libfmt7-dev for Buster.
 
+test-crossbuild-arm64:
+  stage: build
+
 autopkgtest:
   extends: .test-autopkgtest
   artifacts:
@@ -95,11 +98,9 @@ autopkgtest:
       junit: ${WORKING_DIR}/debci/artifacts/mysql-test-run-junit.xml
 
 piuparts:
-  extends: .test-piuparts
   stage: test extras
 
 blhc:
-  extends: .test-blhc
   stage: test extras
 
 # In addition to Salsa-CI, also run these fully MariaDB specific build jobs
