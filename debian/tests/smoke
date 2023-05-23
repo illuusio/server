@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # dep8 smoke test for mysql-server
 # Author: Robie Basak <robie.basak at canonical.com>
 #

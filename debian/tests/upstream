@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # autopkgtest check: Build and run the upstream test suite.
 # (C) 2012 Canonical Ltd.
 # Author: Daniel Kessel <d.kessel@gmx.de>
