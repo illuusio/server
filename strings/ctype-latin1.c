@@ -427,7 +427,9 @@ static MY_CHARSET_HANDLER my_charset_handler=
     my_well_formed_char_length_8bit,
     my_copy_8bit,
     my_wc_mb_bin, /* native_to_mb */
-    my_wc_to_printable_generic
+    my_wc_to_printable_generic,
+    my_casefold_multiply_1,
+    my_casefold_multiply_1
 };
 
 
@@ -446,12 +448,10 @@ struct charset_info_st my_charset_latin1=
     NULL,		/* uca          */
     cs_to_uni,		/* tab_to_uni   */
     NULL,		/* tab_from_uni */
-    &my_unicase_default,/* caseinfo     */
+    NULL,               /* casefold     */
     NULL,		/* state_map    */
     NULL,		/* ident_map    */
     1,			/* strxfrm_multiply */
-    1,                  /* caseup_multiply  */
-    1,                  /* casedn_multiply  */
     1,			/* mbminlen   */
     1,			/* mbmaxlen  */
     0,			/* min_sort_char */
@@ -479,12 +479,10 @@ struct charset_info_st my_charset_latin1_nopad=
     NULL,                         /* uca              */
     cs_to_uni,                    /* tab_to_uni       */
     NULL,                         /* tab_from_uni     */
-    &my_unicase_default,          /* caseinfo         */
+    NULL,                         /* casefold     */
     NULL,                         /* state_map        */
     NULL,                         /* ident_map        */
     1,                            /* strxfrm_multiply */
-    1,                            /* caseup_multiply  */
-    1,                            /* casedn_multiply  */
     1,                            /* mbminlen         */
     1,                            /* mbmaxlen         */
     0,                            /* min_sort_char    */
@@ -762,12 +760,10 @@ struct charset_info_st my_charset_latin1_german2_ci=
   NULL,					/* uca          */
   cs_to_uni,				/* tab_to_uni   */
   NULL,					/* tab_from_uni */
-  &my_unicase_default,                  /* caseinfo     */
+  NULL,                                 /* casefold     */
   NULL,					/* state_map    */
   NULL,					/* ident_map    */
   2,					/* strxfrm_multiply */
-  1,                                    /* caseup_multiply  */
-  1,                                    /* casedn_multiply  */
   1,					/* mbminlen   */
   1,					/* mbmaxlen  */
   0,					/* min_sort_char */
@@ -795,12 +791,10 @@ struct charset_info_st my_charset_latin1_bin=
   NULL,					/* uca          */
   cs_to_uni,				/* tab_to_uni   */
   NULL,					/* tab_from_uni */
-  &my_unicase_default,                  /* caseinfo     */
+  NULL,                                 /* casefold     */
   NULL,					/* state_map    */
   NULL,					/* ident_map    */
   1,					/* strxfrm_multiply */
-  1,                                    /* caseup_multiply  */
-  1,                                    /* casedn_multiply  */
   1,					/* mbminlen   */
   1,					/* mbmaxlen  */
   0,					/* min_sort_char */
@@ -828,12 +822,10 @@ struct charset_info_st my_charset_latin1_nopad_bin=
   NULL,                                /* uca              */
   cs_to_uni,                           /* tab_to_uni       */
   NULL,                                /* tab_from_uni     */
-  &my_unicase_default,                 /* caseinfo         */
+  NULL,                                /* casefold         */
   NULL,                                /* state_map        */
   NULL,                                /* ident_map        */
   1,                                   /* strxfrm_multiply */
-  1,                                   /* caseup_multiply  */
-  1,                                   /* casedn_multiply  */
   1,                                   /* mbminlen         */
   1,                                   /* mbmaxlen         */
   0,                                   /* min_sort_char    */

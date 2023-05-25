@@ -605,7 +605,7 @@ public:
     name.length= 0;
   };
   Virtual_column_info* clone(THD *thd);
-  ~Virtual_column_info() {};
+  ~Virtual_column_info() = default;
   enum_vcol_info_type get_vcol_type() const
   {
     return vcol_type;
@@ -895,7 +895,7 @@ public:
   Field(uchar *ptr_arg,uint32 length_arg,uchar *null_ptr_arg,
         uchar null_bit_arg, utype unireg_check_arg,
         const LEX_CSTRING *field_name_arg);
-  virtual ~Field() {}
+  virtual ~Field() = default;
 
   virtual Type_numeric_attributes type_numeric_attributes() const
   {
@@ -1301,7 +1301,7 @@ public:
     Currently it's only used in partitioning.
   */
   virtual int cmp_prefix(const uchar *a, const uchar *b,
-                         size_t prefix_len) const
+                         size_t prefix_char_len) const
   { return cmp(a, b); }
   virtual int cmp(const uchar *,const uchar *) const=0;
   virtual int cmp_binary(const uchar *a,const uchar *b, uint32 max_length=~0U) const
@@ -4201,7 +4201,7 @@ public:
   my_decimal *val_decimal(my_decimal *) override;
   bool send(Protocol *protocol) override;
   int cmp(const uchar *a,const uchar *b) const override;
-  int cmp_prefix(const uchar *a, const uchar *b, size_t prefix_len) const
+  int cmp_prefix(const uchar *a, const uchar *b, size_t prefix_char_len) const
     override;
   void sort_string(uchar *buff,uint length) override;
   uint get_key_image(uchar *buff, uint length,
@@ -4494,7 +4494,7 @@ public:
   String *val_str(String *, String *) override;
   my_decimal *val_decimal(my_decimal *) override;
   int cmp(const uchar *a, const uchar *b) const override;
-  int cmp_prefix(const uchar *a, const uchar *b, size_t prefix_len) const
+  int cmp_prefix(const uchar *a, const uchar *b, size_t prefix_char_len) const
     override;
   int cmp(const uchar *a, uint32 a_length, const uchar *b, uint32 b_length)
     const;
@@ -4973,7 +4973,7 @@ public:
   int cmp_binary_offset(uint row_offset) override
   { return cmp_offset(row_offset); }
   int cmp_prefix(const uchar *a, const uchar *b,
-                 size_t  max_length) const override;
+                 size_t  prefix_char_length) const override;
   int key_cmp(const uchar *a, const uchar *b) const override
   { return cmp_binary((uchar *) a, (uchar *) b); }
   int key_cmp(const uchar *str, uint length) const override;
@@ -5377,7 +5377,7 @@ public:
   bool sp_prepare_create_field(THD *thd, MEM_ROOT *mem_root);
 
   bool prepare_stage1(THD *thd, MEM_ROOT *mem_root,
-                      handler *file, ulonglong table_flags,
+                      column_definition_type_t type,
                       const Column_derived_attributes *derived_attr);
   void prepare_stage1_simple(CHARSET_INFO *cs)
   {
@@ -5385,11 +5385,9 @@ public:
     create_length_to_internal_length_simple();
   }
   bool prepare_stage1_typelib(THD *thd, MEM_ROOT *mem_root,
-                              handler *file, ulonglong table_flags);
-  bool prepare_stage1_string(THD *thd, MEM_ROOT *mem_root,
-                             handler *file, ulonglong table_flags);
-  bool prepare_stage1_bit(THD *thd, MEM_ROOT *mem_root,
-                          handler *file, ulonglong table_flags);
+                              column_definition_type_t deftype);
+  bool prepare_stage1_string(THD *thd, MEM_ROOT *mem_root);
+  bool prepare_stage1_bit(THD *thd, MEM_ROOT *mem_root);
 
   bool bulk_alter(const Column_derived_attributes *derived_attr,
                   const Column_bulk_alter_attributes *bulk_attr)
@@ -5859,8 +5857,8 @@ public:
   Field *from_field,*to_field;
   String tmp;					// For items
 
-  Copy_field() {}
-  ~Copy_field() {}
+  Copy_field() = default;
+  ~Copy_field() = default;
   void set(Field *to,Field *from,bool save);	// Field to field 
   void set(uchar *to,Field *from);		// Field to string
   void (*do_copy)(Copy_field *);

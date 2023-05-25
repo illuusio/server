@@ -3943,4 +3943,55 @@ explain select * from v1;
 drop view v1;
 drop table t1;
 
+--echo #
+--echo # MDEV-31102: execution of PS for query where pushdown of condition
+--echo #             into view defined as union is applied
+--echo #
+
+create table t1 (
+   n int,
+   lv varchar(31) charset latin1,
+   mv varchar(31) charset utf8mb3
+) engine=myisam;
+insert into t1 values (1,'aa','xxx'), ('2','bb','yyy'), (3,'cc','zzz');
+create view v1 as
+select case when n=1 then lv when n=2 then mv else NULL end as r from t1
+union
+select 'a';
+
+let $q=
+select * from v1 where r < 'x';
+
+eval $q;
+eval explain extended $q;
+eval explain format=json $q;
+eval prepare stmt from "$q";
+execute stmt;
+execute stmt;
+deallocate prepare stmt;
+
+drop view v1;
+drop table t1;
+
 --echo # End of 10.4 tests
+
+--echo #
+--echo # MDEV-28958: condition pushable into view after simplification
+--echo #             contains constant TRUE/FALSE as subformula
+--echo #
+
+create table t1 (c1 int);
+insert into t1 values (3), (7), (1), (3), (1), (3);
+
+create table t2 (c2 int);
+insert into t2 values (3), (5), (7), (3);
+
+create view v1 as select * from t1 group by c1;
+create view v2 as select c1 as a, c2 as b from v1,t2 where c1=c2;
+
+select * from v2 group by a,b having a=b or b > a+10;
+
+drop view v1,v2;
+drop table t1,t2;
+
+--echo # End of 10.7 tests

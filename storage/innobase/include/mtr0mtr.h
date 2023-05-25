@@ -93,10 +93,16 @@ struct mtr_t {
   ATTRIBUTE_COLD void commit_shrink(fil_space_t &space);
 
   /** Commit a mini-transaction that is deleting or renaming a file.
-  @param space   tablespace that is being renamed or deleted
-  @param name    new file name (nullptr=the file will be deleted)
+  @param space           tablespace that is being renamed or deleted
+  @param name            new file name (nullptr=the file will be deleted)
+  @param detached_handle if detached_handle != nullptr and if space is detached
+                         during the function execution the file handle if its
+                         node will be set to OS_FILE_CLOSED, and the previous
+                         value of the file handle will be assigned to the
+                         address, pointed by detached_handle.
   @return whether the operation succeeded */
-  ATTRIBUTE_COLD bool commit_file(fil_space_t &space, const char *name);
+  ATTRIBUTE_COLD bool commit_file(fil_space_t &space, const char *name,
+      pfs_os_file_t *detached_handle= nullptr);
 
   /** Commit a mini-transaction that did not modify any pages,
   but generated some redo log on a higher level, such as
@@ -283,17 +289,6 @@ struct mtr_t {
     memo_push(lock, MTR_MEMO_SX_LOCK);
   }
 
-  /** Acquire a tablespace S-latch.
-  @param space  tablespace */
-  void s_lock_space(fil_space_t *space)
-  {
-    ut_ad(space->purpose == FIL_TYPE_TEMPORARY ||
-          space->purpose == FIL_TYPE_IMPORT ||
-          space->purpose == FIL_TYPE_TABLESPACE);
-    memo_push(space, MTR_MEMO_SPACE_S_LOCK);
-    space->s_lock();
-  }
-
   /** Acquire an exclusive tablespace latch.
   @param space  tablespace */
   void x_lock_space(fil_space_t *space);
@@ -346,18 +341,20 @@ public:
   {
     mtr_memo_slot_t &slot= m_memo[savepoint];
     ut_ad(slot.type <= MTR_MEMO_BUF_FIX);
-    ut_ad(type <= MTR_MEMO_BUF_FIX);
+    ut_ad(type < MTR_MEMO_S_LOCK);
     slot.type= type;
   }
 
   /** Upgrade U locks on a block to X */
   void page_lock_upgrade(const buf_block_t &block);
 
+  /** Upgrade index U lock to X */
+  ATTRIBUTE_COLD void index_lock_upgrade();
+
   /** Check if we are holding tablespace latch
   @param space  tablespace to search for
-  @param shared whether to look for shared latch, instead of exclusive
   @return whether space.latch is being held */
-  bool memo_contains(const fil_space_t& space, bool shared= false) const
+  bool memo_contains(const fil_space_t& space) const
     MY_ATTRIBUTE((warn_unused_result));
 #ifdef UNIV_DEBUG
   /** Check if we are holding an rw-latch in this mini-transaction
@@ -410,7 +407,7 @@ public:
       break;
     case MTR_MEMO_MODIFY:
     case MTR_MEMO_S_LOCK: case MTR_MEMO_X_LOCK: case MTR_MEMO_SX_LOCK:
-    case MTR_MEMO_SPACE_X_LOCK: case MTR_MEMO_SPACE_S_LOCK:
+    case MTR_MEMO_SPACE_X_LOCK:
       ut_ad("invalid type" == 0);
     }
 #endif

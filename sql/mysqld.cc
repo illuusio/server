@@ -1248,8 +1248,7 @@ class Buffered_log : public Sql_alloc
 public:
   Buffered_log(enum loglevel level, const char *message);
 
-  ~Buffered_log()
-  {}
+  ~Buffered_log() = default;
 
   void print(void);
 
@@ -1309,11 +1308,9 @@ void Buffered_log::print()
 class Buffered_logs
 {
 public:
-  Buffered_logs()
-  {}
+  Buffered_logs() = default;
 
-  ~Buffered_logs()
-  {}
+  ~Buffered_logs() = default;
 
   void init();
   void cleanup();
@@ -2781,11 +2778,9 @@ void close_connection(THD *thd, uint sql_errno)
     thd->protocol->net_send_error(thd, sql_errno, ER_DEFAULT(sql_errno), NULL);
     thd->print_aborted_warning(lvl, ER_DEFAULT(sql_errno));
   }
-  else
-    thd->print_aborted_warning(lvl, (thd->main_security_ctx.user ?
-                                     "This connection closed normally" :
-                                     "This connection closed normally without"
-                                      " authentication"));
+  else if (!thd->main_security_ctx.user)
+    thd->print_aborted_warning(lvl, "This connection closed normally without"
+                                    " authentication");
 
   thd->disconnect();
 
@@ -4704,7 +4699,10 @@ static void init_ssl()
     {
       sql_print_error("Failed to setup SSL");
       sql_print_error("SSL error: %s", sslGetErrString(error));
-      unireg_abort(1);
+      if (!opt_bootstrap)
+        unireg_abort(1);
+      opt_use_ssl = 0;
+      have_ssl= SHOW_OPTION_DISABLED;
     }
     else
       ssl_acceptor_stats.init();
@@ -6477,8 +6475,6 @@ struct my_option my_long_options[]=
   {"console", OPT_CONSOLE, "Write error output on screen; don't remove the console window on windows.",
    &opt_console, &opt_console, 0, GET_BOOL, NO_ARG, 0, 0, 0,
    0, 0, 0},
-  {"core-file", OPT_WANT_CORE, "Write core on errors.", 0, 0, 0, GET_NO_ARG,
-   NO_ARG, 0, 0, 0, 0, 0, 0},
 #ifdef DBUG_OFF
   {"debug", '#', "Built in DBUG debugger. Disabled in this build.",
    &current_dbug_option, &current_dbug_option, 0, GET_STR, OPT_ARG,
@@ -8225,9 +8221,6 @@ mysqld_get_one_option(const struct my_option *opt, const char *argument,
     break;
   case (int) OPT_SKIP_HOST_CACHE:
     opt_specialflag|= SPECIAL_NO_HOST_CACHE;
-    break;
-  case (int) OPT_WANT_CORE:
-    test_flags |= TEST_CORE_ON_SIGNAL;
     break;
   case OPT_CONSOLE:
     if (opt_console)

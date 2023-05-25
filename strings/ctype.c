@@ -1360,7 +1360,8 @@ outp:
 int my_strnncollsp_nchars_generic(CHARSET_INFO *cs,
                                   const uchar *str1, size_t len1,
                                   const uchar *str2, size_t len2,
-                                  size_t nchars)
+                                  size_t nchars,
+                                  uint flags)
 {
   int error;
   len1= my_well_formed_length(cs, (const char *) str1,
@@ -1377,7 +1378,8 @@ int my_strnncollsp_nchars_generic(CHARSET_INFO *cs,
 int my_strnncollsp_nchars_generic_8bit(CHARSET_INFO *cs,
                                        const uchar *str1, size_t len1,
                                        const uchar *str2, size_t len2,
-                                       size_t nchars)
+                                       size_t nchars,
+                                       uint flags)
 {
   set_if_smaller(len1, nchars);
   set_if_smaller(len2, nchars);
@@ -1396,4 +1398,16 @@ LEX_CSTRING my_ci_get_collation_name_generic(CHARSET_INFO *cs,
                                              my_collation_name_mode_t mode)
 {
   return cs->coll_name;
+}
+
+
+uint my_casefold_multiply_1(CHARSET_INFO *cs)
+{
+  return 1;
+}
+
+
+uint my_casefold_multiply_2(CHARSET_INFO *cs)
+{
+  return 2;
 }

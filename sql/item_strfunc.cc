@@ -1830,7 +1830,7 @@ bool Item_func_lcase::fix_length_and_dec(THD *thd)
   if (agg_arg_charsets_for_string_result(collation, args, 1))
     return TRUE;
   DBUG_ASSERT(collation.collation != NULL);
-  multiply= collation.collation->casedn_multiply;
+  multiply= collation.collation->casedn_multiply();
   converter= collation.collation->cset->casedn;
   fix_char_length_ulonglong((ulonglong) args[0]->max_char_length() * multiply);
   return FALSE;
@@ -1841,7 +1841,7 @@ bool Item_func_ucase::fix_length_and_dec(THD *thd)
   if (agg_arg_charsets_for_string_result(collation, args, 1))
     return TRUE;
   DBUG_ASSERT(collation.collation != NULL);
-  multiply= collation.collation->caseup_multiply;
+  multiply= collation.collation->caseup_multiply();
   converter= collation.collation->cset->caseup;
   fix_char_length_ulonglong((ulonglong) args[0]->max_char_length() * multiply);
   return FALSE;
@@ -3970,6 +3970,7 @@ String *Item_func_weight_string::val_str(String *str)
                            weigth_flags);
   DBUG_ASSERT(frm_length <= tmp_length);
 
+  str->set_charset(&my_charset_bin);
   str->length(frm_length);
   null_value= 0;
   return str;
@@ -4049,6 +4050,7 @@ String *Item_func_unhex::val_str(String *str)
 
   from= res->ptr();
   null_value= 0;
+  str->set_charset(&my_charset_bin);
   str->length(length);
   to= (char*) str->ptr();
   if (res->length() % 2)

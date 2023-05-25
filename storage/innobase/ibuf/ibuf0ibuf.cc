@@ -403,8 +403,13 @@ ibuf_init_at_db_start(void)
 
 	if (!header_page) {
 err_exit:
-		sql_print_error("InnoDB: The change buffer is corrupted");
+		sql_print_error("InnoDB: The change buffer is corrupted"
+				" or has been removed on upgrade"
+				" to MariaDB 11.0 or later");
 		mtr.commit();
+		if (innodb_change_buffering == IBUF_USE_NONE) {
+			err = DB_SUCCESS;
+		}
 		return err;
 	}
 
@@ -425,6 +430,10 @@ err_exit:
 	} else {
 		goto err_exit;
 	}
+
+	DBUG_EXECUTE_IF("ibuf_init_corrupt",
+			err = DB_CORRUPTION;
+			goto err_exit;);
 
 	if (page_is_comp(root) || fil_page_get_type(root) != FIL_PAGE_INDEX
 	    || btr_page_get_index_id(root) != DICT_IBUF_ID_MIN) {
@@ -1976,6 +1985,7 @@ void
 ibuf_free_excess_pages(void)
 /*========================*/
 {
+	if (UNIV_UNLIKELY(!ibuf.index)) return;
 	/* Free at most a few pages at a time, so that we do not delay the
 	requested service too much */
 
@@ -2417,6 +2427,7 @@ will be merged from ibuf trees to the pages read
 @retval 0 if ibuf.empty */
 ulint ibuf_contract()
 {
+	if (UNIV_UNLIKELY(!ibuf.index)) return 0;
 	mtr_t		mtr;
 	btr_cur_t	cur;
 	ulint		sum_sizes;
@@ -2466,6 +2477,7 @@ ibuf_merge_space(
 /*=============*/
 	ulint		space)	/*!< in: tablespace id to merge */
 {
+	if (UNIV_UNLIKELY(!ibuf.index)) return 0;
 	mtr_t		mtr;
 	btr_pcur_t	pcur;
 
@@ -2931,13 +2943,14 @@ void
 ibuf_update_max_tablespace_id(void)
 /*===============================*/
 {
+	if (UNIV_UNLIKELY(!ibuf.index)) return;
 	const rec_t*	rec;
 	const byte*	field;
 	ulint		len;
 	btr_pcur_t	pcur;
 	mtr_t		mtr;
 
-	ut_a(!dict_table_is_comp(ibuf.index->table));
+	ut_ad(!ibuf.index->table->not_redundant());
 
 	ibuf_mtr_start(&mtr);
 
@@ -3482,6 +3495,10 @@ ibuf_insert(
 	ulint			zip_size,
 	que_thr_t*		thr)
 {
+	if (!index->is_committed()) {
+		return false;
+	}
+
 	dberr_t		err;
 	ulint		entry_size;
 	ibool		no_counter;
@@ -4416,6 +4433,8 @@ in DISCARD TABLESPACE, IMPORT TABLESPACE, or read-ahead.
 @param[in]	space		missing or to-be-discarded tablespace */
 void ibuf_delete_for_discarded_space(uint32_t space)
 {
+	if (UNIV_UNLIKELY(!ibuf.index)) return;
+
 	btr_pcur_t	pcur;
 	const rec_t*	ibuf_rec;
 	mtr_t		mtr;
@@ -4529,6 +4548,7 @@ ibuf_print(
 /*=======*/
 	FILE*	file)	/*!< in: file where to print */
 {
+  if (UNIV_UNLIKELY(!ibuf.index)) return;
 
   mysql_mutex_lock(&ibuf_mutex);
   if (ibuf.empty)
@@ -4573,8 +4593,6 @@ dberr_t ibuf_check_bitmap_on_import(const trx_t* trx, fil_space_t* space)
 
 	mtr_t mtr;
 
-	mysql_mutex_lock(&ibuf_mutex);
-
 	/* The two bitmap pages (allocation bitmap and ibuf bitmap) repeat
 	every page_size pages. For example if page_size is 16 KiB, then the
 	two bitmap pages repeat every 16 KiB * 16384 = 256 MiB. In the loop
@@ -4583,18 +4601,14 @@ dberr_t ibuf_check_bitmap_on_import(const trx_t* trx, fil_space_t* space)
 
 	for (uint32_t page_no = 0; page_no < size; page_no += physical_size) {
 		if (trx_is_interrupted(trx)) {
-			mysql_mutex_unlock(&ibuf_mutex);
 			return(DB_INTERRUPTED);
 		}
 
 		mtr_start(&mtr);
-		ibuf_enter(&mtr);
 
 		buf_block_t* bitmap_page = ibuf_bitmap_get_map_page(
 			page_id_t(space->id, page_no), zip_size, &mtr);
 		if (!bitmap_page) {
-			mysql_mutex_unlock(&ibuf_mutex);
-			ibuf_exit(&mtr);
 			mtr.commit();
 			return DB_CORRUPTION;
 		}
@@ -4617,7 +4631,6 @@ dberr_t ibuf_check_bitmap_on_import(const trx_t* trx, fil_space_t* space)
 							    physical_size)));
 			}
 #endif /* UNIV_DEBUG */
-			ibuf_exit(&mtr);
 			mtr_commit(&mtr);
 			continue;
 		}
@@ -4632,8 +4645,6 @@ dberr_t ibuf_check_bitmap_on_import(const trx_t* trx, fil_space_t* space)
 				    cur_page_id, zip_size,
 				    IBUF_BITMAP_IBUF, &mtr)) {
 
-				mysql_mutex_unlock(&ibuf_mutex);
-				ibuf_exit(&mtr);
 				mtr_commit(&mtr);
 
 				ib_errf(trx->mysql_thd,
@@ -4667,11 +4678,9 @@ dberr_t ibuf_check_bitmap_on_import(const trx_t* trx, fil_space_t* space)
 			}
 		}
 
-		ibuf_exit(&mtr);
 		mtr_commit(&mtr);
 	}
 
-	mysql_mutex_unlock(&ibuf_mutex);
 	return(DB_SUCCESS);
 }
 

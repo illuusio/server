@@ -79,30 +79,26 @@ extern "C" {
 typedef const struct my_charset_handler_st MY_CHARSET_HANDLER;
 typedef const struct my_collation_handler_st MY_COLLATION_HANDLER;
 
-typedef const struct unicase_info_st MY_UNICASE_INFO;
+typedef const struct casefold_info_st MY_CASEFOLD_INFO;
 typedef const struct uni_ctype_st MY_UNI_CTYPE;
 typedef const struct my_uni_idx_st MY_UNI_IDX;
 typedef uint16 decimal_digits_t;
 
-typedef struct unicase_info_char_st
+
+typedef struct casefold_info_char_t
 {
   uint32 toupper;
   uint32 tolower;
-  uint32 sort;
-} MY_UNICASE_CHARACTER;
+} MY_CASEFOLD_CHARACTER;
 
 
-struct unicase_info_st
+struct casefold_info_st
 {
   my_wc_t maxchar;
-  MY_UNICASE_CHARACTER **page;
+  const MY_CASEFOLD_CHARACTER * const *page;
+  const uint16 * const *simple_weight; /* For general_ci-alike collations */
 };
 
-
-extern MY_UNICASE_INFO my_unicase_default;
-extern MY_UNICASE_INFO my_unicase_turkish;
-extern MY_UNICASE_INFO my_unicase_mysql500;
-extern MY_UNICASE_INFO my_unicase_unicode520;
 
 #define MY_UCA_MAX_CONTRACTION 6
 /*
@@ -375,6 +371,28 @@ typedef enum enum_collation_name_mode
 #define MY_STRXFRM_REVERSE_LEVEL6  0x00200000 /* if reverse order for level6 */
 #define MY_STRXFRM_REVERSE_SHIFT   16
 
+/* Flags to strnncollsp_nchars */
+/*
+  MY_STRNNCOLLSP_NCHARS_EMULATE_TRIMMED_TRAILING_SPACES -
+    defines if inside strnncollsp_nchars()
+    short strings should be virtually extended to "nchars"
+    characters by emulating trimmed trailing spaces.
+
+    This flag is needed when comparing packed strings of the CHAR
+    data type, when trailing spaces are trimmed on storage (like in InnoDB),
+    however the actual values (after unpacking) will have those trailing
+    spaces.
+
+    If this flag is passed, strnncollsp_nchars() performs both
+    truncating longer strings and extending shorter strings
+    to exactly "nchars".
+
+    If this flag is not passed, strnncollsp_nchars() only truncates longer
+    strings to "nchars", but does not extend shorter strings to "nchars".
+*/
+#define MY_STRNNCOLLSP_NCHARS_EMULATE_TRIMMED_TRAILING_SPACES 1
+
+
 /*
    Collation IDs for MariaDB that should not conflict with MySQL.
    We reserve 256..511, because MySQL will most likely use this range
@@ -510,7 +528,8 @@ struct my_collation_handler_st
   int     (*strnncollsp_nchars)(CHARSET_INFO *,
                                 const uchar *str1, size_t len1,
                                 const uchar *str2, size_t len2,
-                                size_t nchars);
+                                size_t nchars,
+                                uint flags);
   size_t     (*strnxfrm)(CHARSET_INFO *,
                          uchar *dst, size_t dstlen, uint nweights,
                          const uchar *src, size_t srclen, uint flags);
@@ -720,6 +739,9 @@ struct my_charset_handler_st
   */
   my_charset_conv_wc_mb native_to_mb;
   my_charset_conv_wc_mb wc_to_printable;
+
+  uint (*caseup_multiply)(CHARSET_INFO *cs);
+  uint (*casedn_multiply)(CHARSET_INFO *cs);
 };
 
 extern MY_CHARSET_HANDLER my_charset_8bit_handler;
@@ -752,12 +774,10 @@ struct charset_info_st
   MY_UCA_INFO *uca;
   const uint16 *tab_to_uni;
   MY_UNI_IDX  *tab_from_uni;
-  MY_UNICASE_INFO *caseinfo;
+  MY_CASEFOLD_INFO *casefold;
   const uchar  *state_map;
   const uchar  *ident_map;
   uint      strxfrm_multiply;
-  uchar     caseup_multiply;
-  uchar     casedn_multiply;
   uint      mbminlen;
   uint      mbmaxlen;
   /*
@@ -825,6 +845,16 @@ struct charset_info_st
                 char *dst, size_t dstlen) const
   {
     return (cset->casedn)(this, src, srclen, dst, dstlen);
+  }
+
+  uint caseup_multiply() const
+  {
+    return (cset->caseup_multiply)(this);
+  }
+
+  uint casedn_multiply() const
+  {
+    return (cset->casedn_multiply)(this);
   }
 
   size_t long10_to_str(char *dst, size_t dstlen,
@@ -1640,7 +1670,7 @@ int my_wildcmp_unicode(CHARSET_INFO *cs,
                        const char *str, const char *str_end,
                        const char *wildstr, const char *wildend,
                        int escape, int w_one, int w_many,
-                       MY_UNICASE_INFO *weights);
+                       MY_CASEFOLD_INFO *weights);
 
 extern my_bool my_parse_charset_xml(MY_CHARSET_LOADER *loader,
                                     const char *buf, size_t buflen);

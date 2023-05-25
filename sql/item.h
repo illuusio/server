@@ -326,7 +326,7 @@ private:
   TABLE_LIST *save_next_local;
 
 public:
-  Name_resolution_context_state() {}          /* Remove gcc warning */
+  Name_resolution_context_state() = default;          /* Remove gcc warning */
 
 public:
   /* Save the state of a name resolution context. */
@@ -427,7 +427,7 @@ class sp_rcontext;
 class Sp_rcontext_handler
 {
 public:
-  virtual ~Sp_rcontext_handler() {}
+  virtual ~Sp_rcontext_handler() = default;
   /**
     A prefix used for SP variable names in queries:
     - EXPLAIN EXTENDED
@@ -500,8 +500,8 @@ public:
                   required, otherwise we only reading it and SELECT
                   privilege might be required.
   */
-  Settable_routine_parameter() {}
-  virtual ~Settable_routine_parameter() {}
+  Settable_routine_parameter() = default;
+  virtual ~Settable_routine_parameter() = default;
   virtual void set_required_privilege(bool rw) {};
 
   /*
@@ -583,7 +583,7 @@ class Rewritable_query_parameter
       limit_clause_param(false)
   { }
 
-  virtual ~Rewritable_query_parameter() { }
+  virtual ~Rewritable_query_parameter() = default;
 
   virtual bool append_for_log(THD *thd, String *str) = 0;
 };
@@ -743,7 +743,7 @@ public:
 class Item_const
 {
 public:
-  virtual ~Item_const() {}
+  virtual ~Item_const() = default;
   virtual const Type_all_attributes *get_type_all_attributes_from_const() const= 0;
   virtual bool const_is_null() const { return false; }
   virtual const longlong *const_ptr_longlong() const { return NULL; }
@@ -2687,18 +2687,27 @@ public:
   void register_in(THD *thd);	 
   
   bool depends_only_on(table_map view_map) 
-  { return marker & MARKER_FULL_EXTRACTION; }
-  int get_extraction_flag() const
-  { return marker & MARKER_EXTRACTION_MASK; }
+  { return get_extraction_flag() & MARKER_FULL_EXTRACTION; }
+   int get_extraction_flag() const
+  {
+    if (basic_const_item())
+      return MARKER_FULL_EXTRACTION;
+    else
+      return marker & MARKER_EXTRACTION_MASK;
+  }
   void set_extraction_flag(int16 flags)
   {
-    marker &= ~MARKER_EXTRACTION_MASK;
-    marker|= flags;
+    if (!basic_const_item())
+    {
+      marker= marker & ~MARKER_EXTRACTION_MASK;
+      marker|= flags;
+    }
   }
   void clear_extraction_flag()
   {
-    marker &= ~MARKER_EXTRACTION_MASK;
-  }
+    if (!basic_const_item())
+      marker= marker & ~MARKER_EXTRACTION_MASK;
+   }
   void check_pushable_cond(Pushdown_checker excl_dep_func, uchar *arg);
   bool pushable_cond_checker_for_derived(uchar *arg)
   {
@@ -2922,8 +2931,8 @@ class Field_enumerator
 {
 public:
   virtual void visit_field(Item_field *field)= 0;
-  virtual ~Field_enumerator() {};             /* purecov: inspected */
-  Field_enumerator() {}                       /* Remove gcc warning */
+  virtual ~Field_enumerator() = default;;             /* purecov: inspected */
+  Field_enumerator() = default;                       /* Remove gcc warning */
 };
 
 class Item_string;
@@ -3455,7 +3464,7 @@ public:
   Item_result_field(THD *thd, Item_result_field *item):
     Item_fixed_hybrid(thd, item), result_field(item->result_field)
   {}
-  ~Item_result_field() {}			/* Required with gcc 2.95 */
+  ~Item_result_field() = default;
   Field *get_tmp_table_field() override { return result_field; }
   Field *create_tmp_field_ex(MEM_ROOT *root, TABLE *table, Tmp_field_src *src,
                              const Tmp_field_param *param) override
@@ -7093,6 +7102,9 @@ public:
   }
 
   virtual void keep_array() {}
+#ifndef DBUG_OFF
+  bool is_array_kept() { return TRUE; }
+#endif
   void print(String *str, enum_query_type query_type) override;
   bool eq_def(const Field *field) 
   {
@@ -7581,13 +7593,14 @@ public:
   bool null_inside() override;
   void bring_value() override;
   void keep_array() override { save_array= 1; }
+#ifndef DBUG_OFF
+  bool is_array_kept() { return save_array; }
+#endif
   void cleanup() override
   {
     DBUG_ENTER("Item_cache_row::cleanup");
     Item_cache::cleanup();
-    if (save_array)
-      bzero(values, item_count*sizeof(Item**));
-    else
+    if (!save_array)
       values= 0;
     DBUG_VOID_RETURN;
   }
@@ -7711,7 +7724,7 @@ public:
   */
   virtual void close()= 0;
 
-  virtual ~Item_iterator() {}
+  virtual ~Item_iterator() = default;
 };
 
 
@@ -7818,7 +7831,7 @@ public:
   Item *get_tmp_table_item(THD *thd)
   { return m_item->get_tmp_table_item(thd); }
   Item *get_copy(THD *thd)
-  { return m_item->get_copy(thd); }
+  { return get_item_copy<Item_direct_ref_to_item>(thd, this); }
   COND *build_equal_items(THD *thd, COND_EQUAL *inherited,
                           bool link_item_fields,
                           COND_EQUAL **cond_equal_ref)
@@ -7886,7 +7899,20 @@ public:
   bool excl_dep_on_grouping_fields(st_select_lex *sel)
   { return m_item->excl_dep_on_grouping_fields(sel); }
   bool is_expensive() { return m_item->is_expensive(); }
-  Item* build_clone(THD *thd) { return get_copy(thd); }
+  void set_item(Item *item) { m_item= item; }
+  Item *build_clone(THD *thd)
+  {
+    Item *clone_item= m_item->build_clone(thd);
+    if (clone_item)
+    {
+      Item_direct_ref_to_item *copy= (Item_direct_ref_to_item *) get_copy(thd);
+      if (!copy)
+        return 0;
+      copy->set_item(clone_item);
+      return copy;
+    }
+    return 0;
+  }
 
   void split_sum_func(THD *thd, Ref_ptr_array ref_pointer_array,
                       List<Item> &fields, uint flags)

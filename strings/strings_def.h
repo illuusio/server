@@ -108,12 +108,14 @@ static inline const uchar *skip_trailing_space(const uchar *ptr,size_t len)
 int my_strnncollsp_nchars_generic(CHARSET_INFO *cs,
                                   const uchar *str1, size_t len1,
                                   const uchar *str2, size_t len2,
-                                  size_t nchars);
+                                  size_t nchars,
+                                  uint flags);
 
 int my_strnncollsp_nchars_generic_8bit(CHARSET_INFO *cs,
                                        const uchar *str1, size_t len1,
                                        const uchar *str2, size_t len2,
-                                       size_t nchars);
+                                       size_t nchars,
+                                       uint flags);
 
 uint my_8bit_charset_flags_from_data(CHARSET_INFO *cs);
 uint my_8bit_collation_flags_from_data(CHARSET_INFO *cs);
@@ -142,6 +144,9 @@ int my_wc_to_printable_8bit(CHARSET_INFO *cs, my_wc_t wc,
 
 void my_ci_set_strength(struct charset_info_st *cs, uint strength);
 void my_ci_set_level_flags(struct charset_info_st *cs, uint flags);
+
+uint my_casefold_multiply_1(CHARSET_INFO *cs);
+uint my_casefold_multiply_2(CHARSET_INFO *cs);
 
 
 /* Some common character set names */

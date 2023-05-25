@@ -756,11 +756,6 @@ error:
 						row_field, field, col->len,
 						old_table->space->zip_size(),
 						conv_heap);
-				} else {
-					/* Field length mismatch should not
-					happen when rebuilding redundant row
-					format table. */
-					ut_ad(index->table->not_redundant());
 				}
 			}
 		}
@@ -4037,7 +4032,8 @@ static void row_merge_drop_fulltext_indexes(trx_t *trx, dict_table_t *table)
 
   fts_optimize_remove_table(table);
   fts_drop_tables(trx, *table);
-  fts_free(table);
+  table->fts->~fts_t();
+  table->fts= nullptr;
   DICT_TF2_FLAG_UNSET(table, DICT_TF2_FTS);
 }
 

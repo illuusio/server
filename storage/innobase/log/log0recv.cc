@@ -737,8 +737,10 @@ static struct
   bool reinit_all()
   {
 retry:
+    log_sys.latch.wr_unlock();
     bool fail= false;
     buf_block_t *free_block= buf_LRU_get_free_block(false);
+    log_sys.latch.wr_lock(SRW_LOCK_CALL);
     mysql_mutex_lock(&recv_sys.mutex);
 
     for (auto d= defers.begin(); d != defers.end(); )
@@ -773,9 +775,10 @@ retry:
             if (!os_file_status(name->c_str(), &exists, &ftype) || !exists)
               goto processed;
           }
-          create(it, *name, static_cast<uint32_t>
-                 (1U << FSP_FLAGS_FCRC32_POS_MARKER |
-                  FSP_FLAGS_FCRC32_PAGE_SSIZE()), nullptr, 0);
+          if (create(it, *name, static_cast<uint32_t>
+                     (1U << FSP_FLAGS_FCRC32_POS_MARKER |
+                      FSP_FLAGS_FCRC32_PAGE_SSIZE()), nullptr, 0))
+            mysql_mutex_unlock(&fil_system.mutex);
         }
       }
       else
@@ -804,7 +807,7 @@ processed:
   @param flags      FSP_SPACE_FLAGS
   @param crypt_data encryption metadata
   @param size       tablespace size in pages
-  @return tablespace
+  @return tablespace; the caller must release fil_system.mutex
   @retval nullptr   if crypt_data is invalid */
   static fil_space_t *create(const recv_spaces_t::const_iterator &it,
                              const std::string &name, uint32_t flags,
@@ -816,6 +819,7 @@ processed:
       ut_free(crypt_data);
       return nullptr;
     }
+    mysql_mutex_lock(&fil_system.mutex);
     fil_space_t *space= fil_space_t::create(it->first, flags,
                                             FIL_TYPE_TABLESPACE, crypt_data);
     ut_ad(space);
@@ -876,12 +880,13 @@ processed:
         space->free_limit= fsp_header_get_field(page, FSP_FREE_LIMIT);
         space->free_len= flst_get_len(FSP_HEADER_OFFSET + FSP_FREE + page);
         fil_node_t *node= UT_LIST_GET_FIRST(space->chain);
+        mysql_mutex_unlock(&fil_system.mutex);
         if (!space->acquire())
-	{
+        {
 free_space:
           fil_space_free(it->first, false);
           goto next_item;
-	}
+        }
         if (os_file_write(IORequestWrite, node->name, node->handle,
                           page, 0, fil_space_t::physical_size(flags)) !=
             DB_SUCCESS)
@@ -951,6 +956,7 @@ bool recv_sys_t::recover_deferred(recv_sys_t::map::iterator &p,
       space->free_len= flst_get_len(FSP_HEADER_OFFSET + FSP_FREE + page);
       fil_node_t *node= UT_LIST_GET_FIRST(space->chain);
       node->deferred= true;
+      mysql_mutex_unlock(&fil_system.mutex);
       if (!space->acquire())
         goto release_and_fail;
       fil_names_dirty(space);
@@ -974,8 +980,10 @@ bool recv_sys_t::recover_deferred(recv_sys_t::map::iterator &p,
           uint32_t(file_size / fil_space_t::physical_size(flags));
         if (n_pages > size)
         {
+          mysql_mutex_lock(&fil_system.mutex);
           space->size= node->size= n_pages;
           space->set_committed_size();
+          mysql_mutex_unlock(&fil_system.mutex);
           goto size_set;
         }
       }
@@ -1203,7 +1211,7 @@ static void fil_name_process(const char *name, ulint len, uint32_t space_id,
 		return;
 	}
 
-	ut_ad(srv_operation == SRV_OPERATION_NORMAL
+	ut_ad(srv_operation <= SRV_OPERATION_EXPORT_RESTORED
 	      || srv_operation == SRV_OPERATION_RESTORE
 	      || srv_operation == SRV_OPERATION_RESTORE_EXPORT);
 
@@ -1322,8 +1330,9 @@ same_space:
 			ut_ad(space == NULL);
 			if (srv_force_recovery == 0) {
 				sql_print_error("InnoDB: Recovery cannot access"
-						" file %s (tablespace "
-						UINT32PF ")", name, space_id);
+						" file %.*s (tablespace "
+						UINT32PF ")", int(len), name,
+						space_id);
 				sql_print_information("InnoDB: You may set "
 						      "innodb_force_recovery=1"
 						      " to ignore this and"
@@ -1334,9 +1343,10 @@ same_space:
 			}
 
 			sql_print_warning("InnoDB: Ignoring changes to"
-					  " file %s (tablespace " UINT32PF ")"
+					  " file %.*s (tablespace "
+					  UINT32PF ")"
 					  " due to innodb_force_recovery",
-					  name, space_id);
+					  int(len), name, space_id);
 		}
 	}
 }
@@ -1944,7 +1954,7 @@ inline bool page_recv_t::trim(lsn_t start_lsn)
 {
   while (log.head)
   {
-    if (log.head->lsn >= start_lsn) return false;
+    if (log.head->lsn > start_lsn) return false;
     last_offset= 1; /* the next record must not be same_page */
     log_rec_t *next= log.head->next;
     recv_sys.free(log.head);
@@ -2570,6 +2580,9 @@ inline recv_sys_t::parse_mtr_result recv_sys_t::parse(store_t store, source &l)
             goto record_corrupted;
           static_assert(UT_ARR_SIZE(truncated_undo_spaces) ==
                         TRX_SYS_MAX_UNDO_SPACES, "compatibility");
+          /* The entire undo tablespace will be reinitialized by
+          innodb_undo_log_truncate=ON. Discard old log for all pages. */
+          trim({space_id, 0}, lsn);
           truncated_undo_spaces[space_id - srv_undo_space_id_start]=
             { lsn, page_no };
           if (undo_space_trunc)
@@ -3088,7 +3101,7 @@ set_start_lsn:
 		/* The following is adapted from
 		buf_pool_t::insert_into_flush_list() */
 		mysql_mutex_lock(&buf_pool.flush_list_mutex);
-		buf_pool.stat.flush_list_bytes+= block->physical_size();
+		buf_pool.flush_list_bytes+= block->physical_size();
 		block->page.set_oldest_modification(start_lsn);
 		UT_LIST_ADD_FIRST(buf_pool.flush_list, &block->page);
 		buf_pool.page_cleaner_wakeup();
@@ -3408,7 +3421,7 @@ static void log_sort_flush_list()
 @param last_batch     whether it is possible to write more redo log */
 void recv_sys_t::apply(bool last_batch)
 {
-  ut_ad(srv_operation == SRV_OPERATION_NORMAL ||
+  ut_ad(srv_operation <= SRV_OPERATION_EXPORT_RESTORED ||
         srv_operation == SRV_OPERATION_RESTORE ||
         srv_operation == SRV_OPERATION_RESTORE_EXPORT);
 
@@ -3459,7 +3472,12 @@ void recv_sys_t::apply(bool last_batch)
       const trunc& t= truncated_undo_spaces[id];
       if (t.lsn)
       {
-        trim(page_id_t(id + srv_undo_space_id_start, 0), t.lsn);
+        /* The entire undo tablespace will be reinitialized by
+        innodb_undo_log_truncate=ON. Discard old log for all pages.
+        Even though we recv_sys_t::parse() already invoked trim(),
+        this will be needed in case recovery consists of multiple batches
+        (there was an invocation with !last_batch). */
+        trim({id + srv_undo_space_id_start, 0}, t.lsn);
         if (fil_space_t *space = fil_space_get(id + srv_undo_space_id_start))
         {
           ut_ad(UT_LIST_GET_LEN(space->chain) == 1);
@@ -3473,7 +3491,20 @@ void recv_sys_t::apply(bool last_batch)
 
     fil_system.extend_to_recv_size();
 
+    /* We must release log_sys.latch and recv_sys.mutex before
+    invoking buf_LRU_get_free_block(). Allocating a block may initiate
+    a redo log write and therefore acquire log_sys.latch. To avoid
+    deadlocks, log_sys.latch must not be acquired while holding
+    recv_sys.mutex. */
+    mysql_mutex_unlock(&mutex);
+    if (!last_batch)
+      log_sys.latch.wr_unlock();
+
     buf_block_t *free_block= buf_LRU_get_free_block(false);
+
+    if (!last_batch)
+      log_sys.latch.wr_lock(SRW_LOCK_CALL);
+    mysql_mutex_lock(&mutex);
 
     for (map::iterator p= pages.begin(); p != pages.end(); )
     {
@@ -3520,7 +3551,11 @@ erase_for_space:
         {
 next_free_block:
           mysql_mutex_unlock(&mutex);
+          if (!last_batch)
+            log_sys.latch.wr_unlock();
           free_block= buf_LRU_get_free_block(false);
+          if (!last_batch)
+            log_sys.latch.wr_lock(SRW_LOCK_CALL);
           mysql_mutex_lock(&mutex);
           break;
         }
@@ -3541,7 +3576,7 @@ next_free_block:
     for (;;)
     {
       const bool empty= pages.empty();
-      if (empty && !buf_pool.n_pend_reads)
+      if (empty && !os_aio_pending_reads())
         break;
 
       if (!is_corrupt_fs() && !is_corrupt_log())
@@ -3553,8 +3588,7 @@ next_free_block:
           else
           {
             mysql_mutex_unlock(&mutex);
-            os_aio_wait_until_no_pending_reads();
-            ut_ad(!buf_pool.n_pend_reads);
+            os_aio_wait_until_no_pending_reads(false);
             mysql_mutex_lock(&mutex);
             ut_ad(pages.empty());
           }
@@ -4112,7 +4146,7 @@ dberr_t recv_recovery_from_checkpoint_start()
 {
 	bool		rescan = false;
 
-	ut_ad(srv_operation == SRV_OPERATION_NORMAL
+	ut_ad(srv_operation <= SRV_OPERATION_EXPORT_RESTORED
 	      || srv_operation == SRV_OPERATION_RESTORE
 	      || srv_operation == SRV_OPERATION_RESTORE_EXPORT);
 	ut_d(mysql_mutex_lock(&buf_pool.flush_list_mutex));
@@ -4229,7 +4263,7 @@ read_only_recovery:
 			rescan = true;
 		}
 
-		if (srv_operation == SRV_OPERATION_NORMAL) {
+		if (srv_operation <= SRV_OPERATION_EXPORT_RESTORED) {
 			deferred_spaces.deferred_dblwr();
 			buf_dblwr.recover();
 		}
@@ -4244,6 +4278,11 @@ read_only_recovery:
 			    || recv_sys.is_corrupt_fs()) {
 				goto err_exit;
 			}
+
+			/* In case of multi-batch recovery,
+			redo log for the last batch is not
+			applied yet. */
+			ut_d(recv_sys.after_apply = false);
 		}
 	} else {
 		ut_ad(recv_sys.pages.empty());
@@ -4287,7 +4326,7 @@ err_exit:
 		}
 		log_sys.buf_free = recv_sys.offset;
 		if (recv_needed_recovery
-		    && srv_operation == SRV_OPERATION_NORMAL) {
+	            && srv_operation <= SRV_OPERATION_EXPORT_RESTORED) {
 			/* Write a FILE_CHECKPOINT marker as the first thing,
 			before generating any other redo log. This ensures
 			that subsequent crash recovery will be possible even

@@ -665,6 +665,7 @@ SELECT 1 + JSON_VALUE('{"nulltest": null}', '$.nulltest');
 SELECT NULL;
 SELECT JSON_EXTRACT('{"a":null, "b":10, "c":"null"}', '$.a');
 
+
 --echo #
 --echo # End of 10.3 tests
 --echo #
@@ -918,6 +919,14 @@ select JSON_LOOSE(JSON_EXTRACT(a, '$**.analyzing_range_alternatives')) from t200
 drop table t200;
 
 --echo #
+--echo # MDEV-24538: JSON_LENGTH does not return error upon wrong number of parameters
+--echo #
+--error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
+SELECT JSON_LENGTH('{"a":"b"}','$','$', 'foo');
+--error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
+SELECT JSON_LENGTH();
+
+--echo #
 --echo # End of 10.4 tests
 --echo #
 
@@ -1068,6 +1077,18 @@ SELECT * FROM arrNestTest;
 DROP TABLE arrNestTest;
 
 --echo #
+--echo # MDEV-30412 JSON_OBJECTAGG doesn't escape double quote in key
+--echo #
+
+SELECT JSON_OBJECTAGG('"', 1);
+SELECT JSON_OBJECTAGG('\"', 1);
+SELECT JSON_OBJECTAGG('\\', 1);
+
+--echo #
+--echo # End of 10.5 tests
+--echo #
+
+--echo #
 --echo # MDEV-26054 Server crashes in Item_func_json_arrayagg::get_str_from_field
 --echo #
 
@@ -1077,7 +1098,6 @@ INSERT INTO t VALUES ('foo'),('bar');
 SELECT JSON_ARRAYAGG(a) AS f FROM v;
 DROP VIEW v;
 DROP TABLE t;
-
 
 --echo #
 --echo # MDEV-29264 JSON functions overflow error based ON LONGTEXT field
@@ -1090,10 +1110,22 @@ SELECT JSON_INSERT(JSON_OBJECT(l1, l2, l3, l4), '$.k3', 'v3'),JSON_SET(JSON_OBJE
 DROP TABLE t;
 
 --echo #
---echo # End of 10.5 tests
+--echo # End of 10.6 tests
 --echo #
+
 --echo #
---echo # Beginning of 10.9 tests
+--echo # MDEV-31147 json_normalize does not work correctly with MSAN build
+--echo #
+CREATE TABLE t1 (val JSON);
+ALTER TABLE t1 ADD COLUMN normalized_json JSON AS (JSON_NORMALIZE(val));
+INSERT INTO t1 (val) VALUES ('15');
+SELECT * FROM t1;
+DROP TABLE t1;
+
+--echo #
+--echo # End of 10.8 tests
+--echo #
+
 --echo #
 --echo # MDEV-27677: Implement JSON_OVERLAPS()
 --echo #
@@ -1734,12 +1766,12 @@ SELECT JSON_EXTRACT(j, '$[*]')  FROM t1 ;
 DROP TABLE t1;
 
 --echo #
---echo # End of 10.9 Test
---echo #
-
---echo #
 --echo # MDEV-29381: JSON paths containing dashes are reported as syntax errors in procedures
 --echo #
 
 SELECT JSON_EXTRACT('{ "my-key": 1 }', '$."my-key"');
 SELECT JSON_EXTRACT('{ "my-key": 1 }', '$.my-key');
+
+--echo #
+--echo # End of 10.9 Test
+--echo #

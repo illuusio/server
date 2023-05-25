@@ -214,6 +214,43 @@ WHERE TABLE_NAME='t1' AND TABLE_SCHEMA='test';
 TABLE_ROWS	AVG_ROW_LENGTH>0
 3	1
 DROP TABLE t1;
+#
+# MDEV-29975 InnoDB fails to release savepoint during bulk insert
+#
+CREATE TABLE t (c INT KEY) ENGINE=InnoDB;
+begin;
+INSERT INTO t VALUES (0,0);
+ERROR 21S01: Column count doesn't match value count at row 1
+SAVEPOINT a;
+INSERT INTO t VALUES (0),(0);
+ERROR HY000: Got error 1 "Operation not permitted" during COMMIT
+SAVEPOINT a;
+commit;
+SELECT * FROM t;
+c
+DROP TABLE t;
+#
+#  MDEV-29545  InnoDB: Can't find record during replace stmt
+#
+CREATE TABLE t1(c1 INT PRIMARY KEY)ENGINE=InnoDB;
+BEGIN;
+INSERT INTO t1 VALUES(3331);
+connect con1,localhost,root,,,;
+BEGIN;
+SELECT c1 FROM t1;
+c1
+connection default;
+COMMIT;
+connection con1;
+REPLACE INTO t1 VALUES(1984), (1984);
+COMMIT;
+connection default;
+disconnect con1;
+SELECT * FROM t1;
+c1
+1984
+3331
+DROP TABLE t1;
 # End of 10.6 tests
 #
 # MDEV-26947 UNIQUE column checks fail in InnoDB resulting
@@ -405,3 +442,21 @@ nb_corrupted_rows
 0
 DROP TABLE t1;
 # End of 10.7 tests
+#
+#  MDEV-30426  Assertion !rec_offs_nth_extern(offsets2, n)
+#	during bulk insert
+#
+CREATE TABLE t1(f1 TEXT NOT NULL, f2 TEXT NOT NULL,
+f3 TEXT NOT NULL, f4 TEXT NOT NULL,
+f5 TEXT NOT NULL, f6 TEXT NOT NULL,
+PRIMARY KEY(f6(10)))ENGINE=InnoDB;
+BEGIN;
+INSERT INTO t1 VALUES
+(repeat('a', 200), repeat('b', 200), repeat('c', 200),
+repeat('d', 200), repeat('e', 200), repeat('f', 200)),
+(repeat('b', 20000), repeat('c', 16000), repeat('d', 12000),
+repeat('e', 12000), repeat('f', 12000), repeat('f', 12000));
+ERROR HY000: Got error 1 "Operation not permitted" during COMMIT
+COMMIT;
+DROP TABLE t1;
+# End of 10.8 tests

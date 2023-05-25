@@ -406,11 +406,11 @@ bool Item_subselect::mark_as_dependent(THD *thd, st_select_lex *select,
   {
     is_correlated= TRUE;
     Ref_to_outside *upper;
-    if (!(upper= new (thd->stmt_arena->mem_root) Ref_to_outside()))
+    if (!(upper= new (thd->mem_root) Ref_to_outside()))
       return TRUE;
     upper->select= select;
     upper->item= item;
-    if (upper_refs.push_back(upper, thd->stmt_arena->mem_root))
+    if (upper_refs.push_back(upper, thd->mem_root))
       return TRUE;
   }
   return FALSE;
@@ -2072,7 +2072,7 @@ Item_in_subselect::single_value_transformer(JOIN *join)
     thd->lex->current_select= current;
 
     /* We will refer to upper level cache array => we have to save it for SP */
-    optimizer->keep_top_level_cache();
+    DBUG_ASSERT(optimizer->get_cache()[0]->is_array_kept());
 
     /*
       As far as  Item_in_optimizer does not substitute itself on fix_fields
@@ -2472,7 +2472,7 @@ Item_in_subselect::row_value_transformer(JOIN *join)
     }
 
     // we will refer to upper level cache array => we have to save it in PS
-    optimizer->keep_top_level_cache();
+    DBUG_ASSERT(optimizer->get_cache()[0]->is_array_kept());
 
     thd->lex->current_select= current;
     /*
@@ -2906,7 +2906,9 @@ bool Item_exists_subselect::select_prepare_to_be_in()
   bool trans_res= FALSE;
   DBUG_ENTER("Item_exists_subselect::select_prepare_to_be_in");
   if (!optimizer &&
-      thd->lex->sql_command == SQLCOM_SELECT &&
+      (thd->lex->sql_command == SQLCOM_SELECT ||
+       thd->lex->sql_command == SQLCOM_UPDATE_MULTI ||
+       thd->lex->sql_command == SQLCOM_DELETE_MULTI) &&
       !unit->first_select()->is_part_of_union() &&
       optimizer_flag(thd, OPTIMIZER_SWITCH_EXISTS_TO_IN) &&
       (is_top_level_item() ||
@@ -4622,6 +4624,12 @@ void subselect_uniquesubquery_engine::print(String *str,
 {
   str->append(STRING_WITH_LEN("<primary_index_lookup>("));
   tab->ref.items[0]->print(str, query_type);
+  if (!tab->table)
+  {
+    // table is not opened so unknown
+    str->append(')');
+    return;
+  }
   str->append(STRING_WITH_LEN(" in "));
   if (tab->table->s->table_category == TABLE_CATEGORY_TEMPORARY)
   {

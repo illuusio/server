@@ -461,7 +461,7 @@ void print_range_for_non_indexed_field(String *out, Field *field,
 static void print_min_range_operator(String *out, const ha_rkey_function flag);
 static void print_max_range_operator(String *out, const ha_rkey_function flag);
 
-static bool is_field_an_unique_index(RANGE_OPT_PARAM *param, Field *field);
+static bool is_field_an_unique_index(Field *field);
 
 /*
   SEL_IMERGE is a list of possible ways to do index merge, i.e. it is
@@ -2230,7 +2230,7 @@ public:
   { return (void*) alloc_root(mem_root, (uint) size); }
   static void operator delete(void *ptr,size_t size) { TRASH_FREE(ptr, size); }
   static void operator delete(void *ptr, MEM_ROOT *mem_root) { /* Never called */ }
-  virtual ~TABLE_READ_PLAN() {}               /* Remove gcc warning */
+  virtual ~TABLE_READ_PLAN() = default;               /* Remove gcc warning */
   /**
      Add basic info for this TABLE_READ_PLAN to the optimizer trace.
 
@@ -2265,7 +2265,7 @@ public:
   TRP_RANGE(SEL_ARG *key_arg, uint idx_arg, uint mrr_flags_arg)
    : key(key_arg), key_idx(idx_arg), mrr_flags(mrr_flags_arg)
   {}
-  virtual ~TRP_RANGE() {}                     /* Remove gcc warning */
+  virtual ~TRP_RANGE() = default;                     /* Remove gcc warning */
 
   QUICK_SELECT_I *make_quick(PARAM *param, bool retrieve_full_rows,
                              MEM_ROOT *parent_alloc)
@@ -2312,8 +2312,8 @@ void TRP_RANGE::trace_basic_info(PARAM *param,
 class TRP_ROR_INTERSECT : public TABLE_READ_PLAN
 {
 public:
-  TRP_ROR_INTERSECT() {}                      /* Remove gcc warning */
-  virtual ~TRP_ROR_INTERSECT() {}             /* Remove gcc warning */
+  TRP_ROR_INTERSECT() = default;                      /* Remove gcc warning */
+  virtual ~TRP_ROR_INTERSECT() = default;             /* Remove gcc warning */
   QUICK_SELECT_I *make_quick(PARAM *param, bool retrieve_full_rows,
                              MEM_ROOT *parent_alloc);
 
@@ -2338,8 +2338,8 @@ public:
 class TRP_ROR_UNION : public TABLE_READ_PLAN
 {
 public:
-  TRP_ROR_UNION() {}                          /* Remove gcc warning */
-  virtual ~TRP_ROR_UNION() {}                 /* Remove gcc warning */
+  TRP_ROR_UNION() = default;                          /* Remove gcc warning */
+  virtual ~TRP_ROR_UNION() = default;                 /* Remove gcc warning */
   QUICK_SELECT_I *make_quick(PARAM *param, bool retrieve_full_rows,
                              MEM_ROOT *parent_alloc);
   TABLE_READ_PLAN **first_ror; /* array of ptrs to plans for merged scans */
@@ -2371,8 +2371,8 @@ void TRP_ROR_UNION::trace_basic_info(PARAM *param,
 class TRP_INDEX_INTERSECT : public TABLE_READ_PLAN
 {
 public:
-  TRP_INDEX_INTERSECT() {}                        /* Remove gcc warning */
-  virtual ~TRP_INDEX_INTERSECT() {}               /* Remove gcc warning */
+  TRP_INDEX_INTERSECT() = default;                     /* Remove gcc warning */
+  virtual ~TRP_INDEX_INTERSECT() = default;            /* Remove gcc warning */
   QUICK_SELECT_I *make_quick(PARAM *param, bool retrieve_full_rows,
                              MEM_ROOT *parent_alloc);
   TRP_RANGE **range_scans; /* array of ptrs to plans of intersected scans */
@@ -2408,8 +2408,8 @@ void TRP_INDEX_INTERSECT::trace_basic_info(PARAM *param,
 class TRP_INDEX_MERGE : public TABLE_READ_PLAN
 {
 public:
-  TRP_INDEX_MERGE() {}                        /* Remove gcc warning */
-  virtual ~TRP_INDEX_MERGE() {}               /* Remove gcc warning */
+  TRP_INDEX_MERGE() = default;                        /* Remove gcc warning */
+  virtual ~TRP_INDEX_MERGE() = default;               /* Remove gcc warning */
   QUICK_SELECT_I *make_quick(PARAM *param, bool retrieve_full_rows,
                              MEM_ROOT *parent_alloc);
   TRP_RANGE **range_scans; /* array of ptrs to plans of merged scans */
@@ -2477,7 +2477,7 @@ public:
       if (key_infix_len)
         memcpy(this->key_infix, key_infix_arg, key_infix_len);
     }
-  virtual ~TRP_GROUP_MIN_MAX() {}             /* Remove gcc warning */
+  virtual ~TRP_GROUP_MIN_MAX() = default;             /* Remove gcc warning */
 
   QUICK_SELECT_I *make_quick(PARAM *param, bool retrieve_full_rows,
                              MEM_ROOT *parent_alloc);
@@ -3561,7 +3561,10 @@ bool calculate_cond_selectivity_for_table(THD *thd, TABLE *table, Item **cond)
         }          
         else
         {
+          enum_check_fields save_count_cuted_fields= thd->count_cuted_fields;
+          thd->count_cuted_fields= CHECK_FIELD_IGNORE;
           rows= records_in_column_ranges(&param, idx, key);
+          thd->count_cuted_fields= save_count_cuted_fields;
           if (rows != DBL_MAX)
           {
             key->field->cond_selectivity= rows/table_records;
@@ -7759,8 +7762,13 @@ SEL_TREE *Item_func_ne::get_func_mm_tree(RANGE_OPT_PARAM *param,
     If this condition is a "col1<>...", where there is a UNIQUE KEY(col1),
     do not construct a SEL_TREE from it. A condition that excludes just one
     row in the table is not selective (unless there are only a few rows)
+
+    Note: this logic must be in sync with code in
+    check_group_min_max_predicates(). That function walks an Item* condition
+    and checks if the range optimizer would produce an equivalent range for
+    it.
   */
-  if (is_field_an_unique_index(param, field))
+  if (param->using_real_indexes && is_field_an_unique_index(field))
     DBUG_RETURN(NULL);
   DBUG_RETURN(get_ne_mm_tree(param, field, value, value));
 }
@@ -7872,7 +7880,7 @@ SEL_TREE *Item_func_in::get_func_mm_tree(RANGE_OPT_PARAM *param,
          - if there are a lot of constants, the overhead of building and
            processing enormous range list is not worth it.
       */
-      if (is_field_an_unique_index(param, field))
+      if (param->using_real_indexes && is_field_an_unique_index(field))
         DBUG_RETURN(0);
 
       /* Get a SEL_TREE for "(-inf|NULL) < X < c_0" interval.  */
@@ -8581,24 +8589,18 @@ SEL_TREE *Item_equal::get_mm_tree(RANGE_OPT_PARAM *param, Item **cond_ptr)
     In the future we could also add "almost unique" indexes where any value is
     present only in a few rows (but necessarily exactly one row)
 */
-static bool is_field_an_unique_index(RANGE_OPT_PARAM *param, Field *field)
+static bool is_field_an_unique_index(Field *field)
 {
   DBUG_ENTER("is_field_an_unique_index");
-
-  // The check for using_real_indexes is there because of the heuristics
-  // this function is used for.
-  if (param->using_real_indexes)
+  key_map::Iterator it(field->key_start);
+  uint key_no;
+  while ((key_no= it++) != key_map::Iterator::BITMAP_END)
   {
-    key_map::Iterator it(field->key_start);
-    uint key_no;
-    while ((key_no= it++) != key_map::Iterator::BITMAP_END)
+    KEY *key_info= &field->table->key_info[key_no];
+    if (key_info->user_defined_key_parts == 1 &&
+        (key_info->flags & HA_NOSAME))
     {
-      KEY *key_info= &field->table->key_info[key_no];
-      if (key_info->user_defined_key_parts == 1 &&
-          (key_info->flags & HA_NOSAME))
-      {
-        DBUG_RETURN(true);
-      }
+      DBUG_RETURN(true);
     }
   }
   DBUG_RETURN(false);
@@ -9721,7 +9723,6 @@ tree_or(RANGE_OPT_PARAM *param,SEL_TREE *tree1,SEL_TREE *tree2)
     DBUG_RETURN(tree2);
 
   SEL_TREE *result= NULL;
-  key_map result_keys;
   key_map ored_keys;
   SEL_TREE *rtree[2]= {NULL,NULL};
   SEL_IMERGE *imerge[2]= {NULL, NULL};
@@ -13538,7 +13539,7 @@ cost_group_min_max(TABLE* table, KEY *index_info, uint used_key_parts,
          - (C between const_i and const_j)
          - C IS NULL
          - C IS NOT NULL
-         - C != const
+         - C != const  (unless C is the primary key)
     SA4. If Q has a GROUP BY clause, there are no other aggregate functions
          except MIN and MAX. For queries with DISTINCT, aggregate functions
          are allowed.
@@ -14430,6 +14431,17 @@ check_group_min_max_predicates(Item *cond, Item_field *min_max_arg_item,
         bool inv;
         /* Test if this is a comparison of a field and a constant. */
         if (!simple_pred(pred, args, &inv))
+          DBUG_RETURN(FALSE);
+
+        /*
+          Follow the logic in Item_func_ne::get_func_mm_tree(): condition
+          in form "tbl.primary_key <> const" is not used to produce intervals.
+
+          If the condition doesn't have an equivalent interval, this means we
+          fail LooseScan's condition SA3. Return FALSE to indicate this.
+        */
+        if (pred_type == Item_func::NE_FUNC &&
+            is_field_an_unique_index(min_max_arg_item->field))
           DBUG_RETURN(FALSE);
 
         if (args[0] && args[1]) // this is a binary function or BETWEEN

@@ -52,9 +52,6 @@ void mtr_memo_slot_t::release() const
     static_cast<fil_space_t*>(object)->set_committed_size();
     static_cast<fil_space_t*>(object)->x_unlock();
     break;
-  case MTR_MEMO_SPACE_S_LOCK:
-    static_cast<fil_space_t*>(object)->s_unlock();
-    break;
   default:
     buf_page_t *bpage= static_cast<buf_page_t*>(object);
     ut_d(const auto s=)
@@ -143,9 +140,9 @@ inline void buf_pool_t::insert_into_flush_list(buf_page_t *prev,
     UT_LIST_REMOVE(flush_list, &block->page);
   }
   else
-    stat.flush_list_bytes+= block->physical_size();
+    flush_list_bytes+= block->physical_size();
 
-  ut_ad(stat.flush_list_bytes <= curr_pool_size);
+  ut_ad(flush_list_bytes <= curr_pool_size);
 
   if (prev)
     UT_LIST_INSERT_AFTER(flush_list, prev, &block->page);
@@ -262,9 +259,6 @@ void mtr_t::release_unlogged()
     case MTR_MEMO_SPACE_X_LOCK:
       static_cast<fil_space_t*>(slot.object)->set_committed_size();
       static_cast<fil_space_t*>(slot.object)->x_unlock();
-      break;
-    case MTR_MEMO_SPACE_S_LOCK:
-      static_cast<fil_space_t*>(slot.object)->s_unlock();
       break;
     case MTR_MEMO_X_LOCK:
     case MTR_MEMO_SX_LOCK:
@@ -405,9 +399,6 @@ void mtr_t::commit()
         case MTR_MEMO_SPACE_X_LOCK:
           static_cast<fil_space_t*>(slot.object)->set_committed_size();
           static_cast<fil_space_t*>(slot.object)->x_unlock();
-          break;
-        case MTR_MEMO_SPACE_S_LOCK:
-          static_cast<fil_space_t*>(slot.object)->s_unlock();
           break;
         case MTR_MEMO_X_LOCK:
         case MTR_MEMO_SX_LOCK:
@@ -606,8 +597,14 @@ void mtr_t::commit_shrink(fil_space_t &space)
 /** Commit a mini-transaction that is deleting or renaming a file.
 @param space   tablespace that is being renamed or deleted
 @param name    new file name (nullptr=the file will be deleted)
+@param detached_handle if detached_handle != nullptr and if space is detached
+                       during the function execution the file handle if its
+                       node will be set to OS_FILE_CLOSED, and the previous
+                       value of the file handle will be assigned to the
+                       address, pointed by detached_handle.
 @return whether the operation succeeded */
-bool mtr_t::commit_file(fil_space_t &space, const char *name)
+bool mtr_t::commit_file(fil_space_t &space, const char *name,
+    pfs_os_file_t *detached_handle)
 {
   ut_ad(is_active());
   ut_ad(!is_inside_ibuf());
@@ -696,7 +693,9 @@ bool mtr_t::commit_file(fil_space_t &space, const char *name)
     ut_ad(!space.referenced());
     ut_ad(space.is_stopping());
 
-    fil_system.detach(&space, true);
+    pfs_os_file_t handle = fil_system.detach(&space, true);
+    if (detached_handle)
+      *detached_handle = handle;
     mysql_mutex_unlock(&fil_system.mutex);
 
     success= true;
@@ -1316,18 +1315,14 @@ bool mtr_t::have_u_or_x_latch(const buf_block_t &block) const
 
 /** Check if we are holding exclusive tablespace latch
 @param space  tablespace to search for
-@param shared whether to look for shared latch, instead of exclusive
 @return whether space.latch is being held */
-bool mtr_t::memo_contains(const fil_space_t& space, bool shared) const
+bool mtr_t::memo_contains(const fil_space_t& space) const
 {
-  const mtr_memo_type_t type= shared
-    ? MTR_MEMO_SPACE_S_LOCK : MTR_MEMO_SPACE_X_LOCK;
-
   for (const mtr_memo_slot_t &slot : m_memo)
   {
-    if (slot.object == &space && slot.type == type)
+    if (slot.object == &space && slot.type == MTR_MEMO_SPACE_X_LOCK)
     {
-      ut_ad(shared || space.is_owner());
+      ut_ad(space.is_owner());
       return true;
     }
   }

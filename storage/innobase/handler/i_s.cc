@@ -4935,10 +4935,10 @@ static ST_FIELD_INFO innodb_sysindex_fields_info[]=
   Column("N_FIELDS", SLong(), NOT_NULL),
 
 #define SYS_INDEX_PAGE_NO	5
-  Column("PAGE_NO", SLong(), NOT_NULL),
+  Column("PAGE_NO", SLong(), NULLABLE),
 
 #define SYS_INDEX_SPACE		6
-  Column("SPACE", SLong(), NOT_NULL),
+  Column("SPACE", SLong(), NULLABLE),
 
 #define SYS_INDEX_MERGE_THRESHOLD 7
   Column("MERGE_THRESHOLD", SLong(), NOT_NULL),
@@ -4990,12 +4990,14 @@ i_s_dict_fill_sys_indexes(
 	if (index->page == FIL_NULL) {
 		fields[SYS_INDEX_PAGE_NO]->set_null();
 	} else {
+		fields[SYS_INDEX_PAGE_NO]->set_notnull();
 		OK(fields[SYS_INDEX_PAGE_NO]->store(index->page, true));
 	}
 
-	if (space_id == ULINT_UNDEFINED) {
+	if (space_id == FIL_NULL) {
 		fields[SYS_INDEX_SPACE]->set_null();
 	} else {
+		fields[SYS_INDEX_SPACE]->set_notnull();
 		OK(fields[SYS_INDEX_SPACE]->store(space_id, true));
 	}
 
@@ -6142,8 +6144,13 @@ static int i_s_sys_tablespaces_fill(THD *thd, const fil_space_t &s, TABLE *t)
       OK(f->store(name.data(), name.size(), system_charset_info));
       f->set_notnull();
     }
-    else
-      f->set_notnull();
+    else if (srv_is_undo_tablespace(s.id))
+    {
+      char name[15];
+      snprintf(name, sizeof name, "innodb_undo%03u",
+               (s.id - srv_undo_space_id_start + 1));
+      OK(f->store(name, strlen(name), system_charset_info));
+    } else f->set_notnull();
   }
 
   fields[SYS_TABLESPACES_NAME]->set_null();

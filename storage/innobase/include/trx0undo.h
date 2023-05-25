@@ -203,16 +203,18 @@ trx_undo_assign(trx_t* trx, dberr_t* err, mtr_t* mtr)
 	MY_ATTRIBUTE((nonnull));
 /** Assign an undo log for a transaction.
 A new undo log is created or a cached undo log reused.
+@tparam is_temp  whether this is temporary undo log
 @param[in,out]	trx	transaction
 @param[in]	rseg	rollback segment
 @param[out]	undo	the undo log
-@param[out]	err	error code
 @param[in,out]	mtr	mini-transaction
+@param[out]	err	error code
 @return	the undo log block
-@retval	NULL	on error */
+@retval	nullptr	on error */
+template<bool is_temp>
 buf_block_t*
-trx_undo_assign_low(trx_t* trx, trx_rseg_t* rseg, trx_undo_t** undo,
-		    dberr_t* err, mtr_t* mtr)
+trx_undo_assign_low(trx_t *trx, trx_rseg_t *rseg, trx_undo_t **undo,
+                    mtr_t *mtr, dberr_t *err)
 	MY_ATTRIBUTE((nonnull, warn_unused_result));
 /******************************************************************//**
 Sets the state of the undo log segment at a transaction finish.
@@ -246,12 +248,10 @@ trx_undo_free_at_shutdown(trx_t *trx);
 @param[in,out]	rseg		rollback segment
 @param[in]	id		rollback segment slot
 @param[in]	page_no		undo log segment page number
-@param[in,out]	max_trx_id	the largest observed transaction ID
 @return	the undo log
 @retval nullptr on error */
 trx_undo_t *
-trx_undo_mem_create_at_db_start(trx_rseg_t *rseg, ulint id, uint32_t page_no,
-                                trx_id_t &max_trx_id);
+trx_undo_mem_create_at_db_start(trx_rseg_t *rseg, ulint id, uint32_t page_no);
 
 #endif /* !UNIV_INNOCHECKSUM */
 
@@ -492,6 +492,8 @@ or 0 if the transaction has not been committed */
 #define	TRX_UNDO_TRX_NO		8
 /** Before MariaDB 10.3.1, when purge did not reset DB_TRX_ID of
 surviving user records, this used to be called TRX_UNDO_DEL_MARKS.
+
+This field is redundant; it is only being read by some debug assertions.
 
 The value 1 indicates that purge needs to process the undo log segment.
 The value 0 indicates that all of it has been processed, and

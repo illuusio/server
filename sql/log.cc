@@ -215,7 +215,7 @@ public:
     m_message[0]= '\0';
   }
 
-  virtual ~Silence_log_table_errors() {}
+  virtual ~Silence_log_table_errors() = default;
 
   virtual bool handle_condition(THD *thd,
                                 uint sql_errno,
@@ -418,7 +418,7 @@ private:
   Rows_log_event *m_pending;
 
   /*
-    Bit flags for what has been writting to cache. Used to
+    Bit flags for what has been writing to cache. Used to
     discard logs without any data changes.
     see enum_logged_status;
   */
@@ -772,14 +772,10 @@ end:
 }
 
 
-Log_to_csv_event_handler::Log_to_csv_event_handler()
-{
-}
+Log_to_csv_event_handler::Log_to_csv_event_handler() = default;
 
 
-Log_to_csv_event_handler::~Log_to_csv_event_handler()
-{
-}
+Log_to_csv_event_handler::~Log_to_csv_event_handler() = default;
 
 
 void Log_to_csv_event_handler::cleanup()
@@ -11984,7 +11980,10 @@ get_gtid_list_event(IO_CACHE *cache, Gtid_list_log_event **out_gtid_list)
     if (typ == START_ENCRYPTION_EVENT)
     {
       if (fdle->start_decryption((Start_encryption_log_event*) ev))
+      {
         errormsg= "Could not set up decryption for binlog.";
+        break;
+      }
     }
     delete ev;
     if (typ == ROTATE_EVENT || typ == STOP_EVENT ||

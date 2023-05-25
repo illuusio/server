@@ -206,7 +206,7 @@ class ACL_USER :public ACL_USER_BASE,
 {
 public:
 
-  ACL_USER() { }
+  ACL_USER() = default;
   ACL_USER(THD *thd, const LEX_USER &combo,
            const Account_options &options,
            const privilege_t privileges);
@@ -351,7 +351,7 @@ class ACL_PROXY_USER :public ACL_ACCESS
     MYSQL_PROXIES_PRIV_GRANTOR,
     MYSQL_PROXIES_PRIV_TIMESTAMP } proxy_table_fields;
 public:
-  ACL_PROXY_USER () {};
+  ACL_PROXY_USER () = default;
 
   void init(const char *host_arg, const char *user_arg,
        const char *proxied_host_arg, const char *proxied_user_arg,
@@ -942,7 +942,7 @@ class User_table: public Grant_table_base
   virtual longlong get_password_lifetime () const = 0;
   virtual int set_password_lifetime (longlong x) const = 0;
 
-  virtual ~User_table() {}
+  virtual ~User_table() = default;
  private:
   friend class Grant_tables;
   virtual int setup_sysvars() const = 0;
@@ -1291,7 +1291,7 @@ class User_table_tabular: public User_table
     return 1;
   }
 
-  virtual ~User_table_tabular() {}
+  virtual ~User_table_tabular() = default;
  private:
   friend class Grant_tables;
 
@@ -1707,7 +1707,7 @@ class User_table_json: public User_table
   int set_password_expired (bool x) const
   { return x ? set_password_last_changed(0) : 0; }
 
-  ~User_table_json() {}
+  ~User_table_json() = default;
  private:
   friend class Grant_tables;
   static const uint JSON_SIZE=1024;
@@ -2610,6 +2610,8 @@ static bool acl_load(THD *thd, const Grant_tables& tables)
                             "possible to remove this privilege using REVOKE.",
                             host.host.hostname, host.db);
       }
+      else if (!host.db)
+        host.db= const_cast<char*>(host_not_specified.str);
       host.access= host_table.get_access();
       host.access= fix_rights_for_db(host.access);
       host.sort= get_magic_sort("hd", host.host.hostname, host.db);
@@ -2618,8 +2620,7 @@ static bool acl_load(THD *thd, const Grant_tables& tables)
       {
         sql_print_warning("'host' entry '%s|%s' "
                         "ignored in --skip-name-resolve mode.",
-                         safe_str(host.host.hostname),
-                         safe_str(host.db));
+                         host.host.hostname, host.db);
         continue;
       }
 #ifndef TO_BE_REMOVED
@@ -3741,7 +3742,7 @@ privilege_t acl_get(const char *host, const char *ip,
     ACL_HOST *acl_host=dynamic_element(&acl_hosts,i,ACL_HOST*);
     if (compare_hostname(&acl_host->host,host,ip))
     {
-      if (!acl_host->db || !wild_compare(db,acl_host->db,db_is_pattern))
+      if (!wild_compare(db, acl_host->db, db_is_pattern))
       {
 	host_access=acl_host->access;		// Fully specified. Take it
 	break;
@@ -5411,7 +5412,7 @@ public:
   GRANT_NAME(const char *h, const char *d,const char *u,
              const char *t, privilege_t p, bool is_routine);
   GRANT_NAME (TABLE *form, bool is_routine);
-  virtual ~GRANT_NAME() {};
+  virtual ~GRANT_NAME() = default;
   virtual bool ok() { return privs != NO_ACL; }
   void set_user_details(const char *h, const char *d,
                         const char *u, const char *t,
@@ -6786,6 +6787,7 @@ static int update_role_columns(GRANT_TABLE *merged,
     }
   }
 
+restart:
   for (uint i=0 ; i < mh->records ; i++)
   {
     GRANT_COLUMN *col = (GRANT_COLUMN *)my_hash_element(mh, i);
@@ -6794,6 +6796,7 @@ static int update_role_columns(GRANT_TABLE *merged,
     {
       changed= 1;
       my_hash_delete(mh, (uchar*)col);
+      goto restart;
     }
   }
   DBUG_ASSERT(rights == merged->cols);
@@ -11741,8 +11744,7 @@ public:
     : is_grave(FALSE)
   {}
 
-  virtual ~Silence_routine_definer_errors()
-  {}
+  virtual ~Silence_routine_definer_errors() = default;
 
   virtual bool handle_condition(THD *thd,
                                 uint sql_errno,

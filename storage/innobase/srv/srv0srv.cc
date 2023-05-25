@@ -655,6 +655,7 @@ void srv_boot()
   if (transactional_lock_enabled())
     sql_print_information("InnoDB: Using transactional memory");
 #endif
+  buf_dblwr.init();
   srv_thread_pool_init();
   trx_pool_init();
   srv_init();
@@ -909,55 +910,19 @@ srv_export_innodb_status(void)
 
 	export_vars.innodb_data_writes = os_n_file_writes;
 
-	ulint dblwr = 0;
+	buf_dblwr.lock();
+	ulint dblwr = buf_dblwr.written();
+	export_vars.innodb_dblwr_pages_written = dblwr;
+	export_vars.innodb_dblwr_writes = buf_dblwr.batches();
+	buf_dblwr.unlock();
 
-	if (buf_dblwr.is_initialised()) {
-		buf_dblwr.lock();
-		dblwr = buf_dblwr.submitted();
-		export_vars.innodb_dblwr_pages_written = buf_dblwr.written();
-		export_vars.innodb_dblwr_writes = buf_dblwr.batches();
-		buf_dblwr.unlock();
-	}
-
-	export_vars.innodb_data_written = srv_stats.data_written + dblwr;
-
-	export_vars.innodb_buffer_pool_read_requests
-		= buf_pool.stat.n_page_gets;
-
-	export_vars.innodb_buffer_pool_reads = srv_stats.buf_pool_reads;
-
-	export_vars.innodb_buffer_pool_read_ahead_rnd =
-		buf_pool.stat.n_ra_pages_read_rnd;
-
-	export_vars.innodb_buffer_pool_read_ahead =
-		buf_pool.stat.n_ra_pages_read;
-
-	export_vars.innodb_buffer_pool_read_ahead_evicted =
-		buf_pool.stat.n_ra_pages_evicted;
-
-	export_vars.innodb_buffer_pool_pages_data =
-		UT_LIST_GET_LEN(buf_pool.LRU);
+	export_vars.innodb_data_written = srv_stats.data_written
+		+ (dblwr << srv_page_size_shift);
 
 	export_vars.innodb_buffer_pool_bytes_data =
 		buf_pool.stat.LRU_bytes
 		+ (UT_LIST_GET_LEN(buf_pool.unzip_LRU)
 		   << srv_page_size_shift);
-
-	export_vars.innodb_buffer_pool_pages_dirty =
-		UT_LIST_GET_LEN(buf_pool.flush_list);
-
-	export_vars.innodb_buffer_pool_pages_made_young
-		= buf_pool.stat.n_pages_made_young;
-	export_vars.innodb_buffer_pool_pages_made_not_young
-		= buf_pool.stat.n_pages_not_made_young;
-
-	export_vars.innodb_buffer_pool_pages_old = buf_pool.LRU_old_len;
-
-	export_vars.innodb_buffer_pool_bytes_dirty =
-		buf_pool.stat.flush_list_bytes;
-
-	export_vars.innodb_buffer_pool_pages_free =
-		UT_LIST_GET_LEN(buf_pool.free);
 
 #ifdef UNIV_DEBUG
 	export_vars.innodb_buffer_pool_pages_latched =
@@ -1589,27 +1554,32 @@ fewer_threads:
 
     m_history_length= history_size;
 
-    if (history_size &&
-        trx_purge(n_use_threads,
-                  !(++count % srv_purge_rseg_truncate_frequency) ||
-                  purge_sys.truncate.current ||
-                  (srv_shutdown_state != SRV_SHUTDOWN_NONE &&
-                   srv_fast_shutdown == 0)))
+    if (!history_size)
+      srv_dml_needed_delay= 0;
+    else if (trx_purge(n_use_threads, history_size,
+                       !(++count % srv_purge_rseg_truncate_frequency) ||
+                       purge_sys.truncate.current ||
+                       (srv_shutdown_state != SRV_SHUTDOWN_NONE &&
+                        srv_fast_shutdown == 0)))
       continue;
 
-    if (m_running == sigcount)
+    if (srv_dml_needed_delay);
+    else if (m_running == sigcount)
     {
       /* Purge was not woken up by srv_wake_purge_thread_if_not_active() */
 
       /* The magic number 5000 is an approximation for the case where we have
       cached undo log records which prevent truncate of rollback segments. */
-      wakeup= history_size &&
-        (history_size >= 5000 ||
-         history_size != trx_sys.history_size_approx());
+      wakeup= history_size >= 5000 ||
+        (history_size && history_size != trx_sys.history_size_approx());
       break;
     }
-    else if (!trx_sys.history_exists())
+
+    if (!trx_sys.history_exists())
+    {
+      srv_dml_needed_delay= 0;
       break;
+    }
 
     if (!srv_purge_should_exit())
       goto loop;

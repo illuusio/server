@@ -1449,6 +1449,13 @@ JSON_LOOSE(JSON_EXTRACT(a, '$**.analyzing_range_alternatives'))
 [{"range_scan_alternatives": [{"index": "a_b", "ranges": ["2 <= a <= 2 AND 4 <= b <= 4", "123"], "rowid_ordered": true, "using_mrr": false, "index_only": true, "rows": 1, "cost": 1.1752, "chosen": true}], "analyzing_roworder_intersect": {"cause": "too few roworder scans"}, "analyzing_index_merge_union": [], "test_one_line_array": ["123"]}]
 drop table t200;
 #
+# MDEV-24538: JSON_LENGTH does not return error upon wrong number of parameters
+#
+SELECT JSON_LENGTH('{"a":"b"}','$','$', 'foo');
+ERROR 42000: Incorrect parameter count in the call to native function 'json_length'
+SELECT JSON_LENGTH();
+ERROR 42000: Incorrect parameter count in the call to native function 'JSON_LENGTH'
+#
 # End of 10.4 tests
 #
 #
@@ -1623,6 +1630,21 @@ id	doc
 {"$oid":"611c0a463b150154132f6636"}	{ "_id" : { "$oid" : "611c0a463b150154132f6636" }, "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : [ { "a" : 1.0 } ] } ] } ] } ] } ] } ] } ] } ] } ] } ] } ] } ] } ] } ] } ] }
 DROP TABLE arrNestTest;
 #
+# MDEV-30412 JSON_OBJECTAGG doesn't escape double quote in key
+#
+SELECT JSON_OBJECTAGG('"', 1);
+JSON_OBJECTAGG('"', 1)
+{"\"":1}
+SELECT JSON_OBJECTAGG('\"', 1);
+JSON_OBJECTAGG('\"', 1)
+{"\"":1}
+SELECT JSON_OBJECTAGG('\\', 1);
+JSON_OBJECTAGG('\\', 1)
+{"\\":1}
+#
+# End of 10.5 tests
+#
+#
 # MDEV-26054 Server crashes in Item_func_json_arrayagg::get_str_from_field
 #
 CREATE TABLE t (a VARCHAR(8));
@@ -1649,10 +1671,21 @@ JSON_INSERT(JSON_OBJECT(l1, l2, l3, l4), '$.k3', 'v3')	JSON_SET(JSON_OBJECT(l1, 
 {"k1": "v1", "k2": "v2", "k3": "v3"}	{"k1": "v1", "k2": "new v2"}	{"k1": "v1", "k2": "new v2"}
 DROP TABLE t;
 #
-# End of 10.5 tests
+# End of 10.6 tests
 #
 #
-# Beginning of 10.9 tests
+# MDEV-31147 json_normalize does not work correctly with MSAN build
+#
+CREATE TABLE t1 (val JSON);
+ALTER TABLE t1 ADD COLUMN normalized_json JSON AS (JSON_NORMALIZE(val));
+INSERT INTO t1 (val) VALUES ('15');
+SELECT * FROM t1;
+val	normalized_json
+15	1.5E1
+DROP TABLE t1;
+#
+# End of 10.8 tests
+#
 #
 # MDEV-27677: Implement JSON_OVERLAPS()
 #
@@ -2536,9 +2569,6 @@ JSON_EXTRACT(j, '$[*]')
 [{"key1": 3, "key2": 3}, {"key3": 3, "key4": 3}, {"key5": 3}]
 DROP TABLE t1;
 #
-# End of 10.9 Test
-#
-#
 # MDEV-29381: JSON paths containing dashes are reported as syntax errors in procedures
 #
 SELECT JSON_EXTRACT('{ "my-key": 1 }', '$."my-key"');
@@ -2547,3 +2577,6 @@ JSON_EXTRACT('{ "my-key": 1 }', '$."my-key"')
 SELECT JSON_EXTRACT('{ "my-key": 1 }', '$.my-key');
 JSON_EXTRACT('{ "my-key": 1 }', '$.my-key')
 1
+#
+# End of 10.9 Test
+#
