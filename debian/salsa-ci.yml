@@ -411,6 +411,7 @@ mariadb-10.6 and Bookworm-20230208 upgrade:
     - *test-enable-sid-repos
     # Ensure mariadbd will not crash on next shutdown for any reason
     - service mariadb restart
+    - *test-enable-artifacts-repo
     - apt-get install -y mariadb-server
     - *test-full-upgrade
     - service mariadb status  # There is no init.d/mysql in MariaDB 10.5+
@@ -560,16 +561,17 @@ libmysql* to libmariadb* upgrade:
     - apt-get install -y pkg-config libmysqlclient-dev
     - pkg-config --list-all
     - pkg-config --cflags mysqlclient # mysqlclient.pc from original package
-    - apt-get install -y ./libmariadb3_*.deb ./mariadb-common_*.deb
+    - *test-enable-artifacts-repo
+    - apt-get install -y libmariadb3
     - pkg-config --list-all
-    - apt-get install -y ./libmariadb-dev_*.deb
+    - apt-get install -y libmariadb-dev
     - pkg-config --list-all
-    - apt-get install -y ./libmariadb-dev-compat_*.deb
+    - apt-get install -y libmariadb-dev-compat
     - pkg-config --cflags mysqlclient # mysqlclient.pc from compat package
     - pkg-config --list-all
-    - apt-get install -y ./libmariadbd19_*.deb
+    - apt-get install -y libmariadbd19
     - pkg-config --list-all
-    - apt-get install -y ./libmariadbd-dev_*.deb
+    - apt-get install -y libmariadbd-dev
     - pkg-config --list-all
     - apt-get install -y default-libmysqlclient-dev default-libmysqld-dev
     - *test-verify-libs
