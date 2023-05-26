@@ -8,7 +8,7 @@
 # Should-Stop:       $network $named $time
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: Start and stop the mysql database server daemon
+# Short-Description: Start and stop the MariaDB database server daemon
 # Description:       Controls the main MariaDB database server daemon "mariadbd"
 #                    and its wrapper script "mysqld_safe".
 ### END INIT INFO

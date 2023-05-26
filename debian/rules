@@ -236,7 +236,7 @@ override_dh_systemd_enable:
 #	dh_systemd_enable --no-enable --name=mariadb@ mariadb.socket
 #	dh_systemd_enable --no-enable --name=mariadb-extra@ mariadb-extra.socket
 
-# Start mysql at sequence number 19 before 20 where apache, proftpd etc gets
+# Start mariadbd at sequence number 19 before 20 where apache, proftpd etc gets
 # started which might depend on a running database server.
 override_dh_installinit-arch:
 	dh_installinit --name=mariadb --no-start -- defaults 19 21

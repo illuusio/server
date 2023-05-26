@@ -169,7 +169,7 @@ fi
 
 #
 # Now we have to ensure the following state:
-# /etc/passwd: mysql:x:100:101:MySQL Server:/nonexistent:/bin/false
+# /etc/passwd: mysql:x:100:101:MariaDB Server:/nonexistent:/bin/false
 # /etc/group:  mysql:x:101:
 #
 # Sadly there could any state be present on the system so we have to
@@ -192,7 +192,7 @@ if ! getent passwd mysql >/dev/null; then
 	  --ingroup mysql \
 	  --no-create-home \
 	  --home /nonexistent \
-	  --gecos "MySQL Server" \
+	  --gecos "MariaDB Server" \
 	  --shell /bin/false \
 	  mysql  >/dev/null 2>&1
 fi

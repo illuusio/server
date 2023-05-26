@@ -54,7 +54,7 @@ function upgrade_system_tables_if_necessary() {
   set -e
   set -u
 
-  logger -p daemon.info -i -t"$0" "Upgrading MySQL tables if necessary."
+  logger -p daemon.info -i -t"$0" "Upgrading MariaDB tables if necessary."
 
   # Filter all "duplicate column", "duplicate key" and "unknown column"
   # errors as the script is designed to be idempotent.
