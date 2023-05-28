@@ -9,6 +9,5 @@ debug-order_by_innodb.patch
 2541-fix-stack-overflow-in-pinbox-allocator.patch
 2509-fix-compiler-warnings.patch
 2464-log-missing-upgrade.patch
-fix-man-pages.patch
 fix-spelling-libmarias3.patch
 fix-spelling-libmariadb.patch
