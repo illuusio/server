@@ -6,4 +6,3 @@ fix-reproducible-builds-rocksdb.patch
 mroonga-mrn-lib-dirs-path-reproducible-build.patch
 2129-new-script-wsrep-sst-backup-fixes.patch
 2541-fix-stack-overflow-in-pinbox-allocator.patch
-2464-log-missing-upgrade.patch
