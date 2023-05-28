@@ -7,7 +7,6 @@ mroonga-mrn-lib-dirs-path-reproducible-build.patch
 2129-new-script-wsrep-sst-backup-fixes.patch
 debug-order_by_innodb.patch
 2541-fix-stack-overflow-in-pinbox-allocator.patch
-2555-mysql-5.7-migration-innodb-table-stats.patch
 2509-fix-compiler-warnings.patch
 2464-log-missing-upgrade.patch
 fix-man-pages.patch
