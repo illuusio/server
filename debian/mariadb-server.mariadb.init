@@ -252,11 +252,11 @@ case "${1:-''}" in
   ;;
 
   'bootstrap')
-	# Bootstrap the cluster, start the first node
-	# that initiates the cluster
-	log_daemon_msg "Bootstrapping the cluster" "mariadbd"
-	$SELF start "${@:2}" --wsrep-new-cluster
-	;;
+  # Bootstrap the cluster, start the first node
+  # that initiates the cluster
+  log_daemon_msg "Bootstrapping the cluster" "mariadbd"
+  $SELF start "${@:2}" --wsrep-new-cluster
+  ;;
 
   *)
   echo "Usage: $SELF start|stop|restart|reload|force-reload|status"
