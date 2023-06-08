@@ -1,4 +1,8 @@
-mariadb (1:10.11.3-2~exp1) experimental; urgency=medium
+mariadb (1:10.11.4-1) unstable; urgency=medium
+
+  [ Otto Kekäläinen ]
+  * New upstream version 10.11.4. Includes fixes for several severe regressions,
+    see details at https://mariadb.com/kb/en/mariadb-10-11-4-release-notes/
 
   [ Andreas Beckmann ]
   * Introduce transitional mariadb-server-10.5 (Closes: #1035949)
