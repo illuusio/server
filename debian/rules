@@ -107,7 +107,7 @@ override_dh_auto_configure:
 	dh_testdir
 
 ifneq ($(DEB_BUILD_ARCH),$(DEB_HOST_ARCH))
-	dpkg-architecture -a$(DEB_BUILD_ARCH) -f -c dh_auto_configure --builddirectory=builddir-native
+	dpkg-architecture -a$(DEB_BUILD_ARCH) -f -c dh_auto_configure --builddirectory=builddir-native --reload-all-buildenv-variables
 	dh_auto_build --builddirectory=builddir-native -- import_executables
 endif
 
