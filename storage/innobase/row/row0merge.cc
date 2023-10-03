@@ -479,6 +479,13 @@ static ulint row_merge_bulk_buf_add(row_merge_buf_t* buf,
 
     ulint fixed_len= ifield->fixed_len;
 
+    /* CHAR in ROW_FORMAT=REDUNDANT is always
+    fixed-length, but in the temporary file it is
+    variable-length for variable-length character sets. */
+    if (fixed_len && !index->table->not_redundant() &&
+        col->mbminlen != col->mbmaxlen)
+      fixed_len= 0;
+
     if (fixed_len);
     else if (len < 128 || (!DATA_BIG_COL(col)))
       extra_size++;
@@ -5329,6 +5336,8 @@ dberr_t row_merge_bulk_t::write_to_index(ulint index_no, trx_t *trx)
 func_exit:
   if (err != DB_SUCCESS)
     trx->error_info= index;
+  else if (index->is_primary() && table->persistent_autoinc)
+    btr_write_autoinc(index, table->autoinc);
   err= btr_bulk.finish(err);
   return err;
 }

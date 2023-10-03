@@ -3354,7 +3354,7 @@ public:
 /**
   TIMESTAMP(0..6) - MySQL56 version
 */
-class Field_timestampf final :public Field_timestamp_with_dec {
+class Field_timestampf :public Field_timestamp_with_dec {
   void store_TIMEVAL(const timeval &tv) override;
 public:
   Field_timestampf(uchar *ptr_arg,
@@ -5253,7 +5253,7 @@ class Column_definition: public Sql_alloc,
   const Type_handler *field_type() const; // Prevent using this
   Compression_method *compression_method_ptr;
 public:
-  LEX_CSTRING field_name;
+  Lex_ident   field_name;
   LEX_CSTRING comment;			// Comment for field
   enum enum_column_versioning
   {

@@ -362,8 +362,20 @@ static bool fil_node_open_file_low(fil_node_t *node)
                                  : OS_FILE_OPEN | OS_FILE_ON_ERROR_NO_EXIT,
                                  OS_FILE_AIO, type,
                                  srv_read_only_mode, &success);
-    if (success)
+    if (node->is_open())
+    {
+      ut_ad(success);
+#ifndef _WIN32
+      if (!node->space->id && !srv_read_only_mode && my_disable_locking &&
+          os_file_lock(node->handle, node->name))
+      {
+        os_file_close(node->handle);
+        node->handle= OS_FILE_CLOSED;
+        return false;
+      }
+#endif
       break;
+    }
 
     /* The following call prints an error message */
     if (os_file_get_last_error(true) == EMFILE + 100 &&
@@ -447,7 +459,9 @@ static bool fil_node_open_file(fil_node_t *node)
     }
   }
 
-  return fil_node_open_file_low(node);
+  /* The node can be opened beween releasing and acquiring fil_system.mutex
+  in the above code */
+  return node->is_open() || fil_node_open_file_low(node);
 }
 
 /** Close the file handle. */
@@ -1953,8 +1967,8 @@ err_exit:
 						     FIL_TYPE_TABLESPACE,
 						     crypt_data, mode, true)) {
 		fil_node_t* node = space->add(path, file, size, false, true);
-		mysql_mutex_unlock(&fil_system.mutex);
 		IF_WIN(node->find_metadata(), node->find_metadata(file, true));
+		mysql_mutex_unlock(&fil_system.mutex);
 		mtr.start();
 		mtr.set_named_space(space);
 		ut_a(fsp_header_init(space, size, &mtr) == DB_SUCCESS);
@@ -2775,53 +2789,62 @@ func_exit:
 
 #include <tpool.h>
 
-/** Callback for AIO completion */
-void fil_aio_callback(const IORequest &request)
+void IORequest::write_complete(int io_error) const
 {
   ut_ad(fil_validate_skip());
-  ut_ad(request.node);
+  ut_ad(node);
+  ut_ad(is_write());
 
-  if (!request.bpage)
+  if (!bpage)
   {
     ut_ad(!srv_read_only_mode);
-    if (request.type == IORequest::DBLWR_BATCH)
-      buf_dblwr.flush_buffered_writes_completed(request);
+    if (type == IORequest::DBLWR_BATCH)
+      buf_dblwr.flush_buffered_writes_completed(*this);
     else
-      ut_ad(request.type == IORequest::WRITE_ASYNC);
-write_completed:
-    request.node->complete_write();
-  }
-  else if (request.is_write())
-  {
-    buf_page_write_complete(request);
-    goto write_completed;
+      ut_ad(type == IORequest::WRITE_ASYNC);
   }
   else
+    buf_page_write_complete(*this, io_error);
+
+  node->complete_write();
+  node->space->release();
+}
+
+void IORequest::read_complete(int io_error) const
+{
+  ut_ad(fil_validate_skip());
+  ut_ad(node);
+  ut_ad(is_read());
+  ut_ad(bpage);
+
+  /* IMPORTANT: since i/o handling for reads will read also the insert
+  buffer in fil_system.sys_space, we have to be very careful not to
+  introduce deadlocks. We never close fil_system.sys_space data files
+  and never issue asynchronous reads of change buffer pages. */
+  const page_id_t id(bpage->id());
+
+  if (UNIV_UNLIKELY(io_error != 0))
   {
-    ut_ad(request.is_read());
-
-    /* IMPORTANT: since i/o handling for reads will read also the insert
-    buffer in fil_system.sys_space, we have to be very careful not to
-    introduce deadlocks. We never close fil_system.sys_space data
-    files and never issue asynchronous reads of change buffer pages. */
-    const page_id_t id(request.bpage->id());
-
-    if (dberr_t err= request.bpage->read_complete(*request.node))
+    sql_print_error("InnoDB: Read error %d of page " UINT32PF " in file %s",
+                    io_error, id.page_no(), node->name);
+    buf_pool.corrupted_evict(bpage, buf_page_t::READ_FIX);
+  corrupted:
+    if (recv_recovery_is_on() && !srv_force_recovery)
     {
-      if (recv_recovery_is_on() && !srv_force_recovery)
-      {
-        mysql_mutex_lock(&recv_sys.mutex);
-        recv_sys.set_corrupt_fs();
-        mysql_mutex_unlock(&recv_sys.mutex);
-      }
-
-      if (err != DB_FAIL)
-        ib::error() << "Failed to read page " << id.page_no()
-                    << " from file '" << request.node->name << "': " << err;
+      mysql_mutex_lock(&recv_sys.mutex);
+      recv_sys.set_corrupt_fs();
+      mysql_mutex_unlock(&recv_sys.mutex);
     }
   }
+  else if (dberr_t err= bpage->read_complete(*node))
+  {
+    if (err != DB_FAIL)
+      ib::error() << "Failed to read page " << id.page_no()
+                  << " from file '" << node->name << "': " << err;
+    goto corrupted;
+  }
 
-  request.node->space->release();
+  node->space->release();
 }
 
 /** Flush to disk the writes in file spaces of the given type

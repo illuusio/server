@@ -75,8 +75,7 @@ struct buf_pool_info_t
 	ulint	flush_list_len;		/*!< Length of buf_pool.flush_list */
 	ulint	n_pend_unzip;		/*!< buf_pool.n_pend_unzip, pages
 					pending decompress */
-	ulint	n_pend_reads;		/*!< buf_pool.n_pend_reads, pages
-					pending read */
+	ulint	n_pend_reads;		/*!< os_aio_pending_reads() */
 	ulint	n_pending_flush_lru;	/*!< Pages pending flush in LRU */
 	ulint	n_pending_flush_list;	/*!< Pages pending flush in FLUSH
 					LIST */
@@ -787,8 +786,10 @@ public:
   dberr_t read_complete(const fil_node_t &node);
 
   /** Note that a block is no longer dirty, while not removing
-  it from buf_pool.flush_list */
-  inline void write_complete(bool temporary);
+  it from buf_pool.flush_list
+  @param temporary   whether the page belongs to the temporary tablespace
+  @param error       whether an error may have occurred while writing */
+  inline void write_complete(bool temporary, bool error);
 
   /** Write a flushable page to a file or free a freeable block.
   @param evict       whether to evict the page on write completion

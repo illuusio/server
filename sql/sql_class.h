@@ -51,6 +51,7 @@
 #include "backup.h"
 #include "xa.h"
 #include "ddl_log.h"                            /* DDL_LOG_STATE */
+#include "ha_handler_stats.h"                    // ha_handler_stats */
 
 extern "C"
 void set_thd_stage_info(void *thd,
@@ -320,7 +321,7 @@ typedef struct st_copy_info {
 
 class Key_part_spec :public Sql_alloc {
 public:
-  LEX_CSTRING field_name;
+  Lex_ident field_name;
   uint length;
   bool generated, asc;
   Key_part_spec(const LEX_CSTRING *name, uint len, bool gen= false)
@@ -455,6 +456,7 @@ public:
   bool generated;
   bool invisible;
   bool without_overlaps;
+  bool old;
   Lex_ident period;
 
   Key(enum Keytype type_par, const LEX_CSTRING *name_arg,
@@ -462,7 +464,7 @@ public:
     :DDL_options(ddl_options),
      type(type_par), key_create_info(default_key_create_info),
     name(*name_arg), option_list(NULL), generated(generated_arg),
-    invisible(false), without_overlaps(false)
+    invisible(false), without_overlaps(false), old(false)
   {
     key_create_info.algorithm= algorithm_arg;
   }
@@ -473,12 +475,12 @@ public:
     :DDL_options(ddl_options),
      type(type_par), key_create_info(*key_info_arg), columns(*cols),
     name(*name_arg), option_list(create_opt), generated(generated_arg),
-    invisible(false), without_overlaps(false)
+    invisible(false), without_overlaps(false), old(false)
   {}
   Key(const Key &rhs, MEM_ROOT *mem_root);
   virtual ~Key() = default;
   /* Equality comparison of keys (ignoring name) */
-  friend bool foreign_key_prefix(Key *a, Key *b);
+  friend bool is_foreign_key_prefix(Key *a, Key *b);
   /**
     Used to make a clone of this object for ALTER/CREATE TABLE
     @sa comment for Key_part_spec::clone
@@ -511,9 +513,7 @@ public:
     ref_db(*ref_db_arg), ref_table(*ref_table_arg), ref_columns(*ref_cols),
     delete_opt(delete_opt_arg), update_opt(update_opt_arg),
     match_opt(match_opt_arg)
-   {
-    // We don't check for duplicate FKs.
-    key_create_info.check_for_duplicate_indexes= false;
+  {
   }
  Foreign_key(const Foreign_key &rhs, MEM_ROOT *mem_root);
   /**
@@ -1855,6 +1855,7 @@ public:
   ulonglong cuted_fields, sent_row_count, examined_row_count;
   ulonglong affected_rows;
   ulonglong bytes_sent_old;
+  ha_handler_stats handler_stats;
   ulong     tmp_tables_used;
   ulong     tmp_tables_disk_used;
   ulong     query_plan_fsort_passes;
@@ -2317,14 +2318,14 @@ struct wait_for_commit
   bool commit_started;
 
   void register_wait_for_prior_commit(wait_for_commit *waitee);
-  int wait_for_prior_commit(THD *thd)
+  int wait_for_prior_commit(THD *thd, bool allow_kill=true)
   {
     /*
       Quick inline check, to avoid function call and locking in the common case
       where no wakeup is registered, or a registered wait was already signalled.
     */
     if (waitee.load(std::memory_order_acquire))
-      return wait_for_prior_commit2(thd);
+      return wait_for_prior_commit2(thd, allow_kill);
     else
     {
       if (wakeup_error)
@@ -2378,7 +2379,7 @@ struct wait_for_commit
 
   void wakeup(int wakeup_error);
 
-  int wait_for_prior_commit2(THD *thd);
+  int wait_for_prior_commit2(THD *thd, bool allow_kill);
   void wakeup_subsequent_commits2(int wakeup_error);
   void unregister_wait_for_prior_commit2();
 
@@ -2692,6 +2693,7 @@ public:
   struct  system_status_var status_var; // Per thread statistic vars
   struct  system_status_var org_status_var; // For user statistics
   struct  system_status_var *initial_status_var; /* used by show status */
+  ha_handler_stats handler_stats;       // Handler statistics
   THR_LOCK_INFO lock_info;              // Locking info of this thread
   /**
     Protects THD data accessed from other threads:
@@ -3036,6 +3038,16 @@ public:
   inline binlog_filter_state get_binlog_local_stmt_filter()
   {
     return m_binlog_filter_state;
+  }
+
+  /**
+    Checks if a user connection is read-only
+  */
+  inline bool is_read_only_ctx()
+  {
+    return opt_readonly &&
+           !(security_ctx->master_access & PRIV_IGNORE_READ_ONLY) &&
+           !slave_thread;
   }
 
 private:
@@ -4163,6 +4175,10 @@ public:
   {
     return strmake_lex_cstring(from.str, from.length);
   }
+  LEX_CSTRING strmake_lex_cstring_trim_whitespace(const LEX_CSTRING &from)
+  {
+    return strmake_lex_cstring(Lex_cstring(from).trim_whitespace(charset()));
+  }
 
   LEX_STRING *make_lex_string(LEX_STRING *lex_str, const char* str, size_t length)
   {
@@ -5117,10 +5133,10 @@ public:
   }
 
   wait_for_commit *wait_for_commit_ptr;
-  int wait_for_prior_commit()
+  int wait_for_prior_commit(bool allow_kill=true)
   {
     if (wait_for_commit_ptr)
-      return wait_for_commit_ptr->wait_for_prior_commit(this);
+      return wait_for_commit_ptr->wait_for_prior_commit(this, allow_kill);
     return 0;
   }
   void wakeup_subsequent_commits(int wakeup_error)
@@ -5382,7 +5398,14 @@ public:
   bool                      wsrep_ignore_table;
   /* thread who has started kill for this THD protected by LOCK_thd_data*/
   my_thread_id              wsrep_aborter;
-
+  /* Kill signal used, if thread was killed by manual KILL. Protected by
+     LOCK_thd_kill. */
+  std::atomic<killed_state> wsrep_abort_by_kill;
+  /* */
+  struct err_info*          wsrep_abort_by_kill_err;
+#ifndef DBUG_OFF
+  int                       wsrep_killed_state;
+#endif /* DBUG_OFF */
   /* true if BF abort is observed in do_command() right after reading
   client's packet, and if the client has sent PS execute command. */
   bool                      wsrep_delayed_BF_abort;
@@ -5595,6 +5618,12 @@ public:
   void restore_current_lex(LEX *backup_lex)
   {
     lex= backup_lex;
+  }
+
+  bool should_collect_handler_stats() const
+  {
+    return (variables.log_slow_verbosity & LOG_SLOW_VERBOSITY_ENGINE) ||
+           lex->analyze_stmt;
   }
 
   bool vers_insert_history_fast(const TABLE *table)

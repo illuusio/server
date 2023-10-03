@@ -275,11 +275,14 @@ buf_flush_relocate_on_flush_list(
 }
 
 /** Note that a block is no longer dirty, while not removing
-it from buf_pool.flush_list */
-inline void buf_page_t::write_complete(bool temporary)
+it from buf_pool.flush_list
+@param temporary   whether the page belongs to the temporary tablespace
+@param error       whether an error may have occurred while writing */
+inline void buf_page_t::write_complete(bool temporary, bool error)
 {
   ut_ad(temporary == fsp_is_system_temporary(id().space()));
-  if (temporary)
+  if (UNIV_UNLIKELY(error));
+  else if (temporary)
   {
     ut_ad(oldest_modification() == 2);
     oldest_modification_= 0;
@@ -316,8 +319,9 @@ inline void buf_pool_t::n_flush_dec()
 }
 
 /** Complete write of a file page from buf_pool.
-@param request write request */
-void buf_page_write_complete(const IORequest &request)
+@param request write request
+@param error   whether the write may have failed */
+void buf_page_write_complete(const IORequest &request, bool error)
 {
   ut_ad(request.is_write());
   ut_ad(!srv_read_only_mode);
@@ -350,8 +354,9 @@ void buf_page_write_complete(const IORequest &request)
     /* We must hold buf_pool.mutex while releasing the block, so that
     no other thread can access it before we have freed it. */
     mysql_mutex_lock(&buf_pool.mutex);
-    bpage->write_complete(temp);
-    buf_LRU_free_page(bpage, true);
+    bpage->write_complete(temp, error);
+    if (!error)
+      buf_LRU_free_page(bpage, true);
     mysql_mutex_unlock(&buf_pool.mutex);
 
     buf_pool.n_flush_dec();
@@ -361,7 +366,7 @@ void buf_page_write_complete(const IORequest &request)
     if (state < buf_page_t::WRITE_FIX_REINIT &&
         request.node->space->use_doublewrite())
       buf_dblwr.write_completed();
-    bpage->write_complete(false);
+    bpage->write_complete(false, error);
   }
 }
 
@@ -966,11 +971,19 @@ uint32_t fil_space_t::flush_freed(bool writable)
   mysql_mutex_assert_not_owner(&buf_pool.flush_list_mutex);
   mysql_mutex_assert_not_owner(&buf_pool.mutex);
 
-  freed_range_mutex.lock();
-  if (freed_ranges.empty() || log_sys.get_flushed_lsn() < get_last_freed_lsn())
+  for (;;)
   {
+    freed_range_mutex.lock();
+    if (freed_ranges.empty())
+    {
+      freed_range_mutex.unlock();
+      return 0;
+    }
+    const lsn_t flush_lsn= last_freed_lsn;
+    if (log_sys.get_flushed_lsn() >= flush_lsn)
+      break;
     freed_range_mutex.unlock();
-    return 0;
+    log_write_up_to(flush_lsn, true);
   }
 
   const unsigned physical{physical_size()};
@@ -1856,8 +1869,7 @@ inline void log_t::write_checkpoint(lsn_t end_lsn) noexcept
     ib::info() << "Resized log to " << ib::bytes_iec{resizing_completed}
       << "; start LSN=" << resizing;
   else
-    sql_print_error("InnoDB: Resize of log failed at " LSN_PF,
-                    get_flushed_lsn());
+    buf_flush_ahead(end_lsn + 1, false);
 }
 
 /** Initiate a log checkpoint, discarding the start of the log.
@@ -2584,6 +2596,7 @@ ATTRIBUTE_COLD void buf_flush_page_cleaner_init()
 /** Flush the buffer pool on shutdown. */
 ATTRIBUTE_COLD void buf_flush_buffer_pool()
 {
+  ut_ad(!os_aio_pending_reads());
   ut_ad(!buf_page_cleaner_is_active);
   ut_ad(!buf_flush_sync_lsn);
 

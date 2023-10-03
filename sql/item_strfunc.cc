@@ -1373,13 +1373,13 @@ bool Item_func_sformat::fix_length_and_dec(THD *thd)
 
   for (uint i=0 ; i < arg_count ; i++)
   {
-    char_length+= args[i]->max_char_length();
     if (args[i]->result_type() == STRING_RESULT &&
         Type_std_attributes::agg_item_set_converter(c, func_name_cstring(),
                                                     args+i, 1, flags, 1))
       return TRUE;
   }
 
+  char_length= MAX_BLOB_WIDTH;
   fix_char_length_ulonglong(char_length);
   return FALSE;
 }
@@ -3754,8 +3754,12 @@ String *Item_func_conv::val_str(String *str)
                                                 from_base, &endptr, &err);
   }
 
+  uint dummy_errors;
   if (!(ptr= longlong2str(dec, ans, to_base)) ||
-      str->copy(ans, (uint32) (ptr - ans), default_charset()))
+      (collation.collation->state & MY_CS_NONASCII) ?
+       str->copy(ans, (uint32)  (ptr - ans), &my_charset_latin1,
+                 collation.collation, &dummy_errors) :
+       str->copy(ans, (uint32) (ptr - ans), collation.collation))
   {
     null_value= 1;
     return NULL;

@@ -2410,8 +2410,15 @@ get_one_option(const struct my_option *opt, const char *argument,
   case 'S':
     if (filename[0] == '\0')
     {
-      /* Socket given on command line, switch protocol to use SOCKETSt */
-      opt_protocol= MYSQL_PROTOCOL_SOCKET;
+      /*
+        Socket given on command line, switch protocol to use SOCKETSt
+        Except on Windows if 'protocol= pipe' has been provided in
+        the config file or command line.
+      */
+      if (opt_protocol != MYSQL_PROTOCOL_PIPE)
+      {
+        opt_protocol= MYSQL_PROTOCOL_SOCKET;
+      }
     }
     break;
   case 'v':
@@ -2501,7 +2508,7 @@ get_one_option(const struct my_option *opt, const char *argument,
     break;
   }
   if (tty_password)
-    pass= get_tty_password(NullS);
+    pass= my_get_tty_password(NullS);
 
   return 0;
 }

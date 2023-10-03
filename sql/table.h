@@ -888,6 +888,8 @@ struct TABLE_SHARE
   bool has_update_default_function;
   bool can_do_row_logging;              /* 1 if table supports RBR */
   bool long_unique_table;
+  /* 1 if frm version cannot be updated as part of upgrade */
+  bool keep_original_mysql_version;
 
   ulong table_map_id;                   /* for row-based replication */
 
@@ -1919,8 +1921,8 @@ enum enum_schema_table_state
   PROCESSED_BY_JOIN_EXEC
 };
 
-enum enum_fk_option { FK_OPTION_UNDEF, FK_OPTION_RESTRICT, FK_OPTION_CASCADE,
-               FK_OPTION_SET_NULL, FK_OPTION_NO_ACTION, FK_OPTION_SET_DEFAULT};
+enum enum_fk_option { FK_OPTION_UNDEF, FK_OPTION_RESTRICT, FK_OPTION_NO_ACTION,
+  FK_OPTION_CASCADE, FK_OPTION_SET_NULL, FK_OPTION_SET_DEFAULT };
 
 typedef struct st_foreign_key_info
 {
@@ -1937,7 +1939,11 @@ typedef struct st_foreign_key_info
 } FOREIGN_KEY_INFO;
 
 LEX_CSTRING *fk_option_name(enum_fk_option opt);
-bool fk_modifies_child(enum_fk_option opt);
+static inline bool fk_modifies_child(enum_fk_option opt)
+{
+  return opt >= FK_OPTION_CASCADE;
+}
+
 
 class IS_table_read_plan;
 
@@ -2820,7 +2826,7 @@ struct TABLE_LIST
   bool prepare_security(THD *thd);
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
   Security_context *find_view_security_context(THD *thd);
-  bool prepare_view_security_context(THD *thd);
+  bool prepare_view_security_context(THD *thd, bool upgrade_check);
 #endif
   /*
     Cleanup for re-execution in a prepared statement or a stored
@@ -3376,10 +3382,16 @@ inline void mark_as_null_row(TABLE *table)
     bfill(table->null_flags,table->s->null_bytes,255);
 }
 
+/*
+  Restore table to state before mark_as_null_row() call.
+  This assumes that the caller has restored table->null_flags,
+  as is done in unclear_tables().
+*/
+
 inline void unmark_as_null_row(TABLE *table)
 {
-  table->null_row=0;
-  table->status= STATUS_NO_RECORD;
+  table->null_row= 0;
+  table->status&= ~STATUS_NULL_ROW;
 }
 
 bool is_simple_order(ORDER *order);
