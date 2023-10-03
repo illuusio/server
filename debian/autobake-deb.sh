@@ -16,6 +16,7 @@ set -e
 # Buildbot, running the test suite from installed .debs on a clean VM.
 export DEB_BUILD_OPTIONS="nocheck $DEB_BUILD_OPTIONS"
 
+# shellcheck source=/dev/null
 source ./VERSION
 
 # General CI optimizations to keep build output smaller
