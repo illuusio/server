@@ -90,6 +90,23 @@ sanity_checks() {
 
   # check for diskspace shortage
   datadir="$(mariadbd_get_param datadir)"
+
+  # If datadir location is not customized in configuration
+  # then it's not printed with /usr/sbin/mariadbd --print-defaults
+  # and this should fall backt to a sane default value
+  if [ -z "$datadir" ]
+  then
+    datadir="/var/lib/mysql"
+  fi
+
+  # Verify the datadir location exists
+  if [ ! -d "$datadir" ] && [ ! -L "$datadir" ]
+  then
+    log_failure_msg "$0: ERROR: Can't locate MariaDB data location at $datadir"
+    echo                "ERROR: Can't locate MariaDB data location at $datadir" | $ERR_LOGGER
+    exit 1
+  fi
+
   # As preset blocksize of GNU df is 1024 then available bytes is $df_available_blocks * 1024
   # 4096 blocks is then lower than 4 MB
   df_available_blocks="$(LC_ALL=C BLOCKSIZE='' df --output=avail "$datadir" | tail -n 1)"
