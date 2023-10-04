@@ -1,13 +1,31 @@
-mariadb (1:10.11.5-1) UNRELEASED; urgency=medium
+mariadb (1:10.11.5-1) unstable; urgency=medium
 
   [ Helmut Grohne ]
   * Fix FTCBFS: Do not pass host CFLAGS to the native build. (Closes: #1051222)
 
   [ Otto Kekäläinen ]
-  * New upstream version 10.11.5. Includes fixes for several severe regressions,
-    see details at https://mariadb.com/kb/en/mariadb-10-11-5-release-notes/
+  * New upstream version 10.11.5. Includes fixes for several severe regressions
+    as noted at https://mariadb.com/kb/en/mariadb-10-11-5-release-notes/ such as
+    - MDEV-31642: Upgrade may crash if innodb_log_file_buffering=OFF
+      (Closes: #1040784)
+  * Update configuration tracing to match what is expected for 10.11.5
+  * Include trailing slash in watch file to be compatible with latest uscan
+  * Re-apply "Limit check of running mysqld/mariadbd to system users (Closes: #1032047)"
+  * Re-apply "Add patches to fix spelling in MariaDB and components (Closes: #1032860)"
+  * Sync downstream (where applicable) with upstream 10.11 debian/* contents
+  * Complement upstream commits with more complete mysql->mariadb conversion
+  * Misc fixes to Debian scripts to satisfy Shellcheck
+  * Fix blocksize check to use $mysql_datadir/$datadir correctly
+  * Make sure that datadir always has some value and exists
 
- -- Otto Kekäläinen <otto@debian.org>  Sun, 01 Oct 2023 16:50:16 -0700
+  [ Tuukka Pasanen ]
+  * MDEV-30951: Fix small perlcritic and enable modern Perl
+  * Remove usage of AWK from Debian init and postinst scripts
+
+  [ Anel Husakovic ]
+  * MDEV-31358: Update description for MariaDB deb packages
+
+ -- Otto Kekäläinen <otto@debian.org>  Tue, 03 Oct 2023 20:59:30 -0700
 
 mariadb (1:10.11.4-1) unstable; urgency=medium
 
