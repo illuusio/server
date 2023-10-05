@@ -115,6 +115,5 @@ then
     fi
   done
 else
-  dpkg-query -W $plugin
-  exit 1
+  dpkg-query -W $plugin && exit 1
 fi
