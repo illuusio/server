@@ -22,15 +22,6 @@ mkdir tmp
 echo "using vardir: $WORKDIR/var"
 echo "using tmpdir: $WORKDIR/tmp"
 
-# Disable native IO and force regular fsync() on selected architectures which
-# seem to sugger from random crashes that stem from Linux kernel incompatibility
-# (Debian Bug#1030510 and perhaps also Bug#1031656, MariaDB MDEV-30728,
-# https://lists.ozlabs.org/pipermail/linuxppc-dev/2023-March/256189.html)
-if [ "$ARCH" = "ppc64el" ] || [ "$ARCH" = "s390x" ]
-then
-  MTR_ARGUMENTS_APPEND="--mysqld=--loose-innodb-flush-method=fsync --mysqld=--loose-skip-innodb-use-native-aio"
-fi
-
 echo "Setting up skip-tests-list"
 
 # Use the arch specific skiplists if exist, otherwise list is empty
