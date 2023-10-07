@@ -1,8 +1,18 @@
-mariadb (1:10.11.5-2) UNRELEASED; urgency=medium
+mariadb (1:10.11.5-2) unstable; urgency=medium
 
-  * Open new changelog entry. This will be replaced with 'gbp dch -avR'.
+  [ Otto Kekäläinen ]
+  * Make SysV init more verbose in case of MariaDB start failures
+  * Test & QA related changes:
+    * Bugfix: Rewrite 0300a9157cc to retain original autopkgtest behavior
+    * Switch autopkgtest upstream job to use '--skip-rpl --suite=main' again
+    * Include type_test.so and others in mariadb-test package
+    * Revert "Skip upstream MTR run on armel/armhf where lxcfs upgrade broke CPU check"
+    * Partially revert fc1358087b3 about MDEV-30728 to see if it still occurs
+    * Remove overrides for test failures that should be fixed now
+    * Add patch to fix disk.disk{_notembedded} tests and re-enable them
+    * Disable tests not passing on Debian CI, Salsa CI or Launchpad builds
 
- -- Otto Kekäläinen <otto@debian.org>  Tue, 03 Oct 2023 21:04:47 -0700
+ -- Otto Kekäläinen <otto@debian.org>  Sat, 07 Oct 2023 16:00:43 -0700
 
 mariadb (1:10.11.5-1) unstable; urgency=medium
 
