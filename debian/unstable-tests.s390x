@@ -1,6 +1,4 @@
 main.func_json_notembedded : MDEV-30518 / MDEV-27955
-disks.disks : MDEV-21587
-disks.disks_notembedded : MDEV-21587
 innodb.row_size_error_log_warnings_3 : MDEV-30918
 main.func_json_notembedded : MDEV-27955 / MDEV-30518
 unit.conc_connection : CONC-640: unit.conc_connection fails on test_conc21
