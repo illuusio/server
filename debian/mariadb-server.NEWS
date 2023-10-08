@@ -18,7 +18,7 @@ mariadb (1:10.11.2-1) unstable; urgency=medium
   * https://mariadb.com/kb/en/changes-improvements-in-mariadb-108/
   * https://mariadb.com/kb/en/changes-improvements-in-mariadb-107/
 
-  Noteable new features:
+  Notable new features:
   - New datatypes UUID and INET4
   - New functions SFORMAT (text formatting), NATURAL_SORT_KEY, RANDOM_BYTES and
     several related to JSON

@@ -148,7 +148,7 @@ ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	# Skip unstable tests if such are defined for arch
 	[ ! -f debian/unstable-tests.$(DEB_HOST_ARCH) ] || cat debian/unstable-tests.$(DEB_HOST_ARCH) >> $(MTR_SKIP_TEST_LIST)
 	# Show contents of skip list on this architecture
-	@echo "On arcitecture $(DEB_HOST_ARCH) skip tests:"
+	@echo "On architecture $(DEB_HOST_ARCH) skip tests:"
 	cat $(MTR_SKIP_TEST_LIST)
 	# Run testsuite
 	cd $(BUILDDIR)/mysql-test && \

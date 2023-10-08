@@ -264,7 +264,7 @@ EOF
     # compatible as the purge of an old mariadb-server-x.y package would
     # commands such as 'deb-systemd-helper purge mariadb.service' and
     # 'update-rc.d mariadb remove'. Fix it by simly deleting any existing postrm
-    # stanzas opportunisticly.
+    # stanzas opportunistically.
     for old_postrm_file in /var/lib/dpkg/info/mariadb-server-10.?.postrm
     do
       # For loop will always run, but the globbing pattern will be expanded into
