@@ -115,5 +115,9 @@ then
     fi
   done
 else
-  dpkg-query -W $plugin && exit 1
+  if dpkg-query -W $plugin
+  then
+    echo "Error: Plugin $plugin was found even though it should not exist on a 32-bit and little-endian system"
+    exit 1
+  fi
 fi
