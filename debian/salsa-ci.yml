@@ -94,8 +94,9 @@ build arm64:
 
 build armel:
   extends: .build-package-armel
-  rules:
-    - if: $CI_PROJECT_ROOT_NAMESPACE  == "mariadb-team"
+  variables:
+    CFLAGS: "$CFLAGS -mfloat-abi=softtfp"
+    CCFLAGS: "$CFLAGS -mfloat-abi=softtfp"
 
 build armhf:
   extends: .build-package-armhf
