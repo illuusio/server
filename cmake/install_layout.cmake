@@ -187,7 +187,7 @@ SET(INSTALL_INFODIR_DEB                 "share/info")
 #
 SET(INSTALL_SHAREDIR_DEB                "share")
 SET(INSTALL_MYSQLSHAREDIR_DEB           "share/mariadb")
-SET(INSTALL_MYSQLTESTDIR_DEB            "share/mariadb/mariadb-test")
+SET(INSTALL_MYSQLTESTDIR_DEB            "bin")
 SET(INSTALL_SQLBENCHDIR_DEB             ".")
 SET(INSTALL_SUPPORTFILESDIR_DEB         "share/mariadb")
 #

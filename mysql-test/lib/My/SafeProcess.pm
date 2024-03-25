@@ -115,7 +115,7 @@ sub find_bin {
   else
   {
     # Use my_safe_process
-    my $exe= my_find_bin($bindir, ["lib/My/SafeProcess", "My/SafeProcess"],
+    my $exe= my_find_bin($bindir, ["lib/My/SafeProcess", "My/SafeProcess", "/usr/bin"],
 			 "my_safe_process");
     push(@safe_process_cmd, $exe);
   }
