@@ -156,27 +156,30 @@ blhc:
   apt-get update -qq
 
 .test-enable-sid-repos: &test-enable-sid-repos
-  # Apply usrmerge workaround for Stretch/Buster/Bullseye to Bookworm/Sid upgrades
-  - echo 'this system will not be supported in the future' > /etc/unsupported-skip-usrmerge-conversion
   # Replace any old repos with just Sid
   - echo 'deb http://deb.debian.org/debian sid main' > /etc/apt/sources.list
   # Upgrade minimal stack first
   - apt-get update -qq
-  # Next step will fail on https://bugs.debian.org/993755
+  # Complete upgrade of minimal stack
+  - apt-get install -qq --yes apt || export APT_STATUS="failed"
+  # Due to https://bugs.debian.org/993755 and #975077 upgrades from Buster or
+  # older to Bookworm or newer fails on:
   #   /usr/bin/perl: error while loading shared libraries: libcrypt.so.1: cannot
   #     open shared object file: No such file or directory
   #   dpkg: error processing package libc6:amd64 (--configure):
-  - apt-get install -y apt || true
-  # Apply workaround
-  - cd $(mktemp -d) # Use temp dir where apt can download and unpack files
-  - apt-get -y download libcrypt1
-  - dpkg-deb -x libcrypt1_*.deb .
-  - cp -ra lib/* /lib/
-  - cd - # Back to /builds/$USER/mariadb-server/debian/output
-  - find /lib/*/libcrypt.* -ls # Show that new libcrypt is there
-  - apt-get -y --fix-broken install
-  # Complete upgrade of minimal stack
-  - apt-get install -y apt
+  # Therefore, run this extra workaround if first run of apt-get install failed:
+  - |
+    if [ "$APT_STATUS" = "failed" ]
+    then
+      cd $(mktemp -d) # Use temp dir where apt can download and unpack files
+      apt-get -y download libcrypt1
+      dpkg-deb -x libcrypt1_*.deb .
+      cp -ra usr/lib/* /lib/ || true # libcrypt 1:4.4.36-3+
+      cd - # Back to /builds/$USER/mariadb-server/debian/output
+      find /lib/*/libcrypt.* -ls # Show that new libcrypt is there
+      apt-get -qq --yes --fix-broken install
+      apt-get install -qq --yes apt
+    fi
 
 .test-install: &test-install
   # Install MariaDB built in this commit
@@ -581,7 +584,7 @@ mariadb.org 10.10 to mariadb upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://deb.mariadb.org/10.10/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
+    - echo "deb https://archive.mariadb.org/10.10/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
     - apt-get install -y mariadb-server
     - *test-verify-initial
@@ -613,7 +616,7 @@ mariadb.org 10.9 to mariadb upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://deb.mariadb.org/10.9/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
+    - echo "deb https://archive.mariadb.org/10.9/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
     - apt-get install -y mariadb-server-10.9 mariadb-client-10.9
     - *test-verify-initial
@@ -645,7 +648,7 @@ mariadb.org-10.8 to mariadb upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://deb.mariadb.org/10.8/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
+    - echo "deb https://archive.mariadb.org/10.8/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
     - apt-get install -y mariadb-server-10.8
     - *test-verify-initial
@@ -677,7 +680,7 @@ mariadb.org-10.7 to mariadb upgrade:
     - *test-prepare-container
     - apt install -y curl
     - curl -sS https://mariadb.org/mariadb_release_signing_key.asc -o /etc/apt/trusted.gpg.d/mariadb.asc
-    - echo "deb https://deb.mariadb.org/10.7/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
+    - echo "deb https://archive.mariadb.org/10.7/debian ${RELEASE} main" > /etc/apt/sources.list.d/mariadb.list
     - apt-get update
     - apt-get install -y mariadb-server-10.7
     - *test-verify-initial
@@ -838,13 +841,16 @@ mysql.com-5.7 upgrade:
   script:
     - *test-prepare-container
     - |
-      apt-get install --no-install-recommends --yes gpg gpg-agent dirmngr ca-certificates # Bare minimal (<4MB) for apt-key to work
-      apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 467B942D3A79BD29
-      echo "deb https://repo.mysql.com/apt/debian/ bullseye mysql-5.7" > /etc/apt/sources.list.d/mysql.list
+      apt-get install -qq --yes --no-install-recommends gpg gpg-agent dirmngr ca-certificates # Bare minimal (<4MB) for apt-key to work
+      apt-key adv --recv-keys --keyserver hkps://keyserver.ubuntu.com:443 B7B3B788A8D3785C
+      echo "deb https://repo.mysql.com/apt/debian/ buster mysql-5.7" > /etc/apt/sources.list.d/mysql.list
       apt-get update -qq
-      apt-get install -y 'mysql*' 'libmysqlc*'
+    - apt-get install -qq --yes mysql-server 'libmysqlc*'
+    # Ensure MySQL 5.7 package actually got installed
+    - dpkg -l | grep -e "mysql-server.*5.7"
     - *test-verify-initial
-    - *test-install
+    - *test-enable-sid-repos
+    - *test-install-all
     # Due to some (currently unknown) changes in MySQL 5.7 packaging or apt
     # behaviour changes, a system with a previous installation of MySQL will
     # on upgrades to MariaDB first fully remove MySQL, including the
@@ -854,7 +860,7 @@ mysql.com-5.7 upgrade:
     # works. Thus the step to test it now intentionally has a fallback to use
     # the service name 'mariadb' instead, and the fallback is always used.
     - sleep 5 # Give the mysql_upgrade a bit of time to complete before querying the server
-    - service mariadb status # There is no init.d/mysql in MariaDB 10.5+
+    - service mysql status || service mariadb status
     - sleep 15 # Give the mysql_upgrade a bit of extra time to complete with MySQL 5.7 before querying the server
     - *test-verify-final
   variables:
