@@ -188,6 +188,18 @@ blhc:
   - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
   - mariadb --version # Client version
 
+.test-install-all: &test-install-all
+  - *test-enable-artifacts-repo
+  - apt-get install -qq --simulate ${BUILT_PACKAGES}
+  - apt-get install -qq --yes ${BUILT_PACKAGES}
+  # Verify installation of MariaDB built in this commit
+  - mariadb --version
+  - dpkg -l | grep -iE 'maria|mysql|galera'
+  - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+  # Purge old versions if they exist
+  - apt-get purge --yes mariadb*10.?
+  - find /etc -name '*mariadb*' -ls -or -name '*mysql*' -ls | sort -k 11
+
 .test-verify-final: &test-verify-final |
   mkdir -p debug # Ensure dir exists before using it
   find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
