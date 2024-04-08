@@ -188,6 +188,12 @@ blhc:
   - dpkg -l | grep -iE 'maria|mysql|galera' || true # List installed
   - mariadb --version # Client version
 
+.test-enable-artifacts-repo: &test-enable-artifacts-repo |
+  apt-get install -qq --yes apt-utils
+  apt-ftparchive packages . > Packages
+  echo "deb [trusted=yes] file:$(pwd) ./" > /etc/apt/sources.list.d/mariadb-local.list
+  apt-get update -qq
+
 .test-install-all: &test-install-all
   - *test-enable-artifacts-repo
   - apt-get install -qq --simulate ${BUILT_PACKAGES}
