@@ -1,0 +1,8 @@
+The libmariadbd19.symbols files is used to track the libmariadbd19 ABI.
+
+For more information please see: libmariadb3.symbols.README but biggest difference
+is line:
+
+dpkg-gensymbols -plibmariadbd19 -Idebian/libmariadbd19.symbols -Pdebian/libmariadbd19 -edebian/libmariadbd19/usr/lib/x86_64-linux-gnu/libmariadbd.so.19
+
+Otherwise problems that arrise should be the same
