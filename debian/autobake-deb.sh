@@ -55,6 +55,7 @@ remove_rocksdb_tools()
 }
 
 architecture=$(dpkg-architecture -q DEB_BUILD_ARCH)
+uname_machine=$(uname -m)
 
 LSBID="$(lsb_release -si  | tr '[:upper:]' '[:lower:]')"
 LSBVERSION="$(lsb_release -sr | sed -e "s#\.##g")"
@@ -116,6 +117,14 @@ echo "Creating package version ${VERSION} ... "
 if which eatmydata > /dev/null
 then
   BUILDPACKAGE_PREPEND=eatmydata
+fi
+
+# If running autobake-debs.sh inside docker/podman host machine which
+# has 64 bits cpu but container image is 32 bit make sure that we set
+# correct arch with linux32 for 32 bit enviroment
+if [ "$architecture" = "i386" ] && [ "$uname_machine" =  "x86_64" ]
+then
+  BUILDPACKAGE_PREPEND="$BUILDPACKAGE_PREPEND linux32"
 fi
 
 # Build the package
