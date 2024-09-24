@@ -33,7 +33,7 @@ function check_for_crashed_tables() {
   # The $MARIADB is intentionally used to expand into a command and arguments
   # shellcheck disable=SC2086
   echo '
-    SELECT CONCAT("select count(*) into @discard from '\''", TABLE_SCHEMA, "'\''.'\''", TABLE_NAME, "'\''")
+    SELECT CONCAT("select count(*) into @discard from `", TABLE_SCHEMA, "`.`", TABLE_NAME, "`")
     FROM information_schema.TABLES WHERE TABLE_SCHEMA<>"INFORMATION_SCHEMA" AND TABLE_SCHEMA<>"PERFORMANCE_SCHEMA"
     AND (ENGINE="MyISAM" OR ENGINE="Aria")
     ' | \
