@@ -1,0 +1,50 @@
+#!/bin/bash
+#
+# Starting and stopping test with some MyISAM testing
+#
+
+echo "Running test 'myisamcrash'"
+set -ex
+
+# Start the daemon if it was not running. For example in Docker testing
+# environments there might not be any systemd et al and the service needs to
+# be started manually.
+if ! command -v systemctl
+then
+  if ! /etc/init.d/mariadb status
+  then
+    echo "Did not find systemctl and daemon was not running, starting it.."
+    /etc/init.d/mariadb start
+  fi
+else
+  # If systemd (and systemctl) is available, but the service did not start, then
+  # this smoke test is supposed to fail if next commands don't work.
+  echo "Found systemctl, continuing startstop test.."
+  # Compression plugins are separated from main server package
+  # to own packages (for example LZ4 package mariadb-plugin-provider-lz4)
+  # and they are installed after mariadb-server.
+  # which means that they don't exist if MariaDB is not restarted
+  systemctl restart mariadb
+fi
+
+echo '
+  DROP DATABASE IF EXISTS testdb;
+  CREATE DATABASE IF NOT EXISTS testdb;
+  USE testdb;
+  CREATE TABLE `testMyISAM`(id INT(11), name VARCHAR(100)) ENGINE=MyISAM;
+  INSERT INTO `testMyISAM` (id, name) VALUES (1, "John Doe");
+  CREATE TABLE `testAria`(id INT(11), name VARCHAR(100)) ENGINE=Aria;
+  INSERT INTO `testAria` (id, name) VALUES (1, "John Doe");
+' | mariadb
+
+killall -9 mariadbd
+
+JOURNALCTL_ERROR=$(journalctl | grep "[ERROR] mariadbd: Table './testdb/testMyISAM' is marked as crashed and should be repaired")
+
+if [ -z "${JOURNALCTL_ERROR}" ]
+then
+    echo "There should be error that MyISAM crashed and it's repaired"
+    exit 1
+fi
+
+exit 0

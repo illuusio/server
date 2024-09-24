@@ -15,3 +15,12 @@ Tests: upstream
 Depends: eatmydata,
          mariadb-test
 Restrictions: allow-stderr breaks-testbed
+
+Tests: myisamcrash
+Depends: mariadb-plugin-rocksdb | mariadb-server,
+         mariadb-plugin-provider-bzip2,
+         mariadb-plugin-provider-lz4,
+         mariadb-plugin-provider-lzma,
+         mariadb-plugin-provider-lzo,
+         mariadb-plugin-provider-snappy
+Restrictions: allow-stderr needs-root isolation-container
