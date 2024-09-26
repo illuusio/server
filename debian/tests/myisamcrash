@@ -3,6 +3,25 @@
 # Starting and stopping test with some MyISAM testing
 #
 
+function check_journalctl
+{
+  JOURNALCTL_ERROR=$(journalctl | grep "\[ERROR\] mariadbd: Table './mydatabase/mytable name' is marked as crashed and should be repaired")
+
+  if [ -z "${JOURNALCTL_ERROR}" ]
+  then
+     echo "There should be error that MyISAM crashed and it's repaired"
+     exit 1
+  fi
+
+  JOURNALCTL_ERROR=$(journalctl | grep "\[Warning\] Checking table:   './mydatabase/mytable name'")
+
+  if [ -z "${JOURNALCTL_ERROR}" ]
+  then
+      echo "There should be warning for MyISAM check"
+      exit 1
+  fi
+}
+
 echo "Running test 'myisamcrash'"
 set -ex
 
@@ -27,24 +46,36 @@ else
   systemctl restart mariadb
 fi
 
+sleep 3s
+
 echo '
-  DROP DATABASE IF EXISTS testdb;
-  CREATE DATABASE IF NOT EXISTS testdb;
-  USE testdb;
-  CREATE TABLE `testMyISAM`(id INT(11), name VARCHAR(100)) ENGINE=MyISAM;
-  INSERT INTO `testMyISAM` (id, name) VALUES (1, "John Doe");
-  CREATE TABLE `testAria`(id INT(11), name VARCHAR(100)) ENGINE=Aria;
-  INSERT INTO `testAria` (id, name) VALUES (1, "John Doe");
+  DROP DATABASE IF EXISTS mydatabase;
+  CREATE DATABASE IF NOT EXISTS mydatabase;
+  USE mydatabase;
+  CREATE TABLE `mytable-dev` (id INT(11), name VARCHAR(100)) ENGINE=Aria;
+  INSERT INTO `mytable-dev` (id, name) VALUES (1, "John Doe");
+  CREATE TABLE `mytable name` (id INT(11), name VARCHAR(100)) ENGINE=Aria;
+  INSERT INTO `mytable name` (id, name) VALUES (1, "John Doe");
+  CREATE TABLE `mytable-dev` (id INT(11), name VARCHAR(100)) ENGINE=MyISAM;
+  INSERT INTO `mytable-dev` (id, name) VALUES (1, "John Doe");
+  CREATE TABLE `mytable name` (id INT(11), name VARCHAR(100)) ENGINE=MyISAM;
+  INSERT INTO `mytable name` (id, name) VALUES (1, "John Doe");
 ' | mariadb
 
 killall -9 mariadbd
 
-JOURNALCTL_ERROR=$(journalctl | grep "[ERROR] mariadbd: Table './testdb/testMyISAM' is marked as crashed and should be repaired")
+sleep 3s
 
-if [ -z "${JOURNALCTL_ERROR}" ]
-then
-    echo "There should be error that MyISAM crashed and it's repaired"
-    exit 1
-fi
+check_journalctl
+
+#
+# Remove journal
+journalctl --flush --rotate --vacuum-time=1s
+
+sleep 3s
+
+systemctl restart mariadb
+
+check_journalctl
 
 exit 0
