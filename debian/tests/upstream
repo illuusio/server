@@ -57,7 +57,7 @@ fi
 # failed autopkgtest runs
 cp -v "$MTR_SKIP_TEST_LIST" "$AUTOPKGTEST_ARTIFACTS"
 
-cd /usr/share/mysql/mysql-test
+cd /usr/share/mariadb/mariadb-test/
 echo "starting mariadb-test-tun.pl..."
 export MTR_PRINT_CORE=detailed
 # The $MTR_ARGUMENTS_APPEND is intentionally used to pass in extra arguments
