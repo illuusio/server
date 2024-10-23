@@ -187,7 +187,7 @@ stages:
   # library tests don't have the mariadb client nor server, so don't check them
 
 .test-verify-final: &test-verify-final |
-  dpkg -l | grep -e "mariadb-server.*10\.11"
+  dpkg -l | grep -e "mariadb-server.*11\.7"
   mkdir -p debug # Ensure dir exists before using it
   find /var/lib/mysql -ls > debug/var-lib-mysql.list || true # Ignore errors about "no such file or directory"
   cp -ra /etc/mysql debug/etc-mysql
