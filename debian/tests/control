@@ -8,7 +8,8 @@ Depends: mariadb-plugin-provider-bzip2,
          mariadb-plugin-provider-lzma,
          mariadb-plugin-provider-lzo,
          mariadb-plugin-provider-snappy,
-         mariadb-plugin-rocksdb | mariadb-server
+         mariadb-plugin-rocksdb,
+         mariadb-server
 Restrictions: allow-stderr needs-root isolation-container
 
 Tests: upstream
